@@ -6,6 +6,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -20,6 +21,7 @@ type App struct {
 	list   *tview.List
 	detail *detail
 	status *tview.TextView
+	banner *tview.TextView
 
 	interval  time.Duration
 	refreshCh chan struct{}
@@ -41,6 +43,7 @@ func New(interval time.Duration) *App {
 		list:      tview.NewList(),
 		detail:    newDetail(),
 		status:    tview.NewTextView().SetDynamicColors(true),
+		banner:    tview.NewTextView().SetDynamicColors(true),
 		interval:  interval,
 		refreshCh: make(chan struct{}, 1),
 		reports:   map[string]*smart.Report{},
@@ -62,8 +65,14 @@ func (a *App) build() {
 		AddItem(a.list, 38, 0, true).
 		AddItem(a.detail, 0, 1, false)
 
-	root := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(body, 0, 1, true).
+	root := tview.NewFlex().SetDirection(tview.FlexRow)
+	// Full SMART access usually requires root; warn when we lack it.
+	if os.Geteuid() != 0 {
+		a.banner.SetText("  [black:yellow] ⚠ Running without root — some drives may " +
+			"report limited data; re-run with sudo for full access. [-:-]")
+		root.AddItem(a.banner, 1, 0, false)
+	}
+	root.AddItem(body, 0, 1, true).
 		AddItem(a.status, 1, 0, false)
 
 	a.app.SetRoot(root, true).EnableMouse(true)
@@ -72,15 +81,26 @@ func (a *App) build() {
 
 // statusText renders the bottom key-hint bar.
 func (a *App) statusText() string {
-	return fmt.Sprintf("  [aqua]Tab[-] focus   [aqua]↑/↓[-] drive   [aqua]1-3[-] tab   "+
-		"[aqua]r[-] refresh   [aqua]q[-] quit      refresh every %s", a.interval)
+	return fmt.Sprintf("  [aqua]Tab[-] focus   [aqua]↑/↓[-] drive   [aqua]←/→ 1-3[-] tab   "+
+		"[aqua]r[-] refresh   [aqua]Esc/q[-] quit      refresh every %s", a.interval)
 }
 
 // onKey is the global key handler.
 func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 	switch ev.Key() {
+	case tcell.KeyEscape:
+		a.app.Stop()
+		return nil
 	case tcell.KeyTab:
 		a.toggleFocus()
+		return nil
+	case tcell.KeyLeft:
+		a.detail.cycleTab(-1)
+		a.app.SetFocus(a.detail.content())
+		return nil
+	case tcell.KeyRight:
+		a.detail.cycleTab(1)
+		a.app.SetFocus(a.detail.content())
 		return nil
 	case tcell.KeyRune:
 		switch r := ev.Rune(); r {
@@ -162,7 +182,8 @@ func (a *App) listRow(d smart.Device) (string, string) {
 		model = shortName(d)
 	}
 	main := fmt.Sprintf("%s %s", healthGlyph(rep.Overall()), model)
-	sec := fmt.Sprintf("  %s · %s", d.Protocol, tempString(rep))
+	sec := fmt.Sprintf("  %s · %s · %s",
+		shortName(d), capacityString(rep.UserCapacity), tempString(rep))
 	return main, sec
 }
 

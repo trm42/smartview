@@ -129,6 +129,16 @@ func (d *detail) renderBar() {
 	d.bar.SetText(s)
 }
 
+// cycleTab moves the active tab by delta, wrapping within the visible tabs.
+func (d *detail) cycleTab(delta int) {
+	n := len(d.tabs)
+	if n == 0 {
+		return
+	}
+	d.active = (d.active + delta + n) % n
+	d.selectActive()
+}
+
 // selectTab activates a tab by zero-based index if it exists.
 func (d *detail) selectTab(i int) {
 	if i < 0 || i >= len(d.tabs) {
