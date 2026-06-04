@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 package smart
 
 // Severity is a tri-state health classification used for colouring and sorting.

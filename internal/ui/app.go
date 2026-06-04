@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Package ui implements the tview-based terminal interface for smartview.
 package ui
 

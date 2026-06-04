@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Package smart wraps the smartctl(8) JSON interface (smartmontools >= 7.0).
 //
 // The JSON schema is highly drive- and vendor-dependent: only device, smartctl
