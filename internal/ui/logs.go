@@ -18,19 +18,34 @@ func hasLogs(r *smart.Report) bool {
 		r.NVMeSelfTestLog != nil || r.NVMeErrorLog != nil
 }
 
-// buildLogs renders the Logs tab: error-log occupancy plus self-test history.
-func buildLogs(r *smart.Report) tview.Primitive {
-	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
-	tv.SetBorder(true).SetTitle(" Logs ")
+// logsView renders the Logs tab: error-log occupancy plus self-test history. It
+// refreshes its text in place, preserving the scroll position across polls.
+type logsView struct {
+	*tview.TextView
+}
 
+func newLogsView(r *smart.Report) *logsView {
+	v := &logsView{tview.NewTextView().SetDynamicColors(true).SetScrollable(true)}
+	v.SetBorder(true).SetTitle(" Logs ")
+	v.refresh(r, nil)
+	return v
+}
+
+// refresh re-renders the log text, restoring the prior scroll offset so a poll
+// does not jump the view back to the top.
+func (v *logsView) refresh(r *smart.Report, _ []float64) {
+	row, col := v.GetScrollOffset()
+	v.SetText(buildLogsText(r))
+	v.ScrollTo(row, col)
+}
+
+// buildLogsText assembles the Logs tab body.
+func buildLogsText(r *smart.Report) string {
 	var b strings.Builder
-
 	writeErrorLog(&b, r)
 	b.WriteString("\n")
 	writeSelfTestLog(&b, r)
-
-	tv.SetText(b.String())
-	return tv
+	return b.String()
 }
 
 // writeErrorLog summarises the drive's logged command errors.
