@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Command smartview is a cross-platform terminal UI for monitoring drive health
 // via smartmontools (smartctl). It runs on macOS and Linux.
 package main
