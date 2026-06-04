@@ -134,14 +134,21 @@ func (d *detail) renderBar() {
 	d.bar.SetText(s)
 }
 
-// cycleTab moves the active tab by delta, wrapping within the visible tabs.
-func (d *detail) cycleTab(delta int) {
+// stepTab moves the active tab by delta, clamped to the visible tabs (no wrap).
+// It reports whether the active tab actually changed, so the caller can fall
+// through to the drive list at the left edge.
+func (d *detail) stepTab(delta int) bool {
 	n := len(d.tabs)
 	if n == 0 {
-		return
+		return false
 	}
-	d.active = (d.active + delta + n) % n
+	next := d.active + delta
+	if next < 0 || next >= n {
+		return false
+	}
+	d.active = next
 	d.selectActive()
+	return true
 }
 
 // selectTab activates a tab by zero-based index if it exists.

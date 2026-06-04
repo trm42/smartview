@@ -81,8 +81,8 @@ func (a *App) build() {
 
 // statusText renders the bottom key-hint bar.
 func (a *App) statusText() string {
-	return fmt.Sprintf("  [aqua]Tab[-] focus   [aqua]↑/↓[-] drive   [aqua]←/→ 1-3[-] tab   "+
-		"[aqua]r[-] refresh   [aqua]Esc/q[-] quit      refresh every %s", a.interval)
+	return fmt.Sprintf("  [aqua]↑/↓[-] drive   [aqua]←/→[-] nav   [aqua]1-3[-] tab   "+
+		"[aqua]Tab[-] focus   [aqua]r[-] refresh   [aqua]Esc/q[-] quit      refresh every %s", a.interval)
 }
 
 // onKey is the global key handler.
@@ -95,12 +95,10 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 		a.toggleFocus()
 		return nil
 	case tcell.KeyLeft:
-		a.detail.cycleTab(-1)
-		a.app.SetFocus(a.detail.content())
+		a.focusLeft()
 		return nil
 	case tcell.KeyRight:
-		a.detail.cycleTab(1)
-		a.app.SetFocus(a.detail.content())
+		a.focusRight()
 		return nil
 	case tcell.KeyRune:
 		switch r := ev.Rune(); r {
@@ -126,6 +124,33 @@ func (a *App) toggleFocus() {
 	} else {
 		a.app.SetFocus(a.list)
 	}
+}
+
+// focusRight advances along the focus chain list → tab0 → tab1 … → tabN. From
+// the list it enters the detail at the current tab; within the detail it steps
+// to the next tab, stopping at the last (no wrap).
+func (a *App) focusRight() {
+	if a.list.HasFocus() {
+		a.app.SetFocus(a.detail.content())
+		return
+	}
+	if a.detail.stepTab(1) {
+		a.app.SetFocus(a.detail.content())
+	}
+}
+
+// focusLeft is the reverse of focusRight: it steps to the previous tab, and on
+// the first tab falls through to the drive list.
+func (a *App) focusLeft() {
+	if a.list.HasFocus() {
+		return
+	}
+	if a.detail.active == 0 {
+		a.app.SetFocus(a.list)
+		return
+	}
+	a.detail.stepTab(-1)
+	a.app.SetFocus(a.detail.content())
 }
 
 // triggerRefresh asks the poll loop to fetch immediately (non-blocking).

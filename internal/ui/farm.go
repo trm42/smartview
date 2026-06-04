@@ -58,8 +58,8 @@ func writeFarmDriveInfo(b *strings.Builder, f *smart.FARM) {
 		farmRow(b, "Spindle", fmt.Sprintf("%d rpm", d.RotationRate))
 	}
 	farmRow(b, "Heads", fmt.Sprintf("%d", d.Heads))
-	farmRow(b, "Power-on", fmt.Sprintf("%d h", d.POH))
-	farmRow(b, "Head flight", fmt.Sprintf("%d h", d.HeadFlightHours))
+	farmRow(b, "Power-on", humanDuration(d.POH))
+	farmRow(b, "Head flight", humanDuration(d.HeadFlightHours))
 	farmRow(b, "Head loads", fmt.Sprintf("%d", d.HeadLoadEvents))
 	farmRow(b, "Power cycles", fmt.Sprintf("%d", d.PowerCycles))
 }

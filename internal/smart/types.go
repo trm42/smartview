@@ -325,7 +325,7 @@ func (p *FARMReliability) UnmarshalJSON(data []byte) error {
 	intOf := func(key string) int {
 		var v int
 		if raw, ok := m[key]; ok {
-			_ = json.Unmarshal(raw, &v)
+			_ = json.Unmarshal(raw, &v) // absent/malformed scalar defaults to 0
 		}
 		return v
 	}

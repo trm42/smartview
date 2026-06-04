@@ -91,7 +91,7 @@ func buildNVMeHealthTable(h *smart.NVMeHealth) tview.Primitive {
 	}
 	add("Critical warning", fmt.Sprintf("0x%02x", h.CriticalWarning), warnSev)
 	if h.PercentageUsed != nil {
-		add("Percentage used", fmt.Sprintf("%d%%", *h.PercentageUsed), pctUsedSev(*h.PercentageUsed))
+		add("Percentage used", fmt.Sprintf("%d%%", *h.PercentageUsed), smart.PctUsedSeverity(*h.PercentageUsed))
 	}
 	if h.AvailableSpare != nil {
 		sev := smart.SeverityOK
@@ -132,18 +132,6 @@ func buildNVMeHealthTable(h *smart.NVMeHealth) tview.Primitive {
 	t.SetSelectable(true, false)
 	t.Select(1, 0)
 	return t
-}
-
-// pctUsedSev grades NVMe endurance consumption.
-func pctUsedSev(v int) smart.Severity {
-	switch {
-	case v >= 100:
-		return smart.SeverityCaution
-	case v >= 90:
-		return smart.SeverityCaution
-	default:
-		return smart.SeverityOK
-	}
 }
 
 // headerCell builds a non-selectable bold header cell.

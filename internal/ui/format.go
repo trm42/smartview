@@ -56,6 +56,19 @@ func humanBytes(b int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "kMGTPE"[exp])
 }
 
+// humanDuration renders an hour count as years+days, falling back to days, or
+// raw hours under a day. E.g. 9439h → "1 y 28 d", 100h → "4 d", 9h → "9 h".
+func humanDuration(hours int) string {
+	if hours < 24 {
+		return fmt.Sprintf("%d h", hours)
+	}
+	days := hours / 24
+	if days < 365 {
+		return fmt.Sprintf("%d d", days)
+	}
+	return fmt.Sprintf("%d y %d d", days/365, days%365)
+}
+
 // orDash renders s, falling back to the dash placeholder when empty.
 func orDash(s string) string {
 	if s == "" {

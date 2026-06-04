@@ -37,10 +37,10 @@ func (a *App) fetchAndApply(ctx context.Context) {
 	results := make(map[string]*smart.Report, len(a.devices))
 	for _, d := range a.devices {
 		cctx, cancel := context.WithTimeout(ctx, fetchTimeout)
-		rep, err := smart.Info(cctx, d.Name)
+		rep, _ := smart.Info(cctx, d.Name)
 		cancel()
-		if err != nil && rep == nil {
-			continue // keep last-known good report on transient failure
+		if rep == nil {
+			continue // transient failure; keep the last-known-good report
 		}
 		// Seagate FARM is a separate smartctl call (and usually needs root);
 		// only attempt it on Seagate ATA drives. Failures are swallowed — the
@@ -61,7 +61,14 @@ func (a *App) fetchAndApply(ctx context.Context) {
 			a.recordTemp(name, rep)
 		}
 		a.populateList()
-		a.showSelected()
+		// Don't rebuild the detail pane out from under the user while they are
+		// interacting with it: a rebuild resets table selection/scroll and
+		// orphans the focused widget. Live updates resume once focus returns to
+		// the drive list (←/Tab). Device switches go through the list's
+		// SetChangedFunc, not this path, so they still refresh immediately.
+		if !a.detail.HasFocus() {
+			a.showSelected()
+		}
 	})
 }
 

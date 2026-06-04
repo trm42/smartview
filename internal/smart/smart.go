@@ -35,8 +35,8 @@ func Scan(ctx context.Context) ([]Device, error) {
 		return nil, err
 	}
 	var res scanResult
-	if jerrr := json.Unmarshal(out, &res); jerrr != nil {
-		return nil, fmt.Errorf("parse scan output: %w", jerrr)
+	if jerr := json.Unmarshal(out, &res); jerr != nil {
+		return nil, fmt.Errorf("parse scan output: %w", jerr)
 	}
 	return res.Devices, nil
 }
@@ -99,7 +99,7 @@ func run(ctx context.Context, args ...string) ([]byte, error) {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
 			// Exit-status bitmask set: stdout is still valid JSON.
-			return out, fmt.Errorf("smartctl exited %d", ee.ExitCode())
+			return out, fmt.Errorf("smartctl exit %d: %w", ee.ExitCode(), ee)
 		}
 		return out, fmt.Errorf("run smartctl: %w", err)
 	}
