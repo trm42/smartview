@@ -64,8 +64,8 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 			return
 		}
 		for _, e := range r.NVMeSelfTestLog.Table {
-			fmt.Fprintf(b, "   %-10s %-28s @ %d h\n",
-				e.SelfTestCode.String, colorResult(e.SelfTestResult.String), e.PowerOnHours)
+			fmt.Fprintf(b, "   %-10s %-28s @ %s\n",
+				e.SelfTestCode.String, colorResult(e.SelfTestResult.String), humanDuration(e.PowerOnHours))
 		}
 	case r.ATASelfTestLog != nil && r.ATASelfTestLog.Extended != nil:
 		tbl := r.ATASelfTestLog.Extended.Table
@@ -74,8 +74,8 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 			return
 		}
 		for _, e := range tbl {
-			fmt.Fprintf(b, "   %-16s %-28s @ %d h\n",
-				e.Type.String, colorResult(e.Status.String), e.LifetimeHours)
+			fmt.Fprintf(b, "   %-16s %-28s @ %s\n",
+				e.Type.String, colorResult(e.Status.String), humanDuration(e.LifetimeHours))
 		}
 	default:
 		fmt.Fprintln(b, "   no self-test log")
