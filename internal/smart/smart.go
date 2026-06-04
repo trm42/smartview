@@ -63,6 +63,32 @@ func Info(ctx context.Context, name string) (*Report, error) {
 	return &rep, nil
 }
 
+// FarmLog runs `smartctl -l farm -j <name>` and parses the Seagate FARM log.
+//
+// Like Info, it ignores smartctl's exit-status bitmask and parses stdout
+// regardless. FARM is Seagate-only: on a drive that does not support it the
+// section is absent (or supported=false), which is reported as (nil, nil) — an
+// expected condition, not an error, so the caller simply omits the FARM tab.
+func FarmLog(ctx context.Context, name string) (*FARM, error) {
+	out, err := run(ctx, "-l", "farm", "-j", name)
+	if len(out) == 0 {
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New("smartctl produced no output")
+	}
+	var wrapper struct {
+		FARM *FARM `json:"seagate_farm_log"`
+	}
+	if jerr := json.Unmarshal(out, &wrapper); jerr != nil {
+		return nil, fmt.Errorf("parse FARM log for %s: %w", name, jerr)
+	}
+	if wrapper.FARM == nil || !wrapper.FARM.Supported {
+		return nil, nil
+	}
+	return wrapper.FARM, nil
+}
+
 // run executes smartctl and returns its stdout. A non-zero exit code yields a
 // non-nil error AND the captured stdout, because smartctl emits valid JSON even
 // when its exit status bitmask is set. Callers decide whether the error matters.

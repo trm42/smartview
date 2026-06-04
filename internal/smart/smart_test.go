@@ -102,6 +102,49 @@ func TestParseSparseAppleNVMe(t *testing.T) {
 	}
 }
 
+// TestParseFARM exercises the Seagate FARM parse path used by FarmLog, including
+// the custom per-head unmarshal that gathers smartctl's flat *_by_head_N keys
+// into index-ordered slices.
+func TestParseFARM(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "smart-seagate-farm-log.json"))
+	if err != nil {
+		t.Fatalf("read FARM fixture: %v", err)
+	}
+	var wrapper struct {
+		FARM *FARM `json:"seagate_farm_log"`
+	}
+	if err := json.Unmarshal(data, &wrapper); err != nil {
+		t.Fatalf("parse FARM fixture: %v", err)
+	}
+	f := wrapper.FARM
+	if f == nil || !f.Supported {
+		t.Fatal("expected a supported FARM log")
+	}
+	if f.DriveInfo.RecordingType != "CMR" {
+		t.Errorf("RecordingType = %q, want CMR", f.DriveInfo.RecordingType)
+	}
+	if f.DriveInfo.Heads != 20 {
+		t.Errorf("Heads = %d, want 20", f.DriveInfo.Heads)
+	}
+	if f.Environment.CurrentTemp != 37 {
+		t.Errorf("CurrentTemp = %d, want 37", f.Environment.CurrentTemp)
+	}
+	if got := len(f.Reliability.MRHeadResistance); got != 20 {
+		t.Fatalf("MRHeadResistance len = %d, want 20", got)
+	}
+	if f.Reliability.MRHeadResistance[0] != 465 {
+		t.Errorf("MRHeadResistance[0] = %d, want 465", f.Reliability.MRHeadResistance[0])
+	}
+	if got := len(f.Reliability.ReallocatedByHead); got != 20 {
+		t.Fatalf("ReallocatedByHead len = %d, want 20", got)
+	}
+	for i, v := range f.Reliability.ReallocatedByHead {
+		if v != 0 {
+			t.Errorf("ReallocatedByHead[%d] = %d, want 0 (healthy drive)", i, v)
+		}
+	}
+}
+
 func TestSeverityClassification(t *testing.T) {
 	cases := []struct {
 		name string
