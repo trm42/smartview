@@ -42,6 +42,16 @@ func (a *App) fetchAndApply(ctx context.Context) {
 		if err != nil && rep == nil {
 			continue // keep last-known good report on transient failure
 		}
+		// Seagate FARM is a separate smartctl call (and usually needs root);
+		// only attempt it on Seagate ATA drives. Failures are swallowed — the
+		// FARM tab simply stays hidden, like any other unavailable section.
+		if rep.SupportsFARM() {
+			fctx, fcancel := context.WithTimeout(ctx, fetchTimeout)
+			if farm, ferr := smart.FarmLog(fctx, d.Name); ferr == nil && farm != nil {
+				rep.FARM = farm
+			}
+			fcancel()
+		}
 		results[d.Name] = rep
 	}
 

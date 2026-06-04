@@ -12,16 +12,22 @@ for drive health via smartmontools.
       Logs), NVMe wear gauges, temperature sparkline, auto-refresh poll loop.
 - [x] Fixture-based parser tests incl. the sparse Apple NVMe (graceful degradation).
 - [x] smartctl preflight with platform-specific install hint.
+- [x] Root/permission banner (`euid != 0`) + per-device `error`-severity message surfacing.
+- [x] **Seagate FARM** tab: separate `smartctl -l farm -j` fetch (Seagate-ATA gated),
+      curated drive/error/environment/workload stats, and per-head bar charts
+      (reallocated sectors + MR head resistance). Parser fixture-tested (`TestParseFARM`);
+      **not yet validated against a real Seagate SATA drive under sudo on Linux.**
 
 ## Next up
 
 - [ ] **Validate the ATA path on real Linux SATA hardware.** The dev Mac has only the
       internal NVMe, so the ATA attribute table, pre-fail row colouring, and the
       SCT-history-seeded temperature sparkline are only exercised by fixtures.
-- [ ] **Permission UX.** Detect `error`-severity `smartctl.messages` (e.g. access
-      denied) and surface a clear "run with sudo" banner instead of an empty/cached view.
+- [ ] **Validate the Seagate FARM path on real hardware** (Seagate SATA drive, Linux,
+      `sudo`). The renderer and parser are fixture-only so far; confirm the live
+      `-l farm -j` fetch, the Seagate-ATA gate, and the per-head charts on actual data.
 - [ ] **SCSI/SAS support.** Currently only ATA and NVMe are modelled; add `scsi_*`
-      fields and a detail view for SCSI drives.
+      fields and a detail view for SCSI drives. (SAS also exposes a FARM log.)
 - [ ] **Capacity fallback.** Apple omits all capacity fields; for other NVMe drives
       that report `nvme_total_capacity`, fall back to it when `user_capacity` is absent.
 
