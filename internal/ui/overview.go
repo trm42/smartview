@@ -25,6 +25,16 @@ func buildOverview(r *smart.Report, tempHistory []float64) tview.Primitive {
 		severityTag(sev), sev.String(), passFailText(r)))
 	root.AddItem(banner, 1, 0, false)
 
+	// Surface a per-drive smartctl error message (a permission/open failure, or a
+	// log-read limitation common on Apple internal SSDs). It is a data-availability
+	// caveat, not a health verdict — the verdict is the banner above — so it is
+	// styled as a yellow notice rather than an alarming red one.
+	if msg, ok := r.FatalMessage(); ok {
+		errLine := tview.NewTextView().SetDynamicColors(true)
+		errLine.SetText(fmt.Sprintf("  [yellow]⚠ %s[-]", msg))
+		root.AddItem(errLine, 1, 0, false)
+	}
+
 	mid := tview.NewFlex() // horizontal: identity | gauges
 	mid.AddItem(buildIdentity(r), 0, 2, false)
 	if g := buildGauges(r); g != nil {
