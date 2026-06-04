@@ -74,7 +74,7 @@ func buildIdentity(r *smart.Report) tview.Primitive {
 	row("Capacity", capacityString(r.UserCapacity))
 	row("Temp", tempString(r))
 	if r.PowerOnTime != nil {
-		row("Power-on", fmt.Sprintf("%d hours", r.PowerOnTime.Hours))
+		row("Power-on", humanDuration(r.PowerOnTime.Hours))
 	} else {
 		row("Power-on", dash)
 	}

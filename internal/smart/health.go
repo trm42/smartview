@@ -67,6 +67,15 @@ func (a *ATAAttribute) Severity() Severity {
 	return SeverityOK
 }
 
+// PctUsedSeverity grades NVMe endurance consumption (percentage_used): a drive
+// at or past 90% of its rated writes is worth a Caution.
+func PctUsedSeverity(percent int) Severity {
+	if percent >= 90 {
+		return SeverityCaution
+	}
+	return SeverityOK
+}
+
 // nvmeSeverity grades NVMe wear/spare/media indicators below the
 // critical-warning threshold.
 func nvmeSeverity(h *NVMeHealth) Severity {
