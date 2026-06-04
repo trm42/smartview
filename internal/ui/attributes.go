@@ -4,6 +4,8 @@ package ui
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -11,79 +13,296 @@ import (
 	"smartview/internal/smart"
 )
 
-// buildAttributes renders the Attributes tab: the ATA SMART attribute table for
-// ATA drives, or the NVMe health-log key/value table for NVMe drives.
+// buildAttributes renders the Attributes tab: a rich, decoded ATA attribute
+// table for ATA drives, or the NVMe health-log table for NVMe drives. Both pair
+// a selectable table with a description footer for the highlighted row.
 func buildAttributes(r *smart.Report) tview.Primitive {
 	if r.IsNVMe() && r.NVMeHealth != nil {
-		return buildNVMeHealthTable(r.NVMeHealth)
+		return buildNVMeAttributes(r.NVMeHealth)
 	}
 	if r.ATAAttributes != nil {
-		return buildATATable(r.ATAAttributes.Table)
+		return newAttributesView(r.ATAAttributes.Table)
 	}
 	return centeredNote("No SMART attributes reported by this drive.")
 }
 
-// buildATATable renders the classic vendor attribute table, colouring each row
-// by its computed severity.
-func buildATATable(attrs []smart.ATAAttribute) tview.Primitive {
-	t := tview.NewTable().SetBorders(false).SetFixed(1, 0)
-	t.SetBorder(true).SetTitle(" SMART attributes ")
+// sortMode orders the ATA attribute rows.
+type sortMode int
 
-	headers := []string{"ID", "Attribute", "Flag", "Value", "Worst", "Thresh", "When failed", "Raw"}
-	for c, h := range headers {
-		t.SetCell(0, c, headerCell(h))
+const (
+	sortSeverity sortMode = iota // worst first, then by ID
+	sortID                       // ascending ID (smartctl's native order)
+	sortMargin                   // least threshold headroom first
+)
+
+func (m sortMode) String() string {
+	switch m {
+	case sortID:
+		return "id"
+	case sortMargin:
+		return "margin"
+	default:
+		return "severity"
 	}
-	for i, a := range attrs {
-		sev := a.Severity()
-		color := severityColor(sev)
+}
+
+// filterMode hides rows that are not currently of interest.
+type filterMode int
+
+const (
+	filterAll        filterMode = iota // every attribute
+	filterPrefail                      // only pre-fail attributes
+	filterConcerning                   // only caution/failing attributes
+)
+
+func (m filterMode) String() string {
+	switch m {
+	case filterPrefail:
+		return "pre-fail"
+	case filterConcerning:
+		return "concerning"
+	default:
+		return "all"
+	}
+}
+
+// attributesView is the ATA attribute table plus a description footer, with
+// interactive sort (s) and filter (f). It rebuilds rows in place so selection
+// and focus survive a re-render.
+type attributesView struct {
+	*tview.Flex
+	table  *tview.Table
+	footer *tview.TextView
+	attrs  []smart.ATAAttribute
+	shown  []smart.ATAAttribute // rows currently displayed; row i+1 → shown[i]
+	sortBy sortMode
+	filter filterMode
+}
+
+func newAttributesView(attrs []smart.ATAAttribute) *attributesView {
+	v := &attributesView{
+		Flex:   tview.NewFlex().SetDirection(tview.FlexRow),
+		table:  tview.NewTable().SetBorders(false).SetFixed(1, 0),
+		footer: tview.NewTextView().SetDynamicColors(true).SetWrap(true),
+		attrs:  attrs,
+	}
+	v.table.SetSelectable(true, false)
+	v.footer.SetBorder(true)
+
+	v.table.SetSelectionChangedFunc(func(row, _ int) { v.updateFooter(row) })
+	v.table.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		switch ev.Rune() {
+		case 's':
+			v.sortBy = (v.sortBy + 1) % 3
+			v.render()
+			return nil
+		case 'f':
+			v.filter = (v.filter + 1) % 3
+			v.render()
+			return nil
+		}
+		return ev
+	})
+
+	v.AddItem(v.table, 0, 1, true)
+	v.AddItem(v.footer, 4, 0, false)
+	v.render()
+	return v
+}
+
+// render rebuilds the table for the current sort/filter, preserving the table
+// primitive so focus is not lost.
+func (v *attributesView) render() {
+	v.table.Clear()
+	v.table.SetBorder(true).SetTitle(fmt.Sprintf(
+		" SMART attributes — sort: %s · filter: %s  [aqua][s/f][-] ", v.sortBy, v.filter))
+
+	headers := []string{"ID", "Attribute", "Kind", "Health", "Reading", "When"}
+	for c, h := range headers {
+		v.table.SetCell(0, c, headerCell(h))
+	}
+
+	v.shown = v.visibleRows()
+	if len(v.shown) == 0 {
+		v.table.SetCell(1, 1, tview.NewTableCell(" No attributes match — all healthy ").
+			SetTextColor(tcell.ColorGreen).SetSelectable(false))
+		v.footer.SetText("")
+		return
+	}
+
+	for i, a := range v.shown {
+		color := severityColor(a.Severity())
 		kind := "old-age"
 		if a.Flags.Prefailure {
 			kind = "pre-fail"
 		}
-		whenFailed := a.WhenFailed
-		if whenFailed == "" {
-			whenFailed = "-"
+		when := a.WhenFailed
+		if when == "" {
+			when = "-"
 		}
-		cells := []string{
-			fmt.Sprintf("%d", a.ID),
-			a.Name,
-			kind,
-			fmt.Sprintf("%d", a.Value),
-			fmt.Sprintf("%d", a.Worst),
-			fmt.Sprintf("%d", a.Thresh),
-			whenFailed,
-			a.Raw.String,
-		}
-		for c, v := range cells {
-			cell := tview.NewTableCell(" " + v + " ").SetTextColor(color)
-			if c == 1 {
-				cell.SetExpansion(1)
-			}
-			if c >= 3 && c <= 5 {
-				cell.SetAlign(tview.AlignRight)
-			}
-			t.SetCell(i+1, c, cell)
-		}
+		v.table.SetCell(i+1, 0, tview.NewTableCell(fmt.Sprintf(" %d ", a.ID)).
+			SetTextColor(color).SetAlign(tview.AlignRight))
+		v.table.SetCell(i+1, 1, tview.NewTableCell(" "+humanAttrName(a.Name)+" ").
+			SetTextColor(color).SetExpansion(1))
+		v.table.SetCell(i+1, 2, tview.NewTableCell(" "+kind+" ").SetTextColor(color))
+		// Health uses inline colour tags, so leave the cell's own colour default.
+		v.table.SetCell(i+1, 3, tview.NewTableCell(" "+healthCell(a)+" "))
+		v.table.SetCell(i+1, 4, tview.NewTableCell(" "+decodeReading(a)+" ").
+			SetTextColor(color).SetAlign(tview.AlignRight))
+		v.table.SetCell(i+1, 5, tview.NewTableCell(" "+when+" ").SetTextColor(color))
 	}
-	t.SetSelectable(true, false)
-	t.Select(1, 0)
-	return t
+	v.table.Select(1, 0)
+	v.updateFooter(1)
 }
 
-// buildNVMeHealthTable renders the NVMe SMART/health log as a key/value table.
-func buildNVMeHealthTable(h *smart.NVMeHealth) tview.Primitive {
-	t := tview.NewTable().SetBorders(false).SetFixed(1, 0)
-	t.SetBorder(true).SetTitle(" NVMe health log ")
-	t.SetCell(0, 0, headerCell("Field"))
-	t.SetCell(0, 1, headerCell("Value"))
-
-	type kv struct {
-		k   string
-		v   string
-		sev smart.Severity
+// visibleRows applies the current filter then sort.
+func (v *attributesView) visibleRows() []smart.ATAAttribute {
+	out := make([]smart.ATAAttribute, 0, len(v.attrs))
+	for _, a := range v.attrs {
+		switch v.filter {
+		case filterPrefail:
+			if !a.Flags.Prefailure {
+				continue
+			}
+		case filterConcerning:
+			if a.Severity() == smart.SeverityOK {
+				continue
+			}
+		}
+		out = append(out, a)
 	}
-	var rows []kv
-	add := func(k, v string, sev smart.Severity) { rows = append(rows, kv{k, v, sev}) }
+	sort.SliceStable(out, func(i, j int) bool {
+		switch v.sortBy {
+		case sortID:
+			return out[i].ID < out[j].ID
+		case sortMargin:
+			return attrMargin(out[i]) < attrMargin(out[j])
+		default: // severity: worst first, then by ID
+			if si, sj := out[i].Severity(), out[j].Severity(); si != sj {
+				return si > sj
+			}
+			return out[i].ID < out[j].ID
+		}
+	})
+	return out
+}
+
+// updateFooter writes the description and precise numbers for the selected row.
+func (v *attributesView) updateFooter(row int) {
+	i := row - 1
+	if i < 0 || i >= len(v.shown) {
+		v.footer.SetText("")
+		return
+	}
+	a := v.shown[i]
+	kind := "old-age"
+	if a.Flags.Prefailure {
+		kind = "pre-fail"
+	}
+	desc := ataDesc[a.ID]
+	if desc == "" {
+		desc = humanAttrName(a.Name)
+	}
+	v.footer.SetText(fmt.Sprintf("  %s\n  [gray](id %d, %s)  norm %d/%d · thresh %d · raw %s[-]",
+		desc, a.ID, kind, a.Value, a.Worst, a.Thresh, a.Raw.String))
+}
+
+// attrMargin is the threshold headroom; attributes without a threshold sort last.
+func attrMargin(a smart.ATAAttribute) int {
+	if a.Thresh <= 0 {
+		return 1 << 30
+	}
+	return a.Value - a.Thresh
+}
+
+// healthCell renders the per-attribute health indicator: a headroom bar for
+// attributes with a real threshold, or a status dot for those without one.
+func healthCell(a smart.ATAAttribute) string {
+	sev := a.Severity()
+	if a.Thresh > 0 {
+		return marginBar(a.Value, a.Worst, a.Thresh, sev)
+	}
+	return fmt.Sprintf("[%s]●[-]", severityTag(sev))
+}
+
+// humanAttrName turns smartctl's snake_case attribute name into spaced words.
+func humanAttrName(s string) string {
+	return strings.ReplaceAll(s, "_", " ")
+}
+
+// decodeReading converts the vendor raw value of well-known attributes into a
+// human-readable real-world figure, falling back to the raw string otherwise.
+func decodeReading(a smart.ATAAttribute) string {
+	switch a.ID {
+	case 9, 240: // power-on hours, head flying hours
+		if n, ok := leadingInt(a.Raw.String); ok {
+			return humanDuration(int(n))
+		}
+	case 241, 242: // total LBAs written / read (512-byte LBAs)
+		if n, ok := leadingInt(a.Raw.String); ok {
+			return humanBytes(n * 512)
+		}
+	case 190, 194: // airflow / drive temperature
+		if n, ok := leadingInt(a.Raw.String); ok {
+			return fmt.Sprintf("%d°C", n)
+		}
+	}
+	if a.Raw.String == "" {
+		return "—"
+	}
+	return a.Raw.String
+}
+
+// attrKV is one row of the NVMe health table.
+type attrKV struct {
+	k   string
+	v   string
+	sev smart.Severity
+}
+
+// buildNVMeAttributes renders the NVMe SMART/health log as a key/value table
+// with a description footer for the selected field.
+func buildNVMeAttributes(h *smart.NVMeHealth) tview.Primitive {
+	rows := nvmeRows(h)
+
+	table := tview.NewTable().SetBorders(false).SetFixed(1, 0)
+	table.SetBorder(true).SetTitle(" NVMe health log ")
+	table.SetCell(0, 0, headerCell("Field"))
+	table.SetCell(0, 1, headerCell("Value"))
+	for i, r := range rows {
+		table.SetCell(i+1, 0, tview.NewTableCell(" "+r.k+" ").SetTextColor(tcell.ColorWhite))
+		table.SetCell(i+1, 1, tview.NewTableCell(" "+r.v+" ").SetTextColor(severityColor(r.sev)))
+	}
+	table.SetSelectable(true, false)
+
+	footer := tview.NewTextView().SetDynamicColors(true).SetWrap(true)
+	footer.SetBorder(true)
+	setFooter := func(row int) {
+		i := row - 1
+		if i < 0 || i >= len(rows) {
+			footer.SetText("")
+			return
+		}
+		desc := nvmeDesc[rows[i].k]
+		if desc == "" {
+			desc = rows[i].k
+		}
+		footer.SetText(fmt.Sprintf("  %s\n  [gray]%s: %s[-]", desc, rows[i].k, rows[i].v))
+	}
+	table.SetSelectionChangedFunc(func(row, _ int) { setFooter(row) })
+	table.Select(1, 0)
+	setFooter(1)
+
+	flex := tview.NewFlex().SetDirection(tview.FlexRow)
+	flex.AddItem(table, 0, 1, true)
+	flex.AddItem(footer, 4, 0, false)
+	return flex
+}
+
+// nvmeRows builds the NVMe health key/value rows with per-row severity.
+func nvmeRows(h *smart.NVMeHealth) []attrKV {
+	var rows []attrKV
+	add := func(k, v string, sev smart.Severity) { rows = append(rows, attrKV{k, v, sev}) }
 
 	warnSev := smart.SeverityOK
 	if h.CriticalWarning != 0 {
@@ -115,23 +334,13 @@ func buildNVMeHealthTable(h *smart.NVMeHealth) tview.Primitive {
 	add("Data read", humanBytes(h.DataUnitsRead*512*1000), smart.SeverityOK)
 	add("Data written", humanBytes(h.DataUnitsWritten*512*1000), smart.SeverityOK)
 	if len(h.TemperatureSensors) > 0 {
-		s := ""
+		parts := make([]string, len(h.TemperatureSensors))
 		for i, t := range h.TemperatureSensors {
-			if i > 0 {
-				s += ", "
-			}
-			s += fmt.Sprintf("%d°C", t)
+			parts[i] = fmt.Sprintf("%d°C", t)
 		}
-		add("Sensors", s, smart.SeverityOK)
+		add("Sensors", strings.Join(parts, ", "), smart.SeverityOK)
 	}
-
-	for i, r := range rows {
-		t.SetCell(i+1, 0, tview.NewTableCell(" "+r.k+" ").SetTextColor(tcell.ColorWhite))
-		t.SetCell(i+1, 1, tview.NewTableCell(" "+r.v+" ").SetTextColor(severityColor(r.sev)))
-	}
-	t.SetSelectable(true, false)
-	t.Select(1, 0)
-	return t
+	return rows
 }
 
 // headerCell builds a non-selectable bold header cell.

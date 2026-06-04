@@ -4,6 +4,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gdamore/tcell/v2"
 
@@ -12,6 +13,52 @@ import (
 
 // dash is rendered wherever a drive does not report a value.
 const dash = "[gray]—[-]"
+
+// leadingInt parses the leading integer of s (smartctl raw strings often read
+// like "9201 (189 58 0)" or "37 (0 21 0 0 0)"), ignoring any trailing detail.
+func leadingInt(s string) (int64, bool) {
+	s = strings.TrimSpace(s)
+	end := 0
+	for end < len(s) && s[end] >= '0' && s[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0, false
+	}
+	var n int64
+	for _, c := range s[:end] {
+		n = n*10 + int64(c-'0')
+	}
+	return n, true
+}
+
+// marginBar renders a severity-coloured headroom bar for a normalized SMART
+// value above its threshold: a fuller bar means more margin before the
+// attribute is considered failing. base is the smallest standard top value
+// (100/200/253) at least as large as the observed value/worst.
+func marginBar(value, worst, thresh int, sev smart.Severity) string {
+	const width = 10
+	base := 100
+	for _, b := range []int{200, 253} {
+		if max(value, worst) > base {
+			base = b
+		}
+	}
+	span := base - thresh
+	frac := 0.0
+	if span > 0 {
+		frac = float64(value-thresh) / float64(span)
+	}
+	if frac < 0 {
+		frac = 0
+	}
+	if frac > 1 {
+		frac = 1
+	}
+	filled := int(frac*float64(width) + 0.5)
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
+	return fmt.Sprintf("[%s]%s[-] %d", severityTag(sev), bar, value-thresh)
+}
 
 // severityColor maps a health severity to its display colour.
 func severityColor(s smart.Severity) tcell.Color {
