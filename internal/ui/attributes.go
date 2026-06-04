@@ -109,7 +109,7 @@ func buildNVMeHealthTable(h *smart.NVMeHealth) tview.Primitive {
 	}
 	add("Media errors", fmt.Sprintf("%d", h.MediaErrors), mediaSev)
 	add("Error log entries", fmt.Sprintf("%d", h.NumErrLogEntries), smart.SeverityOK)
-	add("Power-on hours", fmt.Sprintf("%d", h.PowerOnHours), smart.SeverityOK)
+	add("Power-on", humanDuration(h.PowerOnHours), smart.SeverityOK)
 	add("Power cycles", fmt.Sprintf("%d", h.PowerCycles), smart.SeverityOK)
 	add("Unsafe shutdowns", fmt.Sprintf("%d", h.UnsafeShutdowns), smart.SeverityOK)
 	add("Data read", humanBytes(h.DataUnitsRead*512*1000), smart.SeverityOK)
