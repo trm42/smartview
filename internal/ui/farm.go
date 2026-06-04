@@ -13,19 +13,51 @@ import (
 	"smartview/internal/smart"
 )
 
-// buildFarm renders the FARM tab: a scrollable panel of Seagate Field Accessible
+// farmView renders the FARM tab: a scrollable panel of Seagate Field Accessible
 // Reliability Metrics (drive/wear summary, health-graded error counters,
-// environment and workload totals) above per-head bar charts.
-func buildFarm(r *smart.Report) tview.Primitive {
+// environment and workload totals) above per-head bar charts. It refreshes in
+// place, keeping the stats widget (and its scroll offset) stable across polls.
+type farmView struct {
+	*tview.Flex
+	stats *tview.TextView
+}
+
+func newFarmView(r *smart.Report) *farmView {
+	v := &farmView{
+		Flex:  tview.NewFlex().SetDirection(tview.FlexRow),
+		stats: tview.NewTextView().SetDynamicColors(true).SetScrollable(true),
+	}
+	v.stats.SetBorder(true).SetTitle(" Seagate FARM ")
+	v.refresh(r, nil)
+	return v
+}
+
+// refresh updates the stats text (preserving scroll) and rebuilds the per-head
+// charts. The stats widget instance is reused so focus/scroll are preserved.
+func (v *farmView) refresh(r *smart.Report, _ []float64) {
 	f := r.FARM
 	if f == nil {
-		return centeredNote("No FARM log available.")
+		return
 	}
+	row, col := v.stats.GetScrollOffset()
+	v.stats.SetText(farmStatsText(f))
+	v.stats.ScrollTo(row, col)
 
-	root := tview.NewFlex().SetDirection(tview.FlexRow)
+	v.Clear()
+	v.AddItem(v.stats, 0, 1, true)
+	// Per-head visualizations. Reallocated sectors per head is the health
+	// red-flag (flat zero on a healthy drive); MR head resistance always varies
+	// and surfaces an outlier head.
+	if c := farmHeadChart(" Reallocated sectors / head ", f.Reliability.ReallocatedByHead, true); c != nil {
+		v.AddItem(c, 9, 0, false)
+	}
+	if c := farmHeadChart(" MR head resistance / head ", f.Reliability.MRHeadResistance, false); c != nil {
+		v.AddItem(c, 9, 0, false)
+	}
+}
 
-	stats := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
-	stats.SetBorder(true).SetTitle(" Seagate FARM ")
+// farmStatsText assembles the scrollable FARM statistics panel.
+func farmStatsText(f *smart.FARM) string {
 	var b strings.Builder
 	writeFarmDriveInfo(&b, f)
 	b.WriteString("\n")
@@ -34,19 +66,7 @@ func buildFarm(r *smart.Report) tview.Primitive {
 	writeFarmEnvironment(&b, f)
 	b.WriteString("\n")
 	writeFarmWorkload(&b, f)
-	stats.SetText(b.String())
-	root.AddItem(stats, 0, 1, true)
-
-	// Per-head visualizations. Reallocated sectors per head is the health
-	// red-flag (flat zero on a healthy drive); MR head resistance always varies
-	// and surfaces an outlier head.
-	if c := farmHeadChart(" Reallocated sectors / head ", f.Reliability.ReallocatedByHead, true); c != nil {
-		root.AddItem(c, 9, 0, false)
-	}
-	if c := farmHeadChart(" MR head resistance / head ", f.Reliability.MRHeadResistance, false); c != nil {
-		root.AddItem(c, 9, 0, false)
-	}
-	return root
+	return b.String()
 }
 
 // writeFarmDriveInfo renders the drive/wear summary block.

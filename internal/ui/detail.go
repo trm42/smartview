@@ -16,6 +16,18 @@ type tab struct {
 	title string
 }
 
+// tabView is a detail sub-view that can refresh its data in place, preserving
+// interaction state (table selection, scroll offset, sort/filter) across polls.
+type tabView interface {
+	tview.Primitive
+	refresh(r *smart.Report, tempHistory []float64)
+}
+
+// staticView adapts a plain primitive to tabView with a no-op refresh.
+type staticView struct{ tview.Primitive }
+
+func (staticView) refresh(*smart.Report, []float64) {}
+
 // detail is the right-hand pane: a tab bar above a Pages content area. Which
 // tabs exist is recomputed from each report, so drives that omit a section
 // (e.g. the Apple NVMe with no logs) simply don't show that tab.
@@ -25,6 +37,9 @@ type detail struct {
 	pages  *tview.Pages
 	tabs   []tab
 	active int
+
+	device string             // current drive name, to detect device switches
+	views  map[string]tabView // live view per visible tab id
 }
 
 func newDetail() *detail {
@@ -42,24 +57,42 @@ func newDetail() *detail {
 // showPlaceholder displays a message when no drive is selected yet.
 func (d *detail) showPlaceholder(msg string) {
 	d.tabs = nil
+	d.device = ""
+	d.views = nil
 	d.bar.SetText("")
 	d.pages.RemovePage("placeholder")
 	d.pages.AddPage("placeholder", centeredNote(msg), true, true)
 }
 
-// update rebuilds the tabs and their content for the given report.
+// update applies a fresh report. For the same drive with the same set of tabs it
+// refreshes each view's data in place — the table/scroll widgets are not
+// recreated, so the selected row, scroll position and sort/filter survive the
+// poll. A device switch or a change in which tabs are available triggers a full
+// rebuild (which legitimately resets selection: it is a different drive).
 func (d *detail) update(r *smart.Report, tempHistory []float64) {
-	prev := d.activeID()
+	newTabs := visibleTabs(r)
+	if d.device == r.Device.Name && d.device != "" && sameTabIDs(newTabs, d.tabs) {
+		for _, t := range newTabs {
+			if v := d.views[t.id]; v != nil {
+				v.refresh(r, tempHistory)
+			}
+		}
+		return
+	}
 
-	// Tear down previous pages.
+	prev := d.activeID()
 	for _, t := range d.tabs {
 		d.pages.RemovePage(t.id)
 	}
 	d.pages.RemovePage("placeholder")
 
-	d.tabs = visibleTabs(r)
+	d.device = r.Device.Name
+	d.tabs = newTabs
+	d.views = make(map[string]tabView, len(newTabs))
 	for _, t := range d.tabs {
-		d.pages.AddPage(t.id, buildTabContent(t.id, r, tempHistory), true, false)
+		v := buildTabView(t.id, r, tempHistory)
+		d.views[t.id] = v
+		d.pages.AddPage(t.id, v, true, false)
 	}
 
 	// Preserve the previously focused tab when still available.
@@ -71,6 +104,19 @@ func (d *detail) update(r *smart.Report, tempHistory []float64) {
 		}
 	}
 	d.selectActive()
+}
+
+// sameTabIDs reports whether two tab slices have identical ids in the same order.
+func sameTabIDs(a, b []tab) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].id != b[i].id {
+			return false
+		}
+	}
+	return true
 }
 
 // visibleTabs returns the tabs applicable to the report, in display order.
@@ -88,19 +134,23 @@ func visibleTabs(r *smart.Report) []tab {
 	return tabs
 }
 
-// buildTabContent constructs the primitive for a tab id.
-func buildTabContent(id string, r *smart.Report, tempHistory []float64) tview.Primitive {
+// buildTabView constructs the refreshable view for a tab id. The tab set is
+// derived from visibleTabs, so the data each view needs is guaranteed present.
+func buildTabView(id string, r *smart.Report, tempHistory []float64) tabView {
 	switch id {
 	case "overview":
-		return buildOverview(r, tempHistory)
+		return newOverviewView(r, tempHistory)
 	case "attributes":
-		return buildAttributes(r)
+		if r.IsNVMe() && r.NVMeHealth != nil {
+			return newNVMeAttributesView(r.NVMeHealth)
+		}
+		return newAttributesView(r.ATAAttributes.Table)
 	case "farm":
-		return buildFarm(r)
+		return newFarmView(r)
 	case "logs":
-		return buildLogs(r)
+		return newLogsView(r)
 	default:
-		return centeredNote("unknown tab")
+		return staticView{centeredNote("unknown tab")}
 	}
 }
 

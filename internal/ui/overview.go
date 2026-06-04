@@ -12,18 +12,34 @@ import (
 	"smartview/internal/smart"
 )
 
-// buildOverview renders the Overview tab: a health banner, an identity panel
-// beside protocol-specific gauges, and a temperature sparkline. tempHistory is
-// the runtime-accumulated series used for NVMe drives, which lack an on-device
-// temperature log.
-func buildOverview(r *smart.Report, tempHistory []float64) tview.Primitive {
-	root := tview.NewFlex().SetDirection(tview.FlexRow)
+// overviewView renders the Overview tab: a health banner, an identity panel
+// beside protocol-specific gauges, and a temperature sparkline. It refreshes in
+// place, keeping the banner widget stable so a focused Overview is not disturbed.
+type overviewView struct {
+	*tview.Flex
+	banner *tview.TextView
+}
 
-	banner := tview.NewTextView().SetDynamicColors(true)
+// newOverviewView builds the Overview tab. tempHistory is the runtime-accumulated
+// series used for NVMe drives, which lack an on-device temperature log.
+func newOverviewView(r *smart.Report, tempHistory []float64) *overviewView {
+	v := &overviewView{
+		Flex:   tview.NewFlex().SetDirection(tview.FlexRow),
+		banner: tview.NewTextView().SetDynamicColors(true),
+	}
+	v.refresh(r, tempHistory)
+	return v
+}
+
+// refresh rebuilds the panel contents for a new report. The held banner widget
+// is reused (stays first), so focus on the Overview tab is preserved.
+func (v *overviewView) refresh(r *smart.Report, tempHistory []float64) {
 	sev := r.Overall()
-	banner.SetText(fmt.Sprintf("  [%s::b]%s[-:-:-]   SMART self-assessment: %s",
+	v.banner.SetText(fmt.Sprintf("  [%s::b]%s[-:-:-]   SMART self-assessment: %s",
 		severityTag(sev), sev.String(), passFailText(r)))
-	root.AddItem(banner, 1, 0, false)
+
+	v.Clear()
+	v.AddItem(v.banner, 1, 0, false)
 
 	// Surface a per-drive smartctl error message (a permission/open failure, or a
 	// log-read limitation common on Apple internal SSDs). It is a data-availability
@@ -32,7 +48,7 @@ func buildOverview(r *smart.Report, tempHistory []float64) tview.Primitive {
 	if msg, ok := r.FatalMessage(); ok {
 		errLine := tview.NewTextView().SetDynamicColors(true)
 		errLine.SetText(fmt.Sprintf("  [yellow]⚠ %s[-]", msg))
-		root.AddItem(errLine, 1, 0, false)
+		v.AddItem(errLine, 1, 0, false)
 	}
 
 	mid := tview.NewFlex() // horizontal: identity | gauges
@@ -40,12 +56,11 @@ func buildOverview(r *smart.Report, tempHistory []float64) tview.Primitive {
 	if g := buildGauges(r); g != nil {
 		mid.AddItem(g, 26, 0, false)
 	}
-	root.AddItem(mid, 0, 1, false)
+	v.AddItem(mid, 0, 1, false)
 
 	if sl := buildTempSparkline(r, tempHistory); sl != nil {
-		root.AddItem(sl, 8, 0, false)
+		v.AddItem(sl, 8, 0, false)
 	}
-	return root
 }
 
 // passFailText renders the headline SMART verdict.

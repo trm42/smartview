@@ -80,6 +80,60 @@ func TestVisibleRowsSortFilter(t *testing.T) {
 	}
 }
 
+func ataReport(attrs []smart.ATAAttribute) *smart.Report {
+	return &smart.Report{
+		Device:        smart.Device{Protocol: "ATA"},
+		ATAAttributes: &smart.ATAAttributes{Table: attrs},
+	}
+}
+
+func TestAttributesRefreshKeepsSelection(t *testing.T) {
+	attrs := []smart.ATAAttribute{
+		{ID: 1, Value: 83, Worst: 64, Thresh: 44, Flags: smart.ATAFlags{Prefailure: true}},
+		{ID: 5, Value: 100, Worst: 100, Thresh: 10, Flags: smart.ATAFlags{Prefailure: true}},
+		{ID: 9, Value: 90, Worst: 90, Thresh: 0, Raw: smart.ATARaw{String: "100"}},
+		{ID: 197, Value: 100, Worst: 100, Thresh: 0},
+	}
+	v := newAttributesView(attrs)
+	v.selectByID(9)
+	if got := v.selectedID(); got != 9 {
+		t.Fatalf("setup: selectedID = %d, want 9", got)
+	}
+
+	// A poll with the same IDs but a changed raw value must keep ID 9 selected.
+	next := append([]smart.ATAAttribute(nil), attrs...)
+	next[2].Raw = smart.ATARaw{String: "200"}
+	v.refresh(ataReport(next), nil)
+	if got := v.selectedID(); got != 9 {
+		t.Errorf("after value refresh, selectedID = %d, want 9", got)
+	}
+
+	// A severity flip that reorders the list under sortSeverity must still keep
+	// the selected attribute (ID 9), not the row index.
+	reordered := append([]smart.ATAAttribute(nil), next...)
+	reordered[0].WhenFailed = "FAILING_NOW" // ID 1 jumps to the top
+	v.refresh(ataReport(reordered), nil)
+	if got := v.selectedID(); got != 9 {
+		t.Errorf("after reorder, selectedID = %d, want 9", got)
+	}
+}
+
+func TestNVMeRefreshKeepsSelection(t *testing.T) {
+	used := 5
+	h := &smart.NVMeHealth{PercentageUsed: &used, MediaErrors: 0, PowerOnHours: 100}
+	v := newNVMeAttributesView(h)
+	v.table.Select(3, 0)
+	row, _ := v.table.GetSelection()
+	if row != 3 {
+		t.Fatalf("setup: row = %d, want 3", row)
+	}
+	h2 := &smart.NVMeHealth{PercentageUsed: &used, MediaErrors: 1, PowerOnHours: 101}
+	v.refresh(&smart.Report{Device: smart.Device{Protocol: "NVMe"}, NVMeHealth: h2}, nil)
+	if row, _ := v.table.GetSelection(); row != 3 {
+		t.Errorf("after refresh, row = %d, want 3", row)
+	}
+}
+
 func rowIDs(attrs []smart.ATAAttribute) []int {
 	ids := make([]int, len(attrs))
 	for i, a := range attrs {

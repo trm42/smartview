@@ -13,18 +13,11 @@ import (
 	"smartview/internal/smart"
 )
 
-// buildAttributes renders the Attributes tab: a rich, decoded ATA attribute
-// table for ATA drives, or the NVMe health-log table for NVMe drives. Both pair
-// a selectable table with a description footer for the highlighted row.
-func buildAttributes(r *smart.Report) tview.Primitive {
-	if r.IsNVMe() && r.NVMeHealth != nil {
-		return buildNVMeAttributes(r.NVMeHealth)
-	}
-	if r.ATAAttributes != nil {
-		return newAttributesView(r.ATAAttributes.Table)
-	}
-	return centeredNote("No SMART attributes reported by this drive.")
-}
+// The Attributes tab pairs a selectable table with a description footer for the
+// highlighted row: a rich, decoded ATA attribute table for ATA drives
+// (attributesView), or the NVMe health-log table for NVMe drives
+// (nvmeAttributesView). Both refresh their data in place so the selected row
+// survives polls. The views are constructed from detail.buildTabView.
 
 // sortMode orders the ATA attribute rows.
 type sortMode int
@@ -93,12 +86,16 @@ func newAttributesView(attrs []smart.ATAAttribute) *attributesView {
 	v.table.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch ev.Rune() {
 		case 's':
+			sel := v.selectedID()
 			v.sortBy = (v.sortBy + 1) % 3
-			v.render()
+			v.renderRows()
+			v.selectByID(sel)
 			return nil
 		case 'f':
+			sel := v.selectedID()
 			v.filter = (v.filter + 1) % 3
-			v.render()
+			v.renderRows()
+			v.selectByID(sel)
 			return nil
 		}
 		return ev
@@ -106,13 +103,55 @@ func newAttributesView(attrs []smart.ATAAttribute) *attributesView {
 
 	v.AddItem(v.table, 0, 1, true)
 	v.AddItem(v.footer, 4, 0, false)
-	v.render()
+	v.renderRows()
+	v.selectByID(-1)
 	return v
 }
 
-// render rebuilds the table for the current sort/filter, preserving the table
-// primitive so focus is not lost.
-func (v *attributesView) render() {
+// refresh re-applies the latest attribute data, keeping the selected attribute
+// (by ID) and the current sort/filter so a poll never disturbs the user.
+func (v *attributesView) refresh(r *smart.Report, _ []float64) {
+	if r.ATAAttributes == nil {
+		return
+	}
+	sel := v.selectedID()
+	v.attrs = r.ATAAttributes.Table
+	v.renderRows()
+	v.selectByID(sel)
+}
+
+// selectedID is the ID of the currently selected attribute, or -1 if none.
+func (v *attributesView) selectedID() int {
+	if row, _ := v.table.GetSelection(); row-1 >= 0 && row-1 < len(v.shown) {
+		return v.shown[row-1].ID
+	}
+	return -1
+}
+
+// selectByID selects the row showing attribute id (or the first row when id is
+// not present / -1), and refreshes the footer.
+func (v *attributesView) selectByID(id int) {
+	if len(v.shown) == 0 {
+		v.footer.SetText("")
+		return
+	}
+	target := 1
+	if id >= 0 {
+		for i, a := range v.shown {
+			if a.ID == id {
+				target = i + 1
+				break
+			}
+		}
+	}
+	v.table.Select(target, 0)
+	v.updateFooter(target)
+}
+
+// renderRows rebuilds the table body for the current sort/filter, preserving the
+// table primitive so focus is not lost. Selection is applied separately by the
+// caller (selectByID) so it can be retained across re-renders.
+func (v *attributesView) renderRows() {
 	v.table.Clear()
 	v.table.SetBorder(true).SetTitle(fmt.Sprintf(
 		" SMART attributes — sort: %s · filter: %s  [aqua][s/f][-] ", v.sortBy, v.filter))
@@ -151,8 +190,6 @@ func (v *attributesView) render() {
 			SetTextColor(color).SetAlign(tview.AlignRight))
 		v.table.SetCell(i+1, 5, tview.NewTableCell(" "+when+" ").SetTextColor(color))
 	}
-	v.table.Select(1, 0)
-	v.updateFooter(1)
 }
 
 // visibleRows applies the current filter then sort.
@@ -260,43 +297,79 @@ type attrKV struct {
 	sev smart.Severity
 }
 
-// buildNVMeAttributes renders the NVMe SMART/health log as a key/value table
-// with a description footer for the selected field.
-func buildNVMeAttributes(h *smart.NVMeHealth) tview.Primitive {
-	rows := nvmeRows(h)
+// nvmeAttributesView renders the NVMe SMART/health log as a key/value table with
+// a description footer, refreshing rows in place so the selection is preserved.
+type nvmeAttributesView struct {
+	*tview.Flex
+	table  *tview.Table
+	footer *tview.TextView
+	rows   []attrKV
+}
 
-	table := tview.NewTable().SetBorders(false).SetFixed(1, 0)
-	table.SetBorder(true).SetTitle(" NVMe health log ")
-	table.SetCell(0, 0, headerCell("Field"))
-	table.SetCell(0, 1, headerCell("Value"))
-	for i, r := range rows {
-		table.SetCell(i+1, 0, tview.NewTableCell(" "+r.k+" ").SetTextColor(tcell.ColorWhite))
-		table.SetCell(i+1, 1, tview.NewTableCell(" "+r.v+" ").SetTextColor(severityColor(r.sev)))
+func newNVMeAttributesView(h *smart.NVMeHealth) *nvmeAttributesView {
+	v := &nvmeAttributesView{
+		Flex:   tview.NewFlex().SetDirection(tview.FlexRow),
+		table:  tview.NewTable().SetBorders(false).SetFixed(1, 0),
+		footer: tview.NewTextView().SetDynamicColors(true).SetWrap(true),
 	}
-	table.SetSelectable(true, false)
+	v.table.SetBorder(true).SetTitle(" NVMe health log ")
+	v.table.SetSelectable(true, false)
+	v.footer.SetBorder(true)
+	v.table.SetSelectionChangedFunc(func(row, _ int) { v.setFooter(row) })
 
-	footer := tview.NewTextView().SetDynamicColors(true).SetWrap(true)
-	footer.SetBorder(true)
-	setFooter := func(row int) {
-		i := row - 1
-		if i < 0 || i >= len(rows) {
-			footer.SetText("")
-			return
-		}
-		desc := nvmeDesc[rows[i].k]
-		if desc == "" {
-			desc = rows[i].k
-		}
-		footer.SetText(fmt.Sprintf("  %s\n  [gray]%s: %s[-]", desc, rows[i].k, rows[i].v))
+	v.AddItem(v.table, 0, 1, true)
+	v.AddItem(v.footer, 4, 0, false)
+
+	v.setRows(h)
+	v.table.Select(1, 0)
+	v.setFooter(1)
+	return v
+}
+
+// refresh re-applies the latest health data, keeping the selected row (field
+// order is stable, so the row index maps to the same field).
+func (v *nvmeAttributesView) refresh(r *smart.Report, _ []float64) {
+	if r.NVMeHealth == nil {
+		return
 	}
-	table.SetSelectionChangedFunc(func(row, _ int) { setFooter(row) })
-	table.Select(1, 0)
-	setFooter(1)
+	row, _ := v.table.GetSelection()
+	v.setRows(r.NVMeHealth)
+	if row < 1 {
+		row = 1
+	}
+	if row > len(v.rows) {
+		row = len(v.rows)
+	}
+	if len(v.rows) > 0 {
+		v.table.Select(row, 0)
+	}
+	v.setFooter(row)
+}
 
-	flex := tview.NewFlex().SetDirection(tview.FlexRow)
-	flex.AddItem(table, 0, 1, true)
-	flex.AddItem(footer, 4, 0, false)
-	return flex
+// setRows rebuilds the table body from the health log.
+func (v *nvmeAttributesView) setRows(h *smart.NVMeHealth) {
+	v.rows = nvmeRows(h)
+	v.table.Clear()
+	v.table.SetCell(0, 0, headerCell("Field"))
+	v.table.SetCell(0, 1, headerCell("Value"))
+	for i, r := range v.rows {
+		v.table.SetCell(i+1, 0, tview.NewTableCell(" "+r.k+" ").SetTextColor(tcell.ColorWhite))
+		v.table.SetCell(i+1, 1, tview.NewTableCell(" "+r.v+" ").SetTextColor(severityColor(r.sev)))
+	}
+}
+
+// setFooter writes the description for the selected field.
+func (v *nvmeAttributesView) setFooter(row int) {
+	i := row - 1
+	if i < 0 || i >= len(v.rows) {
+		v.footer.SetText("")
+		return
+	}
+	desc := nvmeDesc[v.rows[i].k]
+	if desc == "" {
+		desc = v.rows[i].k
+	}
+	v.footer.SetText(fmt.Sprintf("  %s\n  [gray]%s: %s[-]", desc, v.rows[i].k, v.rows[i].v))
 }
 
 // nvmeRows builds the NVMe health key/value rows with per-row severity.

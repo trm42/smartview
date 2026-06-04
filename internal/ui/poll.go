@@ -61,14 +61,10 @@ func (a *App) fetchAndApply(ctx context.Context) {
 			a.recordTemp(name, rep)
 		}
 		a.populateList()
-		// Don't rebuild the detail pane out from under the user while they are
-		// interacting with it: a rebuild resets table selection/scroll and
-		// orphans the focused widget. Live updates resume once focus returns to
-		// the drive list (←/Tab). Device switches go through the list's
-		// SetChangedFunc, not this path, so they still refresh immediately.
-		if !a.detail.HasFocus() {
-			a.showSelected()
-		}
+		// detail.update refreshes each tab's data in place (preserving table
+		// selection, scroll and sort/filter), so a live refresh no longer
+		// disturbs the user — no focus guard needed.
+		a.showSelected()
 	})
 }
 
