@@ -1,4 +1,4 @@
 /smartview
 *.out
-
 .context
+.DS_Store
