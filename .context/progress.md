@@ -13,3 +13,12 @@
   - `setup-go@v5` ignores empty inputs, so passing both `go-version-file` and `go-version` from a matrix where each leg sets only one is the clean way to get a single-source-of-truth leg plus a `stable` leg.
   - YAML forbids tabs — verified with `grep -P '\t'`; validated structure with `ruby -ryaml`. `python3` here has no `pyyaml`.
   - All local checks pass clean (gofmt clean, vet ok, build ok, tests ok) so CI should be green.
+
+## US-002: Add golangci-lint workflow
+- Added `.github/workflows/lint.yml`: triggers on `push` and `pull_request`; single `golangci` job on `ubuntu-latest`.
+- Steps in order: `actions/checkout@v4`; `actions/setup-go@v5` with `go-version-file: go.mod`; `golangci/golangci-lint-action@v6` with `version: latest`.
+- No `.golangci.yml` added — relies on golangci-lint's default linter set (gofmt overlap with CI accepted).
+- Files changed: `.github/workflows/lint.yml` (new).
+- **Learnings for future iterations:**
+  - Spaces only; verified no tabs with `grep -P '\t'` and structure with `ruby -ryaml`.
+  - Confirmed absence of `.golangci.yml`/`.golangci.yaml` so defaults are used.
