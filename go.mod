@@ -1,4 +1,4 @@
-module smartview
+module github.com/trm42/smartview
 
 go 1.26.4
 

@@ -10,7 +10,7 @@ import (
 	"github.com/navidys/tvxwidgets"
 	"github.com/rivo/tview"
 
-	"smartview/internal/smart"
+	"github.com/trm42/smartview/internal/smart"
 )
 
 // farmView renders the FARM tab: four separately-bordered panels of Seagate
