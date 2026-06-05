@@ -33,10 +33,11 @@ func (staticView) refresh(*smart.Report, []float64) {}
 // (e.g. the Apple NVMe with no logs) simply don't show that tab.
 type detail struct {
 	*tview.Flex
-	bar    *tview.TextView
-	pages  *tview.Pages
-	tabs   []tab
-	active int
+	bar     *tview.TextView
+	spinner *tview.TextView
+	pages   *tview.Pages
+	tabs    []tab
+	active  int
 
 	device string             // current drive name, to detect device switches
 	views  map[string]tabView // live view per visible tab id
@@ -46,11 +47,18 @@ type detail struct {
 
 func newDetail() *detail {
 	d := &detail{
-		Flex:  tview.NewFlex().SetDirection(tview.FlexRow),
-		bar:   tview.NewTextView().SetDynamicColors(true).SetRegions(true),
-		pages: tview.NewPages(),
+		Flex:    tview.NewFlex().SetDirection(tview.FlexRow),
+		bar:     tview.NewTextView().SetDynamicColors(true).SetRegions(true),
+		spinner: tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight),
+		pages:   tview.NewPages(),
 	}
-	d.AddItem(d.bar, 1, 0, false)
+	// The tab strip and the refresh spinner share a single full-width row; the
+	// spinner occupies a fixed 2-col cell flush to the right (the top-right
+	// corner of the content area).
+	barRow := tview.NewFlex().
+		AddItem(d.bar, 0, 1, false).
+		AddItem(d.spinner, 2, 0, false)
+	d.AddItem(barRow, 1, 0, false)
 	d.AddItem(d.pages, 0, 1, true)
 	d.showPlaceholder("Scanning for drives…")
 	return d
