@@ -89,6 +89,19 @@ func healthGlyph(s smart.Severity) string {
 	return fmt.Sprintf("[%s]●[-]", severityTag(s))
 }
 
+// attrTextColor colours attribute row text: neutral for healthy rows so the
+// table is easy to scan, reserving yellow/red for rows that need attention.
+func attrTextColor(s smart.Severity) tcell.Color {
+	switch s {
+	case smart.SeverityFailing:
+		return tcell.ColorRed
+	case smart.SeverityCaution:
+		return tcell.ColorYellow
+	default:
+		return tcell.ColorDefault
+	}
+}
+
 // humanBytes renders a byte count as a human-readable capacity.
 func humanBytes(b int64) string {
 	const unit = 1000
