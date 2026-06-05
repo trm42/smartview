@@ -10,7 +10,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
-	"smartview/internal/smart"
+	"github.com/trm42/smartview/internal/smart"
 )
 
 // The Attributes tab pairs a selectable table with a description footer for the
