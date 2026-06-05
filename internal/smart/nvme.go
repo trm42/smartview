@@ -30,10 +30,19 @@ type NVMeErrorLog struct {
 	Read int `json:"read"`
 }
 
-// NVMeSelfTestLog holds NVMe device self-test history.
+// NVMeSelfTestLog holds NVMe device self-test history. While a test runs,
+// CurrentSelfTestOperation.Value is non-zero and CurrentCompletionPercent
+// tracks progress.
 type NVMeSelfTestLog struct {
 	CurrentSelfTestOperation *StringValue        `json:"current_self_test_operation"`
+	CurrentCompletionPercent *int                `json:"current_self_test_completion_percent"`
 	Table                    []NVMeSelfTestEntry `json:"table"`
+}
+
+// NVMeOptAdmin mirrors nvme_optional_admin_commands; its SelfTest bit reports
+// whether the controller implements the Device Self-test admin command.
+type NVMeOptAdmin struct {
+	SelfTest bool `json:"self_test"`
 }
 
 // NVMeSelfTestEntry is one NVMe self-test run.
