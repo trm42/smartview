@@ -79,6 +79,10 @@ There are no UI tests; verify the UI by running it.
 
 ## Roadmap
 
-See TODO.md. Notably unimplemented: SCSI/SAS support, self-tests (`smartctl -t`),
-and a sudo/permission banner. The ATA path is only fixture-tested — it needs
+See TODO.md. Notably unimplemented: self-tests (`smartctl -t`) and a
+sudo/permission banner. The ATA path is only fixture-tested — it needs
 validation on real Linux SATA hardware.
+
+**SCSI/SAS is intentionally out of scope.** We have no SCSI/SAS gear to develop
+or test against, so smartview deliberately targets only SATA/ATA and NVMe. Don't
+add SCSI/SAS support speculatively — it can't be verified here.

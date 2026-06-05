@@ -26,8 +26,6 @@ for drive health via smartmontools.
 - [ ] **Validate the Seagate FARM path on real hardware** (Seagate SATA drive, Linux,
       `sudo`). The renderer and parser are fixture-only so far; confirm the live
       `-l farm -j` fetch, the Seagate-ATA gate, and the per-head charts on actual data.
-- [ ] **SCSI/SAS support.** Currently only ATA and NVMe are modelled; add `scsi_*`
-      fields and a detail view for SCSI drives. (SAS also exposes a FARM log.)
 - [ ] **Capacity fallback.** Apple omits all capacity fields; for other NVMe drives
       that report `nvme_total_capacity`, fall back to it when `user_capacity` is absent.
 
@@ -39,6 +37,11 @@ for drive health via smartmontools.
       into Caution/Failing; persist temperature history to disk for longer trends.
 - [ ] **Config file** for refresh interval, default device, and colour theme.
 - [ ] **Packaging.** Homebrew formula (macOS) and a release binary / distro package (Linux).
+
+## Out of scope
+
+- **SCSI/SAS support.** We have no SCSI/SAS hardware to develop or test against,
+  so smartview deliberately targets only SATA/ATA and NVMe. Not planned.
 
 ## Nice to have
 

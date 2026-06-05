@@ -95,7 +95,11 @@ fixture that guards the graceful-degradation behaviour.
 ## Roadmap
 
 See [TODO.md](TODO.md). Highlights: validation on Linux SATA hardware, a
-permission/sudo banner, SCSI/SAS support, and self-test triggering (`smartctl -t`).
+permission/sudo banner, and self-test triggering (`smartctl -t`).
+
+**SCSI/SAS drives are not supported, on purpose.** smartview targets SATA/ATA and
+NVMe only — we don't have SCSI/SAS hardware to develop or test against, so that
+support is deliberately out of scope rather than merely pending.
 
 ## Built with
 
