@@ -8,7 +8,7 @@ import (
 
 	"github.com/rivo/tview"
 
-	"smartview/internal/smart"
+	"github.com/trm42/smartview/internal/smart"
 )
 
 // hasLogs reports whether the drive exposes any error/self-test log, self-test

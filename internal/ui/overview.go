@@ -9,7 +9,7 @@ import (
 	"github.com/navidys/tvxwidgets"
 	"github.com/rivo/tview"
 
-	"smartview/internal/smart"
+	"github.com/trm42/smartview/internal/smart"
 )
 
 // overviewView renders the Overview tab: a health banner, an identity panel
