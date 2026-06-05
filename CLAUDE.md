@@ -78,7 +78,14 @@ need no mutex.
 
 - **Capability-driven tabs** (detail.go `visibleTabs`): a tab only appears when
   its source data exists (the Logs tab hides for drives with no error/self-test
-  log). When adding a view, gate it on data presence rather than always showing it.
+  log; the Tests tab hides unless `Report.SupportsSelfTest()`). When adding a
+  view, gate it on data presence rather than always showing it.
+- **The Tests tab is the only *interactive* view.** All other tabs are pure
+  renderers (`tabView.refresh`); the Tests tab additionally fires self-test
+  start/cancel through `selfTestActions` callbacks the App wires in `build()`.
+  The App owns the smartctl calls, the confirm/error modals (`pushModal`/
+  `popModal`, guarded by `inModal` in `onKey`), and the post-action refresh.
+  Self-tests are short/long only — `smart.RunSelfTest` rejects other types.
 - **Health/severity** lives in `smart/health.go`. ATA pre-fail vs old-age comes
   from the authoritative `flags.prefailure` bit, not attribute-name heuristics.
 - Protocol branching is via `Report.IsNVMe()` / `IsATA()`; NVMe and ATA render

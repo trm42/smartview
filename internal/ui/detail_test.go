@@ -49,6 +49,14 @@ func TestVisibleTabs(t *testing.T) {
 			ATAAttributes: &smart.ATAAttributes{Table: []smart.ATAAttribute{{ID: 5}}},
 			FARM:          &smart.FARM{Supported: true},
 		}, []string{"overview", "attributes", "farm"}},
+		{"with tests (ata capability)", smart.Report{
+			Device: smart.Device{Protocol: "ATA"},
+			ATASmartData: &smart.ATASmartData{
+				Capabilities: &struct {
+					SelfTestsSupported bool `json:"self_tests_supported"`
+				}{SelfTestsSupported: true},
+			},
+		}, []string{"overview", "tests", "logs"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

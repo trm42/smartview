@@ -40,6 +40,8 @@ type detail struct {
 
 	device string             // current drive name, to detect device switches
 	views  map[string]tabView // live view per visible tab id
+
+	selfTest selfTestActions // callbacks for the interactive Tests tab
 }
 
 func newDetail() *detail {
@@ -90,7 +92,7 @@ func (d *detail) update(r *smart.Report, tempHistory []float64) {
 	d.tabs = newTabs
 	d.views = make(map[string]tabView, len(newTabs))
 	for _, t := range d.tabs {
-		v := buildTabView(t.id, r, tempHistory)
+		v := d.buildTabView(t.id, r, tempHistory)
 		d.views[t.id] = v
 		d.pages.AddPage(t.id, v, true, false)
 	}
@@ -128,6 +130,9 @@ func visibleTabs(r *smart.Report) []tab {
 	if r.HasFARM() {
 		tabs = append(tabs, tab{"farm", "FARM"})
 	}
+	if r.SupportsSelfTest() {
+		tabs = append(tabs, tab{"tests", "Tests"})
+	}
 	if hasLogs(r) {
 		tabs = append(tabs, tab{"logs", "Logs"})
 	}
@@ -136,7 +141,7 @@ func visibleTabs(r *smart.Report) []tab {
 
 // buildTabView constructs the refreshable view for a tab id. The tab set is
 // derived from visibleTabs, so the data each view needs is guaranteed present.
-func buildTabView(id string, r *smart.Report, tempHistory []float64) tabView {
+func (d *detail) buildTabView(id string, r *smart.Report, tempHistory []float64) tabView {
 	switch id {
 	case "overview":
 		return newOverviewView(r, tempHistory)
@@ -147,6 +152,8 @@ func buildTabView(id string, r *smart.Report, tempHistory []float64) tabView {
 		return newAttributesView(r.ATAAttributes.Table)
 	case "farm":
 		return newFarmView(r)
+	case "tests":
+		return newTestsView(r, d.selfTest)
 	case "logs":
 		return newLogsView(r)
 	default:
@@ -208,6 +215,19 @@ func (d *detail) selectTab(i int) {
 	}
 	d.active = i
 	d.selectActive()
+}
+
+// selectTabID activates the tab with the given id if it is visible, reporting
+// whether it was found.
+func (d *detail) selectTabID(id string) bool {
+	for i, t := range d.tabs {
+		if t.id == id {
+			d.active = i
+			d.selectActive()
+			return true
+		}
+	}
+	return false
 }
 
 // content returns the currently visible tab primitive, for focus handling.
