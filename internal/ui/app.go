@@ -199,16 +199,30 @@ func (a *App) selectedDevice() (smart.Device, bool) {
 	return a.devices[i], true
 }
 
-// populateList rebuilds the drive list rows from cached reports.
+// populateList fills the drive list rows from cached reports. The device set is
+// fixed after the initial scan, so once the rows exist they are updated in place
+// with SetItemText. This is deliberate: Clear()+AddItem() fires the list's
+// SetChangedFunc (on the first re-added item, and again via SetCurrentItem),
+// which would momentarily switch the detail to another drive and back — a device
+// switch that rebuilds every tab, discarding the Attributes selection and
+// orphaning focus on the interactive Tests tab. SetItemText fires nothing.
 func (a *App) populateList() {
-	cur := a.list.GetCurrentItem()
-	a.list.Clear()
-	for _, d := range a.devices {
-		main, sec := a.listRow(d)
-		a.list.AddItem(main, sec, 0, nil)
+	if a.list.GetItemCount() != len(a.devices) {
+		// Initial build (or a device-count change): create the rows once.
+		cur := a.list.GetCurrentItem()
+		a.list.Clear()
+		for _, d := range a.devices {
+			main, sec := a.listRow(d)
+			a.list.AddItem(main, sec, 0, nil)
+		}
+		if cur >= 0 && cur < len(a.devices) {
+			a.list.SetCurrentItem(cur)
+		}
+		return
 	}
-	if cur >= 0 && cur < len(a.devices) {
-		a.list.SetCurrentItem(cur)
+	for i, d := range a.devices {
+		main, sec := a.listRow(d)
+		a.list.SetItemText(i, main, sec)
 	}
 }
 
