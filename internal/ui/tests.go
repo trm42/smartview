@@ -53,7 +53,7 @@ func newTestsView(r *smart.Report, actions selfTestActions) *testsView {
 		list:    tview.NewList().ShowSecondaryText(true),
 		info:    tview.NewTextView().SetDynamicColors(true).SetScrollable(true),
 	}
-	v.SetBorder(true).SetTitle(" Tests ")
+	v.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Tests ")
 	v.list.SetHighlightFullLine(true)
 
 	// 'x' cancels a running test. The global key handler ignores 'x', so it
@@ -87,13 +87,13 @@ func (v *testsView) refresh(r *smart.Report, _ []float64) {
 // transition into running mode.
 func (v *testsView) showRunning(label string, pct int) {
 	var b strings.Builder
-	b.WriteString("\n  [::b]Self-test in progress[-:-:-]\n\n")
+	b.WriteString("[::b]Self-test in progress[-:-:-]\n\n")
 	if label != "" {
-		fmt.Fprintf(&b, "  %s\n\n", label)
+		fmt.Fprintf(&b, "%s\n\n", label)
 	}
-	fmt.Fprintf(&b, "  [green]%s[-]  %d%%\n\n", progressBar(pct), pct)
-	b.WriteString("  Press [aqua]x[-] to cancel the running test.\n")
-	b.WriteString("  Results appear in the [aqua]Logs[-] tab when complete.\n")
+	fmt.Fprintf(&b, "[green]%s[-]  %d%%\n\n", progressBar(pct), pct)
+	b.WriteString("Press [aqua]x[-] to cancel the running test.\n")
+	b.WriteString("Results appear in the [aqua]Logs[-] tab when complete.\n")
 	v.info.SetText(b.String())
 
 	if v.mode == modeRunning {
@@ -113,7 +113,7 @@ func (v *testsView) showIdle(r *smart.Report) {
 	}
 	v.mode = modeIdle
 
-	v.instr.SetText("\n  No self-test running. Select a test to start " +
+	v.instr.SetText("No self-test running. Select a test to start " +
 		"([aqua]Enter[-]); starting one usually requires root.\n")
 
 	v.list.Clear()
@@ -121,9 +121,9 @@ func (v *testsView) showIdle(r *smart.Report) {
 		{"short", "Short test"},
 		{"long", "Long (extended) test"},
 	} {
-		sec := "  estimated duration unknown"
+		sec := "estimated duration unknown"
 		if d, ok := r.SelfTestDuration(t.key); ok {
-			sec = "  ~" + formatTestDuration(d)
+			sec = "~" + formatTestDuration(d)
 		}
 		testType := t.key // capture per iteration
 		v.list.AddItem(t.title, sec, 0, func() {

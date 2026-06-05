@@ -14,6 +14,16 @@ import (
 // dash is rendered wherever a drive does not report a value.
 const dash = "[gray]—[-]"
 
+// uiGutter is the standard horizontal inset (cells) between a box border and its
+// text, applied via SetBorderPadding on every text/table/list box so the left
+// margin is identical across tabs. Vertical padding stays 0 for density; graphical
+// widgets (gauges, sparkline, bar charts) opt out to keep visualizations full-width.
+const uiGutter = 1
+
+// nestIndent is the leading whitespace for a line subordinate to an in-box header
+// (e.g. self-test entries under "Self-test history").
+const nestIndent = "  "
+
 // leadingInt parses the leading integer of s (smartctl raw strings often read
 // like "9201 (189 58 0)" or "37 (0 21 0 0 0)"), ignoring any trailing detail.
 func leadingInt(s string) (int64, bool) {

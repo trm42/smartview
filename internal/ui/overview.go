@@ -27,6 +27,7 @@ func newOverviewView(r *smart.Report, tempHistory []float64) *overviewView {
 		Flex:   tview.NewFlex().SetDirection(tview.FlexRow),
 		banner: tview.NewTextView().SetDynamicColors(true),
 	}
+	v.banner.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	v.refresh(r, tempHistory)
 	return v
 }
@@ -35,7 +36,7 @@ func newOverviewView(r *smart.Report, tempHistory []float64) *overviewView {
 // is reused (stays first), so focus on the Overview tab is preserved.
 func (v *overviewView) refresh(r *smart.Report, tempHistory []float64) {
 	sev := r.Overall()
-	v.banner.SetText(fmt.Sprintf("  [%s::b]%s[-:-:-]   SMART self-assessment: %s",
+	v.banner.SetText(fmt.Sprintf("[%s::b]%s[-:-:-]   SMART self-assessment: %s",
 		severityTag(sev), sev.String(), passFailText(r)))
 
 	v.Clear()
@@ -47,7 +48,8 @@ func (v *overviewView) refresh(r *smart.Report, tempHistory []float64) {
 	// styled as a yellow notice rather than an alarming red one.
 	if msg, ok := r.FatalMessage(); ok {
 		errLine := tview.NewTextView().SetDynamicColors(true)
-		errLine.SetText(fmt.Sprintf("  [yellow]⚠ %s[-]", msg))
+		errLine.SetBorderPadding(0, 0, uiGutter, uiGutter)
+		errLine.SetText(fmt.Sprintf("[yellow]⚠ %s[-]", msg))
 		v.AddItem(errLine, 1, 0, false)
 	}
 
@@ -74,10 +76,10 @@ func passFailText(r *smart.Report) string {
 // buildIdentity is the key/value panel of drive identity and wear summary.
 func buildIdentity(r *smart.Report) tview.Primitive {
 	tv := tview.NewTextView().SetDynamicColors(true)
-	tv.SetBorder(true).SetTitle(" Drive ")
+	tv.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Drive ")
 
 	var b strings.Builder
-	row := func(k, v string) { fmt.Fprintf(&b, "  [::b]%-14s[-:-:-] %s\n", k, v) }
+	row := func(k, v string) { fmt.Fprintf(&b, "[::b]%-14s[-:-:-] %s\n", k, v) }
 
 	row("Model", orDash(r.ModelName))
 	if r.ModelFamily != "" {
