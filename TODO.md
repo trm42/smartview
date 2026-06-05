@@ -35,9 +35,12 @@ for drive health via smartmontools.
 
 ## Later
 
-- [ ] **Self-tests** (`smartctl -t short|long|conveyance`): *trigger* from the UI, show
-      progress, and refresh the self-test log (durations/readiness already display in the
-      Logs tab). Needs elevated privileges + a progress model.
+- [x] **Self-tests** (`smartctl -t short|long`): a capability-gated **Tests** tab triggers
+      short/long tests, shows live progress with a cancel (`smartctl -X`) affordance, and
+      flips back to the selector when idle. Conveyance/selective are deliberately excluded.
+      ATA + NVMe data paths are fixture/unit-tested; **live trigger needs validation on
+      real self-test-capable hardware under `sudo`** (the dev Mac's Apple NVMe reports no
+      self-test support, so the tab is hidden there).
 - [ ] **Alerts / thresholds.** Optional notification or log when an attribute crosses
       into Caution/Failing; persist temperature history to disk for longer trends.
 - [ ] **Config file** for refresh interval, default device, and colour theme.

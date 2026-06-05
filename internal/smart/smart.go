@@ -98,6 +98,51 @@ func FarmLog(ctx context.Context, name string) (*FARM, error) {
 	return wrapper.FARM, nil
 }
 
+// RunSelfTest starts a SMART self-test on the named device. testType must be
+// "short" or "long" (extended) — smartview deliberately does not expose
+// conveyance/selective tests. It returns nil once smartctl confirms the test
+// has been queued; it does NOT wait for completion (progress is observed via
+// later Info polls). Starting a test usually requires root.
+func RunSelfTest(ctx context.Context, name, testType string) error {
+	switch testType {
+	case "short", "long":
+	default:
+		return fmt.Errorf("unsupported self-test type %q (want short or long)", testType)
+	}
+	return runSelfTestCommand(ctx, name, "start", "-t", testType, "-j", name)
+}
+
+// AbortSelfTest cancels the self-test currently running on the named device
+// (`smartctl -X`). It is a no-op on the drive if no test is running.
+func AbortSelfTest(ctx context.Context, name string) error {
+	return runSelfTestCommand(ctx, name, "abort", "-X", "-j", name)
+}
+
+// runSelfTestCommand runs a self-test control command and surfaces any
+// error-severity smartctl message as the returned error, mirroring how Info
+// treats smartctl.messages as the authoritative failure channel.
+func runSelfTestCommand(ctx context.Context, name, action string, args ...string) error {
+	out, err := run(ctx, args...)
+	if len(out) == 0 {
+		if err != nil {
+			return err
+		}
+		return errors.New("smartctl produced no output")
+	}
+	var wrapper struct {
+		Smartctl Smartctl `json:"smartctl"`
+	}
+	if jerr := json.Unmarshal(out, &wrapper); jerr != nil {
+		return fmt.Errorf("parse self-test %s response for %s: %w", action, name, jerr)
+	}
+	for _, m := range wrapper.Smartctl.Messages {
+		if m.Severity == "error" {
+			return errors.New(m.String)
+		}
+	}
+	return nil
+}
+
 // run executes smartctl and returns its stdout. A non-zero exit code yields a
 // non-nil error AND the captured stdout, because smartctl emits valid JSON even
 // when its exit status bitmask is set. Callers decide whether the error matters.

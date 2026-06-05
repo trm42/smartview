@@ -1,0 +1,165 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+package ui
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
+
+	"github.com/trm42/smartview/internal/smart"
+)
+
+// selfTestActions are the callbacks the Tests view invokes to start or cancel a
+// self-test. They are supplied by the App, which owns the smartctl calls,
+// confirmation/error modals and refresh scheduling — the view itself only
+// renders state and forwards intent.
+type selfTestActions struct {
+	run    func(testType string) // testType is "short" or "long"
+	cancel func()
+}
+
+// testMode is the Tests view's display state.
+type testMode int
+
+const (
+	modeNone testMode = iota
+	modeIdle
+	modeRunning
+)
+
+// testsView is the interactive Tests tab. Unlike the other (pure-renderer)
+// tabs it forwards user intent through selfTestActions. It has two states,
+// chosen on each refresh from Report.SelfTestProgress: a running view with a
+// progress bar and a cancel affordance, and an idle view offering a Short or
+// Long test to start.
+type testsView struct {
+	*tview.Flex
+	actions selfTestActions
+	instr   *tview.TextView // idle-mode header/instructions
+	list    *tview.List     // idle-mode test selection
+	info    *tview.TextView // running-mode progress display
+	mode    testMode
+}
+
+func newTestsView(r *smart.Report, actions selfTestActions) *testsView {
+	v := &testsView{
+		Flex:    tview.NewFlex().SetDirection(tview.FlexRow),
+		actions: actions,
+		instr:   tview.NewTextView().SetDynamicColors(true),
+		list:    tview.NewList().ShowSecondaryText(true),
+		info:    tview.NewTextView().SetDynamicColors(true).SetScrollable(true),
+	}
+	v.SetBorder(true).SetTitle(" Tests ")
+	v.list.SetHighlightFullLine(true)
+
+	// 'x' cancels a running test. The global key handler ignores 'x', so it
+	// reaches the focused view here; we act on it only while a test runs.
+	v.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if v.mode == modeRunning && ev.Key() == tcell.KeyRune && ev.Rune() == 'x' {
+			if v.actions.cancel != nil {
+				v.actions.cancel()
+			}
+			return nil
+		}
+		return ev
+	})
+
+	v.refresh(r, nil)
+	return v
+}
+
+// refresh switches between the running and idle layouts based on whether a
+// self-test is currently executing on the drive.
+func (v *testsView) refresh(r *smart.Report, _ []float64) {
+	if label, pct, running := r.SelfTestProgress(); running {
+		v.showRunning(label, pct)
+		return
+	}
+	v.showIdle(r)
+}
+
+// showRunning renders the live progress of an executing self-test. It rebuilds
+// the text every poll (progress advances) but only rewires the layout on the
+// transition into running mode.
+func (v *testsView) showRunning(label string, pct int) {
+	var b strings.Builder
+	b.WriteString("\n  [::b]Self-test in progress[-:-:-]\n\n")
+	if label != "" {
+		fmt.Fprintf(&b, "  %s\n\n", label)
+	}
+	fmt.Fprintf(&b, "  [green]%s[-]  %d%%\n\n", progressBar(pct), pct)
+	b.WriteString("  Press [aqua]x[-] to cancel the running test.\n")
+	b.WriteString("  Results appear in the [aqua]Logs[-] tab when complete.\n")
+	v.info.SetText(b.String())
+
+	if v.mode == modeRunning {
+		return
+	}
+	v.mode = modeRunning
+	v.Clear()
+	v.AddItem(v.info, 0, 1, true)
+}
+
+// showIdle renders the test-selection list. The list (and its selection) is
+// rebuilt only when entering idle mode, so a live poll does not reset the
+// highlighted row.
+func (v *testsView) showIdle(r *smart.Report) {
+	if v.mode == modeIdle {
+		return
+	}
+	v.mode = modeIdle
+
+	v.instr.SetText("\n  No self-test running. Select a test to start " +
+		"([aqua]Enter[-]); starting one usually requires root.\n")
+
+	v.list.Clear()
+	for _, t := range []struct{ key, title string }{
+		{"short", "Short test"},
+		{"long", "Long (extended) test"},
+	} {
+		sec := "  estimated duration unknown"
+		if d, ok := r.SelfTestDuration(t.key); ok {
+			sec = "  ~" + formatTestDuration(d)
+		}
+		testType := t.key // capture per iteration
+		v.list.AddItem(t.title, sec, 0, func() {
+			if v.actions.run != nil {
+				v.actions.run(testType)
+			}
+		})
+	}
+
+	v.Clear()
+	v.AddItem(v.instr, 3, 0, false)
+	v.AddItem(v.list, 0, 1, true)
+}
+
+// progressBar renders a fixed-width filled/empty bar for a 0..100 percentage.
+func progressBar(pct int) string {
+	const width = 24
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	filled := pct * width / 100
+	return strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
+}
+
+// formatTestDuration renders an estimated self-test runtime compactly.
+func formatTestDuration(d time.Duration) string {
+	m := int(d.Minutes())
+	if m < 60 {
+		return fmt.Sprintf("%d min", m)
+	}
+	h, rem := m/60, m%60
+	if rem == 0 {
+		return fmt.Sprintf("%d h", h)
+	}
+	return fmt.Sprintf("%d h %d min", h, rem)
+}

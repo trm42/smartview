@@ -61,11 +61,27 @@ type ATAErrorLog struct {
 	} `json:"extended"`
 }
 
-// ATASmartData carries SMART capability metadata, notably self-test durations.
+// ATASmartData carries SMART capability metadata: self-test durations, the
+// live self-test status (progress while a test runs), and the capability bit
+// that gates whether self-tests can be started at all.
 type ATASmartData struct {
 	SelfTest *struct {
-		PollingMinutes *SelfTestPolling `json:"polling_minutes"`
+		Status         *ATASelfTestStatus `json:"status"`
+		PollingMinutes *SelfTestPolling   `json:"polling_minutes"`
 	} `json:"self_test"`
+	Capabilities *struct {
+		SelfTestsSupported bool `json:"self_tests_supported"`
+	} `json:"capabilities"`
+}
+
+// ATASelfTestStatus is the live status of the ATA self-test routine. While a
+// test runs, RemainingPercent is present (e.g. 90 == 10% done); when idle it is
+// nil and String/Passed describe the last completed run.
+type ATASelfTestStatus struct {
+	Value            int    `json:"value"`
+	String           string `json:"string"`
+	Passed           bool   `json:"passed"`
+	RemainingPercent *int   `json:"remaining_percent"`
 }
 
 // SelfTestPolling is how long each self-test type takes, in minutes.
