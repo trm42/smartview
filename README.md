@@ -5,19 +5,61 @@ A cross-platform terminal UI for monitoring drive health via
 showing SMART status, attributes, and wear indicators for SATA and NVMe drives in
 a live, auto-refreshing dashboard.
 
+Pick a drive on the left, then page through its tabs on the right — at a glance
+you can tell whether a disk is healthy, how hot it's running, how worn an SSD is,
+and whether anything has ever failed.
+
+![smartview overview tab — drive list, identity panel, and temperature trend](docs/images/overview.png)
+
 ## Features
 
-- **Live dashboard** — lists every drive with a colour-coded health glyph,
-  protocol, and temperature; auto-refreshes on an interval.
-- **Per-drive drill-down** — tabbed detail view with drive identity, NVMe wear
-  gauges (life used / spare), and a temperature trend sparkline.
-- **Attribute table** — the full ATA SMART attribute table or the NVMe health log,
-  with rows coloured by severity (green / yellow / red).
+- **Live dashboard** — lists every drive with a colour-coded health glyph
+  (🟢 OK / 🟡 warning / 🔴 failing), protocol, capacity, and temperature;
+  auto-refreshes on an interval and can be refreshed on demand.
+- **Per-drive drill-down** — a tabbed detail pane whose tabs appear only when the
+  drive actually reports that data (see below). Includes drive identity, NVMe wear
+  gauges (life used / spare), and a temperature-trend sparkline.
+- **SMART attribute table** — the full ATA attribute table or the NVMe health log,
+  sorted by severity and coloured green / yellow / red, with a plain-language
+  explanation of the selected attribute at the bottom.
+- **Seagate FARM view** — for drives that expose Field Accessible Reliability
+  Metrics, a richer reliability panel: error statistics, environment (temperature
+  range, 12 V rail), workload counters, and per-head reallocated-sector and
+  head-resistance charts.
+- **Self-test & error logs** — the SMART error log and self-test history
+  (short / extended / conveyance), with pass/fail status and estimated durations.
 - **Failing/pre-fail highlighting** — uses smartmontools' authoritative
   `prefailure` flag plus `when_failed` / threshold checks, not name heuristics.
 - **Graceful degradation** — the SMART JSON is sparse and drive-dependent (e.g.
   Apple internal SSDs report very little). Missing values render as `—` and whole
-  tabs (like *Logs*) hide when a drive doesn't report that section.
+  tabs hide when a drive doesn't report that section.
+
+### The tabs
+
+Tabs are capability-driven — only the ones backed by real data for the selected
+drive are shown.
+
+**Overview** — drive identity (model, serial, firmware, capacity, interface,
+power-on hours) and a live temperature-trend sparkline. ATA drives seed the
+sparkline instantly from the on-disk temperature history; NVMe drives build it up
+across polls.
+
+**Attributes** — the per-drive SMART attributes, sorted by severity so anything
+worrying floats to the top. Select a row to read what it means.
+
+![smartview attributes tab — severity-sorted SMART attribute table](docs/images/attributes.png)
+
+**FARM** — Seagate Field Accessible Reliability Metrics: unrecoverable read/write
+counts, reallocated and candidate sectors, command timeouts, the drive's
+temperature range and 12 V rail, workload (read/write command counts), and
+per-head reallocated-sector and head-resistance charts.
+
+![smartview FARM tab — Seagate reliability metrics and per-head charts](docs/images/farm.png)
+
+**Logs** — the SMART error log and the self-test history (short / extended /
+conveyance offline tests) with their results and estimated run times.
+
+![smartview Logs tab — SMART error log and self-test history](docs/images/logs.png)
 
 ## Requirements
 
@@ -59,7 +101,7 @@ sudo smartview            # if attributes require root
 | ---------- | ------------------------------- |
 | `↑` / `↓`  | Select a drive                  |
 | `Tab`      | Move focus between panes        |
-| `1`–`3`    | Switch detail tab               |
+| `1`–`4`    | Switch detail tab (Overview / Attributes / FARM / Logs) |
 | `r`        | Refresh now                     |
 | `q`        | Quit                            |
 
