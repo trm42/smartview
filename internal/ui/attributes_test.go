@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"smartview/internal/smart"
+	"github.com/trm42/smartview/internal/smart"
 )
 
 func TestLeadingInt(t *testing.T) {
