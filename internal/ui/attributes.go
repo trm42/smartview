@@ -182,14 +182,18 @@ func (v *attributesView) renderRows() {
 		if when == "" {
 			when = "-"
 		}
+		sel := selectedRowStyle(color)
 		v.table.SetCell(i+1, 0, tview.NewTableCell(" "+humanAttrName(a.Name)+" ").
-			SetTextColor(color).SetExpansion(1))
-		v.table.SetCell(i+1, 1, tview.NewTableCell(" "+kind+" ").SetTextColor(color))
+			SetTextColor(color).SetExpansion(1).SetSelectedStyle(sel))
+		v.table.SetCell(i+1, 1, tview.NewTableCell(" "+kind+" ").
+			SetTextColor(color).SetSelectedStyle(sel))
 		// Health uses inline colour tags (keeps a green bar on healthy rows).
-		v.table.SetCell(i+1, 2, tview.NewTableCell(" "+healthCell(a)+" "))
+		v.table.SetCell(i+1, 2, tview.NewTableCell(" "+healthCell(a)+" ").
+			SetSelectedStyle(sel))
 		v.table.SetCell(i+1, 3, tview.NewTableCell(" "+decodeReading(a)+" ").
-			SetTextColor(color).SetAlign(tview.AlignRight))
-		v.table.SetCell(i+1, 4, tview.NewTableCell(" "+when+" ").SetTextColor(color))
+			SetTextColor(color).SetAlign(tview.AlignRight).SetSelectedStyle(sel))
+		v.table.SetCell(i+1, 4, tview.NewTableCell(" "+when+" ").
+			SetTextColor(color).SetSelectedStyle(sel))
 	}
 }
 
@@ -354,8 +358,10 @@ func (v *nvmeAttributesView) setRows(h *smart.NVMeHealth) {
 	v.table.SetCell(0, 0, headerCell("Field"))
 	v.table.SetCell(0, 1, headerCell("Value"))
 	for i, r := range v.rows {
-		v.table.SetCell(i+1, 0, tview.NewTableCell(" "+r.k+" ").SetTextColor(tcell.ColorWhite))
-		v.table.SetCell(i+1, 1, tview.NewTableCell(" "+r.v+" ").SetTextColor(severityColor(r.sev)))
+		v.table.SetCell(i+1, 0, tview.NewTableCell(" "+r.k+" ").
+			SetTextColor(tcell.ColorWhite).SetSelectedStyle(selectedRowStyle(tcell.ColorWhite)))
+		v.table.SetCell(i+1, 1, tview.NewTableCell(" "+r.v+" ").
+			SetTextColor(severityColor(r.sev)).SetSelectedStyle(selectedRowStyle(severityColor(r.sev))))
 	}
 }
 
