@@ -80,7 +80,7 @@ func newAttributesView(attrs []smart.ATAAttribute) *attributesView {
 		attrs:  attrs,
 	}
 	v.table.SetSelectable(true, false)
-	v.footer.SetBorder(true)
+	v.footer.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter)
 
 	v.table.SetSelectionChangedFunc(func(row, _ int) { v.updateFooter(row) })
 	v.table.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -153,7 +153,7 @@ func (v *attributesView) selectByID(id int) {
 // caller (selectByID) so it can be retained across re-renders.
 func (v *attributesView) renderRows() {
 	v.table.Clear()
-	v.table.SetBorder(true).SetTitle(fmt.Sprintf(
+	v.table.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(fmt.Sprintf(
 		" SMART attributes — sort: %s · filter: %s  [aqua][s/f][-] ", v.sortBy, v.filter))
 
 	// No ID column: the numeric ID is shown in the footer for the selected row.
@@ -245,7 +245,7 @@ func (v *attributesView) updateFooter(row int) {
 	if desc == "" {
 		desc = humanAttrName(a.Name)
 	}
-	v.footer.SetText(fmt.Sprintf("  %s\n  [gray](id %d, %s)  norm %d/%d · thresh %d · raw %s[-]",
+	v.footer.SetText(fmt.Sprintf("%s\n[gray](id %d, %s)  norm %d/%d · thresh %d · raw %s[-]",
 		desc, a.ID, kind, a.Value, a.Worst, a.Thresh, a.Raw.String))
 }
 
@@ -317,9 +317,9 @@ func newNVMeAttributesView(h *smart.NVMeHealth) *nvmeAttributesView {
 		table:  tview.NewTable().SetBorders(false).SetFixed(1, 0),
 		footer: tview.NewTextView().SetDynamicColors(true).SetWrap(true),
 	}
-	v.table.SetBorder(true).SetTitle(" NVMe health log ")
+	v.table.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" NVMe health log ")
 	v.table.SetSelectable(true, false)
-	v.footer.SetBorder(true)
+	v.footer.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter)
 	v.table.SetSelectionChangedFunc(func(row, _ int) { v.setFooter(row) })
 
 	v.AddItem(v.table, 0, 1, true)
@@ -376,7 +376,7 @@ func (v *nvmeAttributesView) setFooter(row int) {
 	if desc == "" {
 		desc = v.rows[i].k
 	}
-	v.footer.SetText(fmt.Sprintf("  %s\n  [gray]%s: %s[-]", desc, v.rows[i].k, v.rows[i].v))
+	v.footer.SetText(fmt.Sprintf("%s\n[gray]%s: %s[-]", desc, v.rows[i].k, v.rows[i].v))
 }
 
 // nvmeRows builds the NVMe health key/value rows with per-row severity.
@@ -451,6 +451,6 @@ func headerCell(s string) *tview.TableCell {
 // centeredNote is a placeholder primitive for empty/unsupported sections.
 func centeredNote(msg string) tview.Primitive {
 	tv := tview.NewTextView().SetTextAlign(tview.AlignCenter).SetText("\n" + msg)
-	tv.SetBorder(true)
+	tv.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter)
 	return tv
 }

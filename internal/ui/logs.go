@@ -27,7 +27,7 @@ type logsView struct {
 
 func newLogsView(r *smart.Report) *logsView {
 	v := &logsView{tview.NewTextView().SetDynamicColors(true).SetScrollable(true)}
-	v.SetBorder(true).SetTitle(" Logs ")
+	v.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Logs ")
 	v.refresh(r, nil)
 	return v
 }
@@ -47,7 +47,7 @@ func buildLogsText(r *smart.Report) string {
 	b.WriteString("\n")
 	writeSelfTestLog(&b, r)
 	if dur := selfTestDurations(r); dur != "" {
-		fmt.Fprintf(&b, "   Estimated duration: %s\n", dur)
+		fmt.Fprintf(&b, nestIndent+"Estimated duration: %s\n", dur)
 	}
 	if r.SATAPhyEvents != nil {
 		b.WriteString("\n")
@@ -69,65 +69,65 @@ func selfTestDurations(r *smart.Report) string {
 // writePhyCounters summarises the SATA PHY event counters: non-zero counters
 // (cable/link trouble) are flagged; an all-zero log reads as healthy.
 func writePhyCounters(b *strings.Builder, e *smart.SATAPhyEvents) {
-	fmt.Fprintln(b, " [::b]SATA link health[-:-:-]")
+	fmt.Fprintln(b, "[::b]SATA link health[-:-:-]")
 	nonzero := 0
 	for _, c := range e.Table {
 		if c.Value > 0 {
-			fmt.Fprintf(b, "   [yellow]%-52s %d[-]\n", c.Name, c.Value)
+			fmt.Fprintf(b, nestIndent+"[yellow]%-52s %d[-]\n", c.Name, c.Value)
 			nonzero++
 		}
 	}
 	if nonzero == 0 {
-		fmt.Fprintf(b, "   [green]No link errors logged[-] (%d counters)\n", len(e.Table))
+		fmt.Fprintf(b, nestIndent+"[green]No link errors logged[-] (%d counters)\n", len(e.Table))
 	}
 }
 
 // writeErrorLog summarises the drive's logged command errors.
 func writeErrorLog(b *strings.Builder, r *smart.Report) {
-	fmt.Fprintln(b, " [::b]Error log[-:-:-]")
+	fmt.Fprintln(b, "[::b]Error log[-:-:-]")
 	switch {
 	case r.NVMeErrorLog != nil:
-		fmt.Fprintf(b, "   %d entries (%d unread)\n", r.NVMeErrorLog.Size, sub(r.NVMeErrorLog.Size, r.NVMeErrorLog.Read))
+		fmt.Fprintf(b, nestIndent+"%d entries (%d unread)\n", r.NVMeErrorLog.Size, sub(r.NVMeErrorLog.Size, r.NVMeErrorLog.Read))
 	case r.ATAErrorLog != nil && r.ATAErrorLog.Extended != nil:
 		n := r.ATAErrorLog.Extended.Count
 		if n == 0 {
-			fmt.Fprintln(b, "   [green]No errors logged[-]")
+			fmt.Fprintln(b, nestIndent+"[green]No errors logged[-]")
 		} else {
-			fmt.Fprintf(b, "   [yellow]%d error(s) logged[-]\n", n)
+			fmt.Fprintf(b, nestIndent+"[yellow]%d error(s) logged[-]\n", n)
 		}
 	default:
-		fmt.Fprintln(b, "   "+strings.TrimPrefix(dash, ""))
+		fmt.Fprintln(b, nestIndent+strings.TrimPrefix(dash, ""))
 	}
 }
 
 // writeSelfTestLog renders the self-test history for either protocol.
 func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
-	fmt.Fprintln(b, " [::b]Self-test history[-:-:-]")
+	fmt.Fprintln(b, "[::b]Self-test history[-:-:-]")
 	switch {
 	case r.NVMeSelfTestLog != nil:
 		if op := r.NVMeSelfTestLog.CurrentSelfTestOperation; op != nil && op.String != "" {
-			fmt.Fprintf(b, "   Current: %s\n", op.String)
+			fmt.Fprintf(b, nestIndent+"Current: %s\n", op.String)
 		}
 		if len(r.NVMeSelfTestLog.Table) == 0 {
-			fmt.Fprintln(b, "   no self-tests recorded")
+			fmt.Fprintln(b, nestIndent+"no self-tests recorded")
 			return
 		}
 		for _, e := range r.NVMeSelfTestLog.Table {
-			fmt.Fprintf(b, "   %-10s %-28s @ %s\n",
+			fmt.Fprintf(b, nestIndent+"%-10s %-28s @ %s\n",
 				e.SelfTestCode.String, colorResult(e.SelfTestResult.String), humanDuration(e.PowerOnHours))
 		}
 	case r.ATASelfTestLog != nil && r.ATASelfTestLog.Extended != nil:
 		tbl := r.ATASelfTestLog.Extended.Table
 		if len(tbl) == 0 {
-			fmt.Fprintln(b, "   no self-tests recorded")
+			fmt.Fprintln(b, nestIndent+"no self-tests recorded")
 			return
 		}
 		for _, e := range tbl {
-			fmt.Fprintf(b, "   %-16s %-28s @ %s\n",
+			fmt.Fprintf(b, nestIndent+"%-16s %-28s @ %s\n",
 				e.Type.String, colorResult(e.Status.String), humanDuration(e.LifetimeHours))
 		}
 	default:
-		fmt.Fprintln(b, "   no self-test log")
+		fmt.Fprintln(b, nestIndent+"no self-test log")
 	}
 }
 

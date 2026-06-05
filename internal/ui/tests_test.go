@@ -43,8 +43,9 @@ func TestTestsViewIdle(t *testing.T) {
 		t.Errorf("second item = %q", main)
 	}
 	// Estimated durations come from the ATA polling minutes (extended:120 → 2 h).
-	if _, sec := v.list.GetItemText(1); sec != "  ~2 h" {
-		t.Errorf("long duration secondary = %q, want \"  ~2 h\"", sec)
+	// No leading margin: the uniform gutter comes from the box's border padding.
+	if _, sec := v.list.GetItemText(1); sec != "~2 h" {
+		t.Errorf("long duration secondary = %q, want \"~2 h\"", sec)
 	}
 }
 

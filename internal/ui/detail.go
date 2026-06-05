@@ -52,6 +52,7 @@ func newDetail() *detail {
 		spinner: tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight),
 		pages:   tview.NewPages(),
 	}
+	d.bar.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	// The tab strip and the refresh spinner share a single full-width row; the
 	// spinner occupies a fixed 2-col cell flush to the right (the top-right
 	// corner of the content area).
