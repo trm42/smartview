@@ -18,7 +18,7 @@ import (
 // counters, environment and workload totals) laid out as a 2×2 grid above the
 // per-head bar charts. It refreshes in place, rebuilding the grid each poll.
 type farmView struct {
-	*tview.Flex
+	*scrollView
 	drive    *tview.TextView
 	errors   *tview.TextView
 	env      *tview.TextView
@@ -32,11 +32,11 @@ func newFarmView(r *smart.Report) *farmView {
 		return tv
 	}
 	v := &farmView{
-		Flex:     tview.NewFlex().SetDirection(tview.FlexRow),
-		drive:    box(" Drive "),
-		errors:   box(" Error statistics "),
-		env:      box(" Environment "),
-		workload: box(" Workload "),
+		scrollView: newScrollView(),
+		drive:      box(" Drive "),
+		errors:     box(" Error statistics "),
+		env:        box(" Environment "),
+		workload:   box(" Workload "),
 	}
 	v.refresh(r, nil)
 	return v
@@ -51,7 +51,10 @@ func boxHeight(text string) int {
 // refresh rebuilds the four stat boxes and lays them out as a 2×2 grid (a left
 // column of drive then env, a right column of errors then workload) above the
 // per-head charts. Each box is fixed to its content height and top-anchored by a
-// trailing flexible spacer; the grid is the focus item so the tab stays reachable.
+// trailing flexible spacer. The whole layout is handed to the scroll container
+// at its full height so the bottom charts stay reachable when the terminal is
+// shorter than the content; focus stays on the scrollView, so inner items are
+// added non-focusable.
 func (v *farmView) refresh(r *smart.Report, _ []float64) {
 	f := r.FARM
 	if f == nil {
@@ -80,20 +83,26 @@ func (v *farmView) refresh(r *smart.Report, _ []float64) {
 	rightTotal := boxHeight(errorsText) + boxHeight(workloadText)
 
 	grid := tview.NewFlex() // horizontal: left column | right column
-	grid.AddItem(left, 0, 1, true)
+	grid.AddItem(left, 0, 1, false)
 	grid.AddItem(right, 0, 1, false)
 
-	v.Clear()
-	v.AddItem(grid, max(leftTotal, rightTotal), 0, true)
+	gridHeight := max(leftTotal, rightTotal)
+	outer := tview.NewFlex().SetDirection(tview.FlexRow)
+	outer.AddItem(grid, gridHeight, 0, false)
+	total := gridHeight
 	// Per-head visualizations. Reallocated sectors per head is the health
 	// red-flag (flat zero on a healthy drive); MR head resistance always varies
 	// and surfaces an outlier head.
 	if c := farmHeadChart(" Reallocated sectors / head ", f.Reliability.ReallocatedByHead, true); c != nil {
-		v.AddItem(c, 9, 0, false)
+		outer.AddItem(c, 9, 0, false)
+		total += 9
 	}
 	if c := farmHeadChart(" MR head resistance / head ", f.Reliability.MRHeadResistance, false); c != nil {
-		v.AddItem(c, 9, 0, false)
+		outer.AddItem(c, 9, 0, false)
+		total += 9
 	}
+
+	v.setContent(outer, total)
 }
 
 // farmBoxText builds a single box's text via the matching writeFarm* helper.
