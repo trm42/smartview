@@ -44,6 +44,7 @@ type Report struct {
 	NVMeHealth        *NVMeHealth      `json:"nvme_smart_health_information_log"`
 	NVMeErrorLog      *NVMeErrorLog    `json:"nvme_error_information_log"`
 	NVMeSelfTestLog   *NVMeSelfTestLog `json:"nvme_self_test_log"`
+	NVMeOptAdmin      *NVMeOptAdmin    `json:"nvme_optional_admin_commands"`
 	NVMeTotalCapacity *int64           `json:"nvme_total_capacity"`
 
 	// Seagate FARM. Not part of `-j -x`; fetched separately via FarmLog and

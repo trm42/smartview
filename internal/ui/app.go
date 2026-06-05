@@ -18,6 +18,7 @@ import (
 // App is the smartview terminal application.
 type App struct {
 	app    *tview.Application
+	root   tview.Primitive // main layout, restored when a modal closes
 	list   *tview.List
 	detail *detail
 	status *tview.TextView
@@ -31,6 +32,7 @@ type App struct {
 	devices []smart.Device
 	reports map[string]*smart.Report
 	history map[string][]float64 // runtime temperature series per device
+	inModal bool                 // true while a modal overlay is shown
 }
 
 // maxHistory bounds the runtime temperature ring buffer (NVMe sparkline).
@@ -75,18 +77,27 @@ func (a *App) build() {
 	root.AddItem(body, 0, 1, true).
 		AddItem(a.status, 1, 0, false)
 
+	a.detail.selfTest = selfTestActions{
+		run:    a.onSelfTestRun,
+		cancel: a.onSelfTestCancel,
+	}
+
+	a.root = root
 	a.app.SetRoot(root, true).EnableMouse(true)
 	a.app.SetInputCapture(a.onKey)
 }
 
 // statusText renders the bottom key-hint bar.
 func (a *App) statusText() string {
-	return fmt.Sprintf("  [aqua]↑/↓[-] drive   [aqua]←/→[-] nav   [aqua]1-3[-] tab   "+
-		"[aqua]Tab[-] focus   [aqua]r[-] refresh   [aqua]Esc/q[-] quit      refresh every %s", a.interval)
+	return fmt.Sprintf("  [aqua]↑/↓[-] drive   [aqua]←/→[-] nav   [aqua]1-9[-] tab   "+
+		"[aqua]Tab[-] focus   [aqua]r[-] refresh   [aqua]t[-] tests   [aqua]Esc/q[-] quit      refresh every %s", a.interval)
 }
 
 // onKey is the global key handler.
 func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
+	if a.inModal {
+		return ev // let the modal handle all input
+	}
 	switch ev.Key() {
 	case tcell.KeyEscape:
 		a.app.Stop()
@@ -108,7 +119,12 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 		case 'r':
 			a.triggerRefresh()
 			return nil
-		case '1', '2', '3', '4', '5':
+		case 't':
+			if a.detail.selectTabID("tests") {
+				a.app.SetFocus(a.detail.content())
+			}
+			return nil
+		case '1', '2', '3', '4', '5', '6', '7', '8', '9':
 			a.detail.selectTab(int(r - '1'))
 			a.app.SetFocus(a.detail.content())
 			return nil
@@ -242,4 +258,112 @@ func shortName(d smart.Device) string {
 		return "…" + n[len(n)-29:]
 	}
 	return n
+}
+
+// pushModal shows a modal overlay, suspending the normal key-handler logic.
+func (a *App) pushModal(m tview.Primitive) {
+	a.inModal = true
+	a.app.SetRoot(m, false)
+}
+
+// popModal removes the modal overlay and restores the main layout, returning
+// focus to the detail content so the Tests tab stays interactive.
+func (a *App) popModal() {
+	a.inModal = false
+	a.app.SetRoot(a.root, true)
+	a.app.SetFocus(a.detail.content())
+}
+
+// testLabel renders a friendly self-test name for prompts.
+func testLabel(testType string) string {
+	if testType == "long" {
+		return "long (extended)"
+	}
+	return testType
+}
+
+// onSelfTestRun confirms, then starts a self-test on the selected drive. It is
+// wired into the Tests view via selfTestActions and runs on the event loop.
+func (a *App) onSelfTestRun(testType string) {
+	dev, ok := a.selectedDevice()
+	if !ok {
+		return
+	}
+	a.confirm(
+		fmt.Sprintf("Run %s self-test on %s?\n(Requires root; the drive stays usable.)",
+			testLabel(testType), shortName(dev)),
+		"Run",
+		func() {
+			a.status.SetText("  [yellow]⟳[-] Starting " + testLabel(testType) +
+				" self-test on " + shortName(dev) + "…")
+			a.runSmartctl(func(ctx context.Context) error {
+				return smart.RunSelfTest(ctx, dev.Name, testType)
+			})
+		},
+	)
+}
+
+// onSelfTestCancel confirms, then aborts the running self-test on the selected
+// drive.
+func (a *App) onSelfTestCancel() {
+	dev, ok := a.selectedDevice()
+	if !ok {
+		return
+	}
+	a.confirm(
+		fmt.Sprintf("Cancel the running self-test on %s?", shortName(dev)),
+		"Cancel test",
+		func() {
+			a.status.SetText("  [yellow]⟳[-] Cancelling self-test on " + shortName(dev) + "…")
+			a.runSmartctl(func(ctx context.Context) error {
+				return smart.AbortSelfTest(ctx, dev.Name)
+			})
+		},
+	)
+}
+
+// runSmartctl runs a self-test control call off the event loop, then restores
+// the status bar and either surfaces the error or triggers an immediate refresh
+// so the Tests view reflects the new state.
+func (a *App) runSmartctl(fn func(context.Context) error) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		err := fn(ctx)
+		a.app.QueueUpdateDraw(func() {
+			a.status.SetText(a.statusText())
+			if err != nil {
+				a.showError(err)
+				return
+			}
+			a.triggerRefresh()
+		})
+	}()
+}
+
+// confirm shows a two-button confirmation modal; onYes runs when the user picks
+// the affirmative label.
+func (a *App) confirm(text, yesLabel string, onYes func()) {
+	modal := tview.NewModal().
+		SetText(text).
+		AddButtons([]string{yesLabel, "Back"}).
+		SetButtonActivatedStyle(tcell.StyleDefault.
+			Background(tcell.ColorGreen).Foreground(tcell.ColorBlack)).
+		SetDoneFunc(func(_ int, label string) {
+			a.popModal()
+			if label == yesLabel {
+				onYes()
+			}
+		})
+	a.pushModal(modal)
+}
+
+// showError displays a smartctl failure (commonly a permission error) in a
+// dismissable modal.
+func (a *App) showError(err error) {
+	modal := tview.NewModal().
+		SetText(fmt.Sprintf("Self-test command failed:\n%s", err)).
+		AddButtons([]string{"OK"}).
+		SetDoneFunc(func(int, string) { a.popModal() })
+	a.pushModal(modal)
 }
