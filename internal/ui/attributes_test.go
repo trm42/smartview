@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	"smartview/internal/smart"
@@ -40,13 +41,54 @@ func TestDecodeReading(t *testing.T) {
 		{mk(9, "9438"), "1 y 28 d"},         // power-on hours
 		{mk(240, "9201 (189 58 0)"), "1 y 18 d"},
 		{mk(194, "37 (0 21 0 0 0)"), "37°C"},
-		{mk(4, "15"), "15"}, // undecoded -> raw passthrough
-		{mk(5, ""), "—"},
+		{mk(4, "15"), "15"},     // undecoded -> raw passthrough
+		{mk(5, ""), "—"},        // empty -> dash
+		{mk(200, "0"), "0"},     // unknown id -> raw passthrough
+		{mk(194, "n/a"), "n/a"}, // temp id but non-numeric raw -> raw passthrough
 	}
 	for _, c := range cases {
 		if got := decodeReading(c.a); got != c.want {
 			t.Errorf("decodeReading(id %d, %q) = %q, want %q", c.a.ID, c.a.Raw.String, got, c.want)
 		}
+	}
+}
+
+func TestHumanAttrName(t *testing.T) {
+	cases := map[string]string{
+		"Raw_Read_Error_Rate": "Raw Read Error Rate",
+		"":                    "",
+		"no_under":            "no under",
+	}
+	for in, want := range cases {
+		if got := humanAttrName(in); got != want {
+			t.Errorf("humanAttrName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestAttrMargin(t *testing.T) {
+	noThresh := attrMargin(smart.ATAAttribute{Value: 100, Thresh: 0})
+	if noThresh != 1<<30 {
+		t.Errorf("no-threshold margin = %d, want sentinel", noThresh)
+	}
+	if m := attrMargin(smart.ATAAttribute{Value: 100, Thresh: 10}); m != 90 {
+		t.Errorf("margin = %d, want 90", m)
+	}
+	if m := attrMargin(smart.ATAAttribute{Value: 5, Thresh: 10}); m != -5 {
+		t.Errorf("negative margin = %d, want -5", m)
+	}
+}
+
+func TestHealthCell(t *testing.T) {
+	// No threshold -> a severity dot.
+	dot := healthCell(smart.ATAAttribute{Value: 100, Thresh: 0})
+	if !strings.Contains(dot, "●") {
+		t.Errorf("no-threshold health = %q, want a dot", dot)
+	}
+	// With a threshold -> a bar with the margin number.
+	bar := healthCell(smart.ATAAttribute{Value: 100, Worst: 100, Thresh: 10, Flags: smart.ATAFlags{Prefailure: true}})
+	if !strings.Contains(bar, "█") {
+		t.Errorf("thresholded health = %q, want a bar", bar)
 	}
 }
 
