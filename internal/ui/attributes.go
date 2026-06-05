@@ -156,21 +156,24 @@ func (v *attributesView) renderRows() {
 	v.table.SetBorder(true).SetTitle(fmt.Sprintf(
 		" SMART attributes — sort: %s · filter: %s  [aqua][s/f][-] ", v.sortBy, v.filter))
 
-	headers := []string{"ID", "Attribute", "Kind", "Health", "Reading", "When"}
+	// No ID column: the numeric ID is shown in the footer for the selected row.
+	headers := []string{"Attribute", "Kind", "Health", "Reading", "When"}
 	for c, h := range headers {
 		v.table.SetCell(0, c, headerCell(h))
 	}
 
 	v.shown = v.visibleRows()
 	if len(v.shown) == 0 {
-		v.table.SetCell(1, 1, tview.NewTableCell(" No attributes match — all healthy ").
+		v.table.SetCell(1, 0, tview.NewTableCell(" No attributes match — all healthy ").
 			SetTextColor(tcell.ColorGreen).SetSelectable(false))
 		v.footer.SetText("")
 		return
 	}
 
 	for i, a := range v.shown {
-		color := severityColor(a.Severity())
+		// Healthy rows render neutral so the table is easy to scan; yellow/red
+		// is reserved for attributes that need attention.
+		color := attrTextColor(a.Severity())
 		kind := "old-age"
 		if a.Flags.Prefailure {
 			kind = "pre-fail"
@@ -179,16 +182,14 @@ func (v *attributesView) renderRows() {
 		if when == "" {
 			when = "-"
 		}
-		v.table.SetCell(i+1, 0, tview.NewTableCell(fmt.Sprintf(" %d ", a.ID)).
-			SetTextColor(color).SetAlign(tview.AlignRight))
-		v.table.SetCell(i+1, 1, tview.NewTableCell(" "+humanAttrName(a.Name)+" ").
+		v.table.SetCell(i+1, 0, tview.NewTableCell(" "+humanAttrName(a.Name)+" ").
 			SetTextColor(color).SetExpansion(1))
-		v.table.SetCell(i+1, 2, tview.NewTableCell(" "+kind+" ").SetTextColor(color))
-		// Health uses inline colour tags, so leave the cell's own colour default.
-		v.table.SetCell(i+1, 3, tview.NewTableCell(" "+healthCell(a)+" "))
-		v.table.SetCell(i+1, 4, tview.NewTableCell(" "+decodeReading(a)+" ").
+		v.table.SetCell(i+1, 1, tview.NewTableCell(" "+kind+" ").SetTextColor(color))
+		// Health uses inline colour tags (keeps a green bar on healthy rows).
+		v.table.SetCell(i+1, 2, tview.NewTableCell(" "+healthCell(a)+" "))
+		v.table.SetCell(i+1, 3, tview.NewTableCell(" "+decodeReading(a)+" ").
 			SetTextColor(color).SetAlign(tview.AlignRight))
-		v.table.SetCell(i+1, 5, tview.NewTableCell(" "+when+" ").SetTextColor(color))
+		v.table.SetCell(i+1, 4, tview.NewTableCell(" "+when+" ").SetTextColor(color))
 	}
 }
 
