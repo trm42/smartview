@@ -24,6 +24,24 @@ often requires `sudo`. Driving the TUI for verification (no tmux in this env):
 build, then use `expect` to spawn under a pty, `sleep`, `send` keys, and `send
 "q"` to quit.
 
+### Fixture dev mode (eyeballing UI without real drives)
+
+```sh
+go build -tags dev -o smartview .                  # dev build with fixture support
+./smartview --fixtures internal/smart/testdata     # render captured fixtures
+```
+
+This is the canonical way to verify UI changes for hardware not on hand.
+`--fixtures DIR` loads every `*.json` in DIR as drive data — the committed
+`internal/smart/testdata/` fixtures cover ATA, NVMe, sparse Apple NVMe, and a
+Seagate FARM log. Fixture mode **bypasses the smartctl preflight** entirely, so
+smartmontools need not be installed. Drive the resulting TUI with `expect` under
+a pty (`sleep`, `send` keys, `send "q"` to quit), exactly as above.
+
+`--fixtures` is only honored by a `-tags dev` build: a release build (plain
+`go build`) still accepts the flag but rejects it at startup with a rebuild
+hint (`rebuild with: go build -tags dev`).
+
 ## Architecture
 
 Two packages with a hard one-way boundary: **`internal/smart` is the data layer
