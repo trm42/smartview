@@ -89,6 +89,31 @@ func FarmLog(ctx context.Context, name string) (*FARM, error) {
 	return wrapper.FARM, nil
 }
 
+// RunSelfTest starts a self-test on the named device. testType is one of
+// "short", "long", or "conveyance". Returns nil when smartctl confirms the
+// test has been queued; does NOT wait for completion.
+func RunSelfTest(ctx context.Context, name, testType string) error {
+	out, err := run(ctx, "-t", testType, "-j", name)
+	if len(out) == 0 {
+		if err != nil {
+			return err
+		}
+		return errors.New("smartctl produced no output")
+	}
+	var wrapper struct {
+		Smartctl Smartctl `json:"smartctl"`
+	}
+	if jerr := json.Unmarshal(out, &wrapper); jerr != nil {
+		return fmt.Errorf("parse self-test response for %s: %w", name, jerr)
+	}
+	for _, m := range wrapper.Smartctl.Messages {
+		if m.Severity == "error" {
+			return errors.New(m.String)
+		}
+	}
+	return nil
+}
+
 // run executes smartctl and returns its stdout. A non-zero exit code yields a
 // non-nil error AND the captured stdout, because smartctl emits valid JSON even
 // when its exit status bitmask is set. Callers decide whether the error matters.

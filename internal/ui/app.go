@@ -18,6 +18,7 @@ import (
 // App is the smartview terminal application.
 type App struct {
 	app    *tview.Application
+	root   tview.Primitive
 	list   *tview.List
 	detail *detail
 	status *tview.TextView
@@ -28,9 +29,10 @@ type App struct {
 
 	// All fields below are touched only on the main (event-loop) goroutine,
 	// either directly or inside QueueUpdateDraw callbacks, so need no locking.
-	devices []smart.Device
-	reports map[string]*smart.Report
-	history map[string][]float64 // runtime temperature series per device
+	devices  []smart.Device
+	reports  map[string]*smart.Report
+	history  map[string][]float64 // runtime temperature series per device
+	inModal  bool                 // true while a modal overlay is shown
 }
 
 // maxHistory bounds the runtime temperature ring buffer (NVMe sparkline).
@@ -75,6 +77,7 @@ func (a *App) build() {
 	root.AddItem(body, 0, 1, true).
 		AddItem(a.status, 1, 0, false)
 
+	a.root = root
 	a.app.SetRoot(root, true).EnableMouse(true)
 	a.app.SetInputCapture(a.onKey)
 }
@@ -82,11 +85,14 @@ func (a *App) build() {
 // statusText renders the bottom key-hint bar.
 func (a *App) statusText() string {
 	return fmt.Sprintf("  [aqua]↑/↓[-] drive   [aqua]←/→[-] nav   [aqua]1-3[-] tab   "+
-		"[aqua]Tab[-] focus   [aqua]r[-] refresh   [aqua]Esc/q[-] quit      refresh every %s", a.interval)
+		"[aqua]Tab[-] focus   [aqua]r[-] refresh   [aqua]t[-] self-test   [aqua]Esc/q[-] quit      refresh every %s", a.interval)
 }
 
 // onKey is the global key handler.
 func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
+	if a.inModal {
+		return ev // let the modal handle all input
+	}
 	switch ev.Key() {
 	case tcell.KeyEscape:
 		a.app.Stop()
@@ -107,6 +113,9 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case 'r':
 			a.triggerRefresh()
+			return nil
+		case 't':
+			a.showSelfTestConfirm()
 			return nil
 		case '1', '2', '3', '4', '5':
 			a.detail.selectTab(int(r - '1'))
@@ -151,6 +160,18 @@ func (a *App) focusLeft() {
 	}
 	a.detail.stepTab(-1)
 	a.app.SetFocus(a.detail.content())
+}
+
+// pushModal shows a modal overlay, suspending the normal key-handler logic.
+func (a *App) pushModal(m tview.Primitive) {
+	a.inModal = true
+	a.app.SetRoot(m, false)
+}
+
+// popModal removes the modal overlay and restores the main layout.
+func (a *App) popModal() {
+	a.inModal = false
+	a.app.SetRoot(a.root, true)
 }
 
 // triggerRefresh asks the poll loop to fetch immediately (non-blocking).
@@ -242,4 +263,52 @@ func shortName(d smart.Device) string {
 		return "…" + n[len(n)-29:]
 	}
 	return n
+}
+
+// showSelfTestConfirm opens a confirmation modal for a short self-test on the
+// currently selected drive. It is a no-op when no drive is selected.
+func (a *App) showSelfTestConfirm() {
+	dev, ok := a.selectedDevice()
+	if !ok {
+		return
+	}
+	modal := tview.NewModal().
+		SetText(fmt.Sprintf("Run short self-test on %s?\n(Requires root)", shortName(dev))).
+		AddButtons([]string{"Run", "Cancel"}).
+		SetButtonActivatedStyle(tcell.StyleDefault.Background(tcell.ColorGreen).Foreground(tcell.ColorBlack)).
+		SetDoneFunc(func(_ int, label string) {
+			a.popModal()
+			if label != "Run" {
+				return
+			}
+			a.status.SetText("  [yellow]⟳[-] Starting short self-test on " + shortName(dev) + "…")
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				if err := smart.RunSelfTest(ctx, dev.Name, "short"); err != nil {
+					a.app.QueueUpdateDraw(func() {
+						a.status.SetText(a.statusText())
+						a.showSelfTestError(err)
+					})
+					return
+				}
+				a.app.QueueUpdateDraw(func() {
+					a.status.SetText(a.statusText())
+					a.triggerRefresh()
+				})
+			}()
+		})
+	a.pushModal(modal)
+}
+
+// showSelfTestError displays a self-test failure in a modal and returns to the
+// main layout when dismissed.
+func (a *App) showSelfTestError(err error) {
+	modal := tview.NewModal().
+		SetText(fmt.Sprintf("Self-test failed:\n%s", err)).
+		AddButtons([]string{"OK"}).
+		SetDoneFunc(func(_ int, _ string) {
+			a.popModal()
+		})
+	a.pushModal(modal)
 }
