@@ -89,6 +89,24 @@ func healthGlyph(s smart.Severity) string {
 	return fmt.Sprintf("[%s]●[-]", severityTag(s))
 }
 
+// selectedRowStyle is the per-cell highlight for the selected table row. tview's
+// default selection inverts a cell's own fg/bg, which makes neutral rows
+// (ColorDefault text) vanish into the background. We instead paint an explicit
+// highlight background and keep the cell's foreground colour so the text — and
+// any severity colour — stays legible while selected.
+func selectedRowStyle(fg tcell.Color) tcell.Style {
+	// ColorDefault would resolve to the terminal's default foreground, which is
+	// dark on light themes and thus illegible on the dark highlight; pin it to
+	// white so neutral rows stay readable everywhere.
+	if fg == tcell.ColorDefault {
+		fg = tcell.ColorWhite
+	}
+	return tcell.StyleDefault.
+		Background(tcell.ColorDarkSlateGray).
+		Foreground(fg).
+		Attributes(tcell.AttrBold)
+}
+
 // attrTextColor colours attribute row text: neutral for healthy rows so the
 // table is easy to scan, reserving yellow/red for rows that need attention.
 func attrTextColor(s smart.Severity) tcell.Color {
