@@ -7,7 +7,7 @@ import (
 
 	"github.com/rivo/tview"
 
-	"smartview/internal/smart"
+	"github.com/trm42/smartview/internal/smart"
 )
 
 // tab identifies a detail sub-view.

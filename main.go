@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"smartview/internal/smart"
-	"smartview/internal/ui"
+	"github.com/trm42/smartview/internal/smart"
+	"github.com/trm42/smartview/internal/ui"
 )
 
 func main() {
