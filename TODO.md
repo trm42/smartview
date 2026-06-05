@@ -17,6 +17,12 @@ for drive health via smartmontools.
       curated drive/error/environment/workload stats, and per-head bar charts
       (reallocated sectors + MR head resistance). Parser fixture-tested (`TestParseFARM`);
       **not yet validated against a real Seagate SATA drive under sudo on Linux.**
+- [x] **Richer identity & diagnostics**: interface/link speed, sector sizes, form factor,
+      SATA/ATA version, TRIM (Overview); NVMe workload (read/write commands, controller
+      busy, warn/crit temp time); self-test durations and SATA PHY event counters (Logs).
+- [x] **Capacity fallback** to `nvme_total_capacity` when `user_capacity` is absent.
+- [x] **Unit-test sweep** of pure logic (health/severity, formatting, parsing, capability
+      helpers) across `internal/smart` and `internal/ui`.
 
 ## Next up
 
@@ -26,13 +32,12 @@ for drive health via smartmontools.
 - [ ] **Validate the Seagate FARM path on real hardware** (Seagate SATA drive, Linux,
       `sudo`). The renderer and parser are fixture-only so far; confirm the live
       `-l farm -j` fetch, the Seagate-ATA gate, and the per-head charts on actual data.
-- [ ] **Capacity fallback.** Apple omits all capacity fields; for other NVMe drives
-      that report `nvme_total_capacity`, fall back to it when `user_capacity` is absent.
 
 ## Later
 
-- [ ] **Self-tests** (`smartctl -t short|long|conveyance`): trigger from the UI, show
-      progress, and refresh the self-test log. Needs elevated privileges + a progress model.
+- [ ] **Self-tests** (`smartctl -t short|long|conveyance`): *trigger* from the UI, show
+      progress, and refresh the self-test log (durations/readiness already display in the
+      Logs tab). Needs elevated privileges + a progress model.
 - [ ] **Alerts / thresholds.** Optional notification or log when an attribute crosses
       into Caution/Failing; persist temperature history to disk for longer trends.
 - [ ] **Config file** for refresh interval, default device, and colour theme.

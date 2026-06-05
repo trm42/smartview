@@ -406,6 +406,23 @@ func nvmeRows(h *smart.NVMeHealth) []attrKV {
 	add("Unsafe shutdowns", fmt.Sprintf("%d", h.UnsafeShutdowns), smart.SeverityOK)
 	add("Data read", humanBytes(h.DataUnitsRead*512*1000), smart.SeverityOK)
 	add("Data written", humanBytes(h.DataUnitsWritten*512*1000), smart.SeverityOK)
+	if h.HostReads > 0 || h.HostWrites > 0 {
+		add("Read commands", fmt.Sprintf("%d", h.HostReads), smart.SeverityOK)
+		add("Write commands", fmt.Sprintf("%d", h.HostWrites), smart.SeverityOK)
+	}
+	if h.ControllerBusyTime > 0 {
+		add("Controller busy", humanMinutes(int(h.ControllerBusyTime)), smart.SeverityOK)
+	}
+	warnSevTemp := smart.SeverityOK
+	if h.WarningTempTime > 0 {
+		warnSevTemp = smart.SeverityCaution
+	}
+	add("Warn temp time", humanMinutes(h.WarningTempTime), warnSevTemp)
+	critSevTemp := smart.SeverityOK
+	if h.CriticalCompTime > 0 {
+		critSevTemp = smart.SeverityCaution
+	}
+	add("Crit temp time", humanMinutes(h.CriticalCompTime), critSevTemp)
 	if len(h.TemperatureSensors) > 0 {
 		parts := make([]string, len(h.TemperatureSensors))
 		for i, t := range h.TemperatureSensors {

@@ -208,7 +208,7 @@ func (a *App) listRow(d smart.Device) (string, string) {
 	}
 	main := fmt.Sprintf("%s %s", healthGlyph(rep.Overall()), model)
 	sec := fmt.Sprintf("  %s · %s · %s",
-		shortName(d), capacityString(rep.UserCapacity), tempString(rep))
+		shortName(d), capacityString(rep), tempString(rep))
 	return main, sec
 }
 

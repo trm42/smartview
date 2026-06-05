@@ -11,11 +11,12 @@ import (
 	"smartview/internal/smart"
 )
 
-// hasLogs reports whether the drive exposes any error or self-test log, used to
-// decide whether the Logs tab should appear at all.
+// hasLogs reports whether the drive exposes any error/self-test log, self-test
+// timing, or SATA link diagnostics — used to decide whether the Logs tab shows.
 func hasLogs(r *smart.Report) bool {
 	return r.ATASelfTestLog != nil || r.ATAErrorLog != nil ||
-		r.NVMeSelfTestLog != nil || r.NVMeErrorLog != nil
+		r.NVMeSelfTestLog != nil || r.NVMeErrorLog != nil ||
+		r.ATASmartData != nil || r.SATAPhyEvents != nil
 }
 
 // logsView renders the Logs tab: error-log occupancy plus self-test history. It
@@ -45,7 +46,40 @@ func buildLogsText(r *smart.Report) string {
 	writeErrorLog(&b, r)
 	b.WriteString("\n")
 	writeSelfTestLog(&b, r)
+	if dur := selfTestDurations(r); dur != "" {
+		fmt.Fprintf(&b, "   Estimated duration: %s\n", dur)
+	}
+	if r.SATAPhyEvents != nil {
+		b.WriteString("\n")
+		writePhyCounters(&b, r.SATAPhyEvents)
+	}
 	return b.String()
+}
+
+// selfTestDurations renders the polling time for each self-test type, or "".
+func selfTestDurations(r *smart.Report) string {
+	if r.ATASmartData == nil || r.ATASmartData.SelfTest == nil || r.ATASmartData.SelfTest.PollingMinutes == nil {
+		return ""
+	}
+	p := r.ATASmartData.SelfTest.PollingMinutes
+	return fmt.Sprintf("short %s · extended %s · conveyance %s",
+		humanMinutes(p.Short), humanMinutes(p.Extended), humanMinutes(p.Conveyance))
+}
+
+// writePhyCounters summarises the SATA PHY event counters: non-zero counters
+// (cable/link trouble) are flagged; an all-zero log reads as healthy.
+func writePhyCounters(b *strings.Builder, e *smart.SATAPhyEvents) {
+	fmt.Fprintln(b, " [::b]SATA link health[-:-:-]")
+	nonzero := 0
+	for _, c := range e.Table {
+		if c.Value > 0 {
+			fmt.Fprintf(b, "   [yellow]%-52s %d[-]\n", c.Name, c.Value)
+			nonzero++
+		}
+	}
+	if nonzero == 0 {
+		fmt.Fprintf(b, "   [green]No link errors logged[-] (%d counters)\n", len(e.Table))
+	}
 }
 
 // writeErrorLog summarises the drive's logged command errors.
