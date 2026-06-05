@@ -70,7 +70,7 @@ func (s *scrollView) clamp(h int) {
 // Draw paints the inner primitive at the current scroll offset, clipped to the
 // viewport, with up/down arrows when there is more content off-screen.
 func (s *scrollView) Draw(screen tcell.Screen) {
-	s.Box.DrawForSubclass(screen, s)
+	s.DrawForSubclass(screen, s)
 	x, y, w, h := s.GetInnerRect()
 	if w <= 0 || h <= 0 {
 		return
