@@ -30,6 +30,9 @@ func Available() bool {
 // Scan enumerates drives via `smartctl --scan-open -j`. The returned Device
 // names are round-tripped verbatim into Info; they must not be modified.
 func Scan(ctx context.Context) ([]Device, error) {
+	if fixtureActive() {
+		return fixtureScan()
+	}
 	out, err := run(ctx, "--scan-open", "-j")
 	if err != nil && len(out) == 0 {
 		return nil, err
@@ -49,6 +52,9 @@ func Scan(ctx context.Context) ([]Device, error) {
 // (permission denied, device not found) surface as smartctl.messages, which the
 // caller can inspect via Report.Errorf / FatalMessage.
 func Info(ctx context.Context, name string) (*Report, error) {
+	if fixtureActive() {
+		return fixtureInfo(name)
+	}
 	out, err := run(ctx, "-j", "-x", name)
 	if len(out) == 0 {
 		if err != nil {
@@ -70,6 +76,9 @@ func Info(ctx context.Context, name string) (*Report, error) {
 // section is absent (or supported=false), which is reported as (nil, nil) — an
 // expected condition, not an error, so the caller simply omits the FARM tab.
 func FarmLog(ctx context.Context, name string) (*FARM, error) {
+	if fixtureActive() {
+		return fixtureFarm(name)
+	}
 	out, err := run(ctx, "-l", "farm", "-j", name)
 	if len(out) == 0 {
 		if err != nil {
