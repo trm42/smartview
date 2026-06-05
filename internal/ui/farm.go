@@ -13,38 +13,78 @@ import (
 	"smartview/internal/smart"
 )
 
-// farmView renders the FARM tab: a scrollable panel of Seagate Field Accessible
-// Reliability Metrics (drive/wear summary, health-graded error counters,
-// environment and workload totals) above per-head bar charts. It refreshes in
-// place, keeping the stats widget (and its scroll offset) stable across polls.
+// farmView renders the FARM tab: four separately-bordered panels of Seagate
+// Field Accessible Reliability Metrics (drive/wear summary, health-graded error
+// counters, environment and workload totals) laid out as a 2×2 grid above the
+// per-head bar charts. It refreshes in place, rebuilding the grid each poll.
 type farmView struct {
 	*tview.Flex
-	stats *tview.TextView
+	drive    *tview.TextView
+	errors   *tview.TextView
+	env      *tview.TextView
+	workload *tview.TextView
 }
 
 func newFarmView(r *smart.Report) *farmView {
-	v := &farmView{
-		Flex:  tview.NewFlex().SetDirection(tview.FlexRow),
-		stats: tview.NewTextView().SetDynamicColors(true).SetScrollable(true),
+	box := func(title string) *tview.TextView {
+		tv := tview.NewTextView().SetDynamicColors(true)
+		tv.SetBorder(true).SetTitle(title)
+		return tv
 	}
-	v.stats.SetBorder(true).SetTitle(" Seagate FARM ")
+	v := &farmView{
+		Flex:     tview.NewFlex().SetDirection(tview.FlexRow),
+		drive:    box(" Drive "),
+		errors:   box(" Error statistics "),
+		env:      box(" Environment "),
+		workload: box(" Workload "),
+	}
 	v.refresh(r, nil)
 	return v
 }
 
-// refresh updates the stats text (preserving scroll) and rebuilds the per-head
-// charts. The stats widget instance is reused so focus/scroll are preserved.
+// boxHeight returns the fixed height for a bordered box holding text: one row
+// per line plus two for the top and bottom border.
+func boxHeight(text string) int {
+	return strings.Count(text, "\n") + 2
+}
+
+// refresh rebuilds the four stat boxes and lays them out as a 2×2 grid (a left
+// column of drive then env, a right column of errors then workload) above the
+// per-head charts. Each box is fixed to its content height and top-anchored by a
+// trailing flexible spacer; the grid is the focus item so the tab stays reachable.
 func (v *farmView) refresh(r *smart.Report, _ []float64) {
 	f := r.FARM
 	if f == nil {
 		return
 	}
-	row, col := v.stats.GetScrollOffset()
-	v.stats.SetText(farmStatsText(f))
-	v.stats.ScrollTo(row, col)
+
+	driveText := farmBoxText(writeFarmDriveInfo, f)
+	errorsText := farmBoxText(writeFarmErrors, f)
+	envText := farmBoxText(writeFarmEnvironment, f)
+	workloadText := farmBoxText(writeFarmWorkload, f)
+	v.drive.SetText(driveText)
+	v.errors.SetText(errorsText)
+	v.env.SetText(envText)
+	v.workload.SetText(workloadText)
+
+	left := tview.NewFlex().SetDirection(tview.FlexRow)
+	left.AddItem(v.drive, boxHeight(driveText), 0, false)
+	left.AddItem(v.env, boxHeight(envText), 0, false)
+	left.AddItem(nil, 0, 1, false)
+	leftTotal := boxHeight(driveText) + boxHeight(envText)
+
+	right := tview.NewFlex().SetDirection(tview.FlexRow)
+	right.AddItem(v.errors, boxHeight(errorsText), 0, false)
+	right.AddItem(v.workload, boxHeight(workloadText), 0, false)
+	right.AddItem(nil, 0, 1, false)
+	rightTotal := boxHeight(errorsText) + boxHeight(workloadText)
+
+	grid := tview.NewFlex() // horizontal: left column | right column
+	grid.AddItem(left, 0, 1, true)
+	grid.AddItem(right, 0, 1, false)
 
 	v.Clear()
-	v.AddItem(v.stats, 0, 1, true)
+	v.AddItem(grid, max(leftTotal, rightTotal), 0, true)
 	// Per-head visualizations. Reallocated sectors per head is the health
 	// red-flag (flat zero on a healthy drive); MR head resistance always varies
 	// and surfaces an outlier head.
@@ -56,23 +96,16 @@ func (v *farmView) refresh(r *smart.Report, _ []float64) {
 	}
 }
 
-// farmStatsText assembles the scrollable FARM statistics panel.
-func farmStatsText(f *smart.FARM) string {
+// farmBoxText builds a single box's text via the matching writeFarm* helper.
+func farmBoxText(write func(*strings.Builder, *smart.FARM), f *smart.FARM) string {
 	var b strings.Builder
-	writeFarmDriveInfo(&b, f)
-	b.WriteString("\n")
-	writeFarmErrors(&b, f)
-	b.WriteString("\n")
-	writeFarmEnvironment(&b, f)
-	b.WriteString("\n")
-	writeFarmWorkload(&b, f)
+	write(&b, f)
 	return b.String()
 }
 
 // writeFarmDriveInfo renders the drive/wear summary block.
 func writeFarmDriveInfo(b *strings.Builder, f *smart.FARM) {
 	d := f.DriveInfo
-	fmt.Fprintln(b, " [::b]Drive[-:-:-]")
 	farmRow(b, "Recording", orDash(d.RecordingType))
 	if d.RotationRate > 0 {
 		farmRow(b, "Spindle", fmt.Sprintf("%d rpm", d.RotationRate))
@@ -87,7 +120,6 @@ func writeFarmDriveInfo(b *strings.Builder, f *smart.FARM) {
 // writeFarmErrors renders the health-graded error/reliability counters.
 func writeFarmErrors(b *strings.Builder, f *smart.FARM) {
 	e := f.Errors
-	fmt.Fprintln(b, " [::b]Error statistics[-:-:-]")
 	farmCount(b, "Unrecoverable read", e.UnrecoverableRead, smart.SeverityFailing)
 	farmCount(b, "Unrecoverable write", e.UnrecoverableWrite, smart.SeverityFailing)
 	farmCount(b, "Reallocated sectors", e.ReallocatedSectors, smart.SeverityFailing)
@@ -101,7 +133,6 @@ func writeFarmErrors(b *strings.Builder, f *smart.FARM) {
 // writeFarmEnvironment renders temperatures and power-rail telemetry.
 func writeFarmEnvironment(b *strings.Builder, f *smart.FARM) {
 	e := f.Environment
-	fmt.Fprintln(b, " [::b]Environment[-:-:-]")
 	farmRow(b, "Temp now", fmt.Sprintf("%d°C", e.CurrentTemp))
 	farmRow(b, "Temp avg", fmt.Sprintf("%d°C", e.AverageTemp))
 	farmRow(b, "Temp range", fmt.Sprintf("%d–%d°C (life), spec %d–%d°C",
@@ -119,7 +150,6 @@ func writeFarmWorkload(b *strings.Builder, f *smart.FARM) {
 	if sectorBytes == 0 {
 		sectorBytes = 512
 	}
-	fmt.Fprintln(b, " [::b]Workload[-:-:-]")
 	farmRow(b, "Read cmds", fmt.Sprintf("%d  (%d random)", w.TotalReadCommands, w.RandomReads))
 	farmRow(b, "Write cmds", fmt.Sprintf("%d  (%d random)", w.TotalWriteCommands, w.RandomWrites))
 	farmRow(b, "Data read", humanBytes(w.LogicalSectorsRead*sectorBytes))
@@ -128,7 +158,7 @@ func writeFarmWorkload(b *strings.Builder, f *smart.FARM) {
 
 // farmRow writes an aligned key/value line.
 func farmRow(b *strings.Builder, k, v string) {
-	fmt.Fprintf(b, "   [::b]%-20s[-:-:-] %s\n", k, v)
+	fmt.Fprintf(b, " [::b]%-20s[-:-:-] %s\n", k, v)
 }
 
 // farmCount writes a counter line, tinting it by severity only when non-zero so
