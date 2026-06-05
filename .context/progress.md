@@ -22,3 +22,18 @@
 - **Learnings for future iterations:**
   - Spaces only; verified no tabs with `grep -P '\t'` and structure with `ruby -ryaml`.
   - Confirmed absence of `.golangci.yml`/`.golangci.yaml` so defaults are used.
+
+## US-003: Verify workflows locally and validate YAML schema
+- Verification-only story (no application code changed). Reproduced every CI step on the current tree and validated both workflow YAML files.
+- Results:
+  - `gofmt -l .` → empty (clean).
+  - `go vet ./...` → ok.
+  - `go build -o smartview .` → ok.
+  - `go test ./...` → ok (`internal/smart` and `internal/ui` pass; root has no tests).
+  - Tabs: `grep -Pn '\t' .github/workflows/*.yml` → none.
+  - YAML parse: `ruby -ryaml` loads both `ci.yml` and `lint.yml` cleanly.
+  - actionlint: not installed on PATH; ran it via `go run github.com/rhysd/actionlint/cmd/actionlint@latest .github/workflows/*.yml` → exit 0, no errors.
+- Files changed: `.context/progress.md` (notes); `.gitignore` (pre-existing local change adding `.context`).
+- **Learnings for future iterations:**
+  - actionlint can be run without installing it via `go run github.com/rhysd/actionlint/cmd/actionlint@latest` (needs network for first fetch); `go run pkg@version` does not touch the module's `go.mod`/`go.sum`.
+  - actionlint passes clean on both workflows, confirming US-001/US-002 are syntactically valid for GitHub Actions (not just generic YAML).
