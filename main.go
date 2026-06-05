@@ -20,9 +20,15 @@ import (
 
 func main() {
 	interval := flag.Duration("interval", 5*time.Second, "auto-refresh interval")
+	fixtures := flag.String("fixtures", "", "load drive data from JSON fixtures in DIR instead of smartctl (requires -tags dev build)")
 	flag.Parse()
 
-	if !smart.Available() {
+	if *fixtures != "" {
+		if err := smart.UseFixtures(*fixtures); err != nil {
+			fmt.Fprintln(os.Stderr, "smartview:", err)
+			os.Exit(1)
+		}
+	} else if !smart.Available() {
 		fmt.Fprintln(os.Stderr, "smartview: smartctl not found on PATH.")
 		fmt.Fprintln(os.Stderr, "Install smartmontools:", installHint())
 		os.Exit(1)
