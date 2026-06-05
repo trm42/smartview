@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -26,6 +27,13 @@ type App struct {
 
 	interval  time.Duration
 	refreshCh chan struct{}
+
+	// refreshing is set on the poll goroutine and read on the animation
+	// goroutine, so it is an atomic. This does not violate the event-loop-only
+	// invariant below — the reports/history maps stay event-loop-only; only this
+	// flag crosses goroutines.
+	refreshing atomic.Bool
+	spinFrame  int // animation frame; mutated only inside QueueUpdateDraw
 
 	// All fields below are touched only on the main (event-loop) goroutine,
 	// either directly or inside QueueUpdateDraw callbacks, so need no locking.
@@ -262,7 +270,44 @@ func (a *App) Run(ctx context.Context) error {
 	}()
 
 	go a.pollLoop(ctx)
+	go a.animateSpinner(ctx)
 	return a.app.Run()
+}
+
+// spinnerFrames are the single-width braille glyphs cycled by the refresh
+// spinner. Swap for ASCII (`|/-\`) if a target terminal can't render braille.
+var spinnerFrames = []rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+
+// renderSpinner paints the top-right spinner cell from the current refresh
+// state. Called only on the event-loop goroutine.
+func (a *App) renderSpinner() {
+	if a.refreshing.Load() {
+		a.detail.spinner.SetText(fmt.Sprintf("[aqua]%c[-] ",
+			spinnerFrames[a.spinFrame%len(spinnerFrames)]))
+	} else {
+		a.detail.spinner.SetText("")
+	}
+}
+
+// animateSpinner advances the spinner animation while a refresh is underway.
+// When idle it queues no redraws, so it does not busy-spin the event loop.
+func (a *App) animateSpinner(ctx context.Context) {
+	ticker := time.NewTicker(120 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if !a.refreshing.Load() {
+				continue
+			}
+			a.app.QueueUpdateDraw(func() {
+				a.spinFrame++
+				a.renderSpinner()
+			})
+		}
+	}
 }
 
 // shortName trims an over-long device name for display.
