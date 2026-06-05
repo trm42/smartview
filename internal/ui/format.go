@@ -116,6 +116,15 @@ func humanDuration(hours int) string {
 	return fmt.Sprintf("%d y %d d", days/365, days%365)
 }
 
+// humanMinutes renders a minute count compactly: raw minutes under 90, else
+// approximate hours. E.g. 1 → "1 min", 1804 → "~30 h".
+func humanMinutes(m int) string {
+	if m < 90 {
+		return fmt.Sprintf("%d min", m)
+	}
+	return fmt.Sprintf("~%d h", (m+30)/60)
+}
+
 // orDash renders s, falling back to the dash placeholder when empty.
 func orDash(s string) string {
 	if s == "" {
@@ -124,12 +133,24 @@ func orDash(s string) string {
 	return s
 }
 
-// capacityString formats a drive's usable capacity, or a dash if unknown.
-func capacityString(c *smart.Capacity) string {
-	if c == nil || c.Bytes == 0 {
-		return dash
+// capacityBytes returns the drive's usable size, preferring user_capacity and
+// falling back to nvme_total_capacity (Apple/NVMe drives often omit the former).
+func capacityBytes(r *smart.Report) (int64, bool) {
+	if r.UserCapacity != nil && r.UserCapacity.Bytes > 0 {
+		return r.UserCapacity.Bytes, true
 	}
-	return humanBytes(c.Bytes)
+	if r.NVMeTotalCapacity != nil && *r.NVMeTotalCapacity > 0 {
+		return *r.NVMeTotalCapacity, true
+	}
+	return 0, false
+}
+
+// capacityString formats a report's usable capacity, or a dash if unknown.
+func capacityString(r *smart.Report) string {
+	if b, ok := capacityBytes(r); ok {
+		return humanBytes(b)
+	}
+	return dash
 }
 
 // tempString formats the current temperature in Celsius, or a dash.

@@ -86,7 +86,7 @@ func buildIdentity(r *smart.Report) tview.Primitive {
 	row("Type", driveKind(r))
 	row("Serial", orDash(r.SerialNumber))
 	row("Firmware", orDash(r.FirmwareVersion))
-	row("Capacity", capacityString(r.UserCapacity))
+	row("Capacity", capacityString(r))
 	row("Temp", tempString(r))
 	if r.PowerOnTime != nil {
 		row("Power-on", humanDuration(r.PowerOnTime.Hours))
@@ -96,6 +96,24 @@ func buildIdentity(r *smart.Report) tview.Primitive {
 	if r.PowerCycleCount != nil {
 		row("Power cycles", fmt.Sprintf("%d", *r.PowerCycleCount))
 	}
+
+	// Interface and geometry (mostly ATA; each gated on presence).
+	if s := interfaceString(r.InterfaceSpeed); s != "" {
+		row("Interface", s)
+	}
+	if r.LogicalBlockSize != nil {
+		row("Sector size", sectorSizeString(r))
+	}
+	if r.FormFactor != nil && r.FormFactor.Name != "" {
+		row("Form factor", r.FormFactor.Name)
+	}
+	if r.SATAVersion != nil && r.SATAVersion.String != "" {
+		row("SATA", r.SATAVersion.String)
+	}
+	if r.Trim != nil {
+		row("TRIM", yesNo(r.Trim.Supported))
+	}
+
 	if r.NVMeHealth != nil {
 		h := r.NVMeHealth
 		if h.PercentageUsed != nil {
@@ -106,6 +124,40 @@ func buildIdentity(r *smart.Report) tview.Primitive {
 	}
 	tv.SetText(b.String())
 	return tv
+}
+
+// interfaceString renders the SATA link speed, flagging a negotiated speed below
+// the drive's maximum (a degraded link, often a cable issue) in yellow.
+func interfaceString(is *smart.InterfaceSpeed) string {
+	if is == nil || is.Current == nil || is.Current.String == "" {
+		return ""
+	}
+	cur := is.Current.String
+	if is.Max != nil && is.Max.String != "" && is.Max.String != cur {
+		return fmt.Sprintf("%s  [yellow](max %s)[-]", cur, is.Max.String)
+	}
+	return cur
+}
+
+// sectorSizeString renders the logical (and physical, when different) block size.
+func sectorSizeString(r *smart.Report) string {
+	logical := *r.LogicalBlockSize
+	physical := logical
+	if r.PhysicalBlockSize != nil {
+		physical = *r.PhysicalBlockSize
+	}
+	if physical != logical {
+		return fmt.Sprintf("%d B logical / %d B physical", logical, physical)
+	}
+	return fmt.Sprintf("%d B", logical)
+}
+
+// yesNo renders a boolean as a word.
+func yesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
 }
 
 // buildGauges returns NVMe wear gauges, or nil for drives without a usable

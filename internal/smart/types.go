@@ -29,16 +29,28 @@ type Report struct {
 	PowerOnTime     *PowerOnTime `json:"power_on_time"`
 	PowerCycleCount *int         `json:"power_cycle_count"`
 
+	// Drive geometry and interface (mostly ATA; absent fields decode to nil).
+	LogicalBlockSize  *int            `json:"logical_block_size"`
+	PhysicalBlockSize *int            `json:"physical_block_size"`
+	FormFactor        *NamedValue     `json:"form_factor"`
+	InterfaceSpeed    *InterfaceSpeed `json:"interface_speed"`
+	SATAVersion       *StringValue    `json:"sata_version"`
+	ATAVersion        *StringValue    `json:"ata_version"`
+	Trim              *Trim           `json:"trim"`
+
 	// ATA / SATA
 	ATAAttributes         *ATAAttributes         `json:"ata_smart_attributes"`
+	ATASmartData          *ATASmartData          `json:"ata_smart_data"`
 	ATASelfTestLog        *ATASelfTestLog        `json:"ata_smart_self_test_log"`
 	ATAErrorLog           *ATAErrorLog           `json:"ata_smart_error_log"`
 	ATATemperatureHistory *ATATemperatureHistory `json:"ata_sct_temperature_history"`
+	SATAPhyEvents         *SATAPhyEvents         `json:"sata_phy_event_counters"`
 
 	// NVMe
-	NVMeHealth      *NVMeHealth      `json:"nvme_smart_health_information_log"`
-	NVMeErrorLog    *NVMeErrorLog    `json:"nvme_error_information_log"`
-	NVMeSelfTestLog *NVMeSelfTestLog `json:"nvme_self_test_log"`
+	NVMeHealth        *NVMeHealth      `json:"nvme_smart_health_information_log"`
+	NVMeErrorLog      *NVMeErrorLog    `json:"nvme_error_information_log"`
+	NVMeSelfTestLog   *NVMeSelfTestLog `json:"nvme_self_test_log"`
+	NVMeTotalCapacity *int64           `json:"nvme_total_capacity"`
 
 	// Seagate FARM. Not part of `-j -x`; fetched separately via FarmLog and
 	// attached by the caller, so it is never populated by Info's unmarshal.
@@ -170,6 +182,59 @@ type NVMeHealth struct {
 	MediaErrors             int   `json:"media_errors"`
 	NumErrLogEntries        int   `json:"num_err_log_entries"`
 	TemperatureSensors      []int `json:"temperature_sensors"`
+	HostReads               int64 `json:"host_reads"`
+	HostWrites              int64 `json:"host_writes"`
+	ControllerBusyTime      int64 `json:"controller_busy_time"` // minutes
+	WarningTempTime         int   `json:"warning_temp_time"`    // minutes
+	CriticalCompTime        int   `json:"critical_comp_time"`   // minutes
+}
+
+// NamedValue is smartmontools' common {name:"...", ...} encoding (e.g. form_factor).
+type NamedValue struct {
+	Name string `json:"name"`
+}
+
+// InterfaceSpeed reports the negotiated vs maximum SATA link speed.
+type InterfaceSpeed struct {
+	Max     *LinkSpeed `json:"max"`
+	Current *LinkSpeed `json:"current"`
+}
+
+// LinkSpeed is one interface-speed reading (e.g. "6.0 Gb/s").
+type LinkSpeed struct {
+	String string `json:"string"`
+}
+
+// Trim reports SSD TRIM/UNMAP support.
+type Trim struct {
+	Supported bool `json:"supported"`
+}
+
+// ATASmartData carries SMART capability metadata, notably self-test durations.
+type ATASmartData struct {
+	SelfTest *struct {
+		PollingMinutes *SelfTestPolling `json:"polling_minutes"`
+	} `json:"self_test"`
+}
+
+// SelfTestPolling is how long each self-test type takes, in minutes.
+type SelfTestPolling struct {
+	Short      int `json:"short"`
+	Extended   int `json:"extended"`
+	Conveyance int `json:"conveyance"`
+}
+
+// SATAPhyEvents is the SATA PHY event counter log — the best signal for a flaky
+// cable or connection (CRC/COMRESET/handshake errors).
+type SATAPhyEvents struct {
+	Table []SATAPhyCounter `json:"table"`
+}
+
+// SATAPhyCounter is one PHY event counter.
+type SATAPhyCounter struct {
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Value int64  `json:"value"`
 }
 
 // NVMeErrorLog reports the NVMe error information log occupancy.
