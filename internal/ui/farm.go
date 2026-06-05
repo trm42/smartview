@@ -72,7 +72,6 @@ func farmStatsText(f *smart.FARM) string {
 // writeFarmDriveInfo renders the drive/wear summary block.
 func writeFarmDriveInfo(b *strings.Builder, f *smart.FARM) {
 	d := f.DriveInfo
-	fmt.Fprintln(b, " [::b]Drive[-:-:-]")
 	farmRow(b, "Recording", orDash(d.RecordingType))
 	if d.RotationRate > 0 {
 		farmRow(b, "Spindle", fmt.Sprintf("%d rpm", d.RotationRate))
@@ -87,7 +86,6 @@ func writeFarmDriveInfo(b *strings.Builder, f *smart.FARM) {
 // writeFarmErrors renders the health-graded error/reliability counters.
 func writeFarmErrors(b *strings.Builder, f *smart.FARM) {
 	e := f.Errors
-	fmt.Fprintln(b, " [::b]Error statistics[-:-:-]")
 	farmCount(b, "Unrecoverable read", e.UnrecoverableRead, smart.SeverityFailing)
 	farmCount(b, "Unrecoverable write", e.UnrecoverableWrite, smart.SeverityFailing)
 	farmCount(b, "Reallocated sectors", e.ReallocatedSectors, smart.SeverityFailing)
@@ -101,7 +99,6 @@ func writeFarmErrors(b *strings.Builder, f *smart.FARM) {
 // writeFarmEnvironment renders temperatures and power-rail telemetry.
 func writeFarmEnvironment(b *strings.Builder, f *smart.FARM) {
 	e := f.Environment
-	fmt.Fprintln(b, " [::b]Environment[-:-:-]")
 	farmRow(b, "Temp now", fmt.Sprintf("%d°C", e.CurrentTemp))
 	farmRow(b, "Temp avg", fmt.Sprintf("%d°C", e.AverageTemp))
 	farmRow(b, "Temp range", fmt.Sprintf("%d–%d°C (life), spec %d–%d°C",
@@ -119,7 +116,6 @@ func writeFarmWorkload(b *strings.Builder, f *smart.FARM) {
 	if sectorBytes == 0 {
 		sectorBytes = 512
 	}
-	fmt.Fprintln(b, " [::b]Workload[-:-:-]")
 	farmRow(b, "Read cmds", fmt.Sprintf("%d  (%d random)", w.TotalReadCommands, w.RandomReads))
 	farmRow(b, "Write cmds", fmt.Sprintf("%d  (%d random)", w.TotalWriteCommands, w.RandomWrites))
 	farmRow(b, "Data read", humanBytes(w.LogicalSectorsRead*sectorBytes))
@@ -128,7 +124,7 @@ func writeFarmWorkload(b *strings.Builder, f *smart.FARM) {
 
 // farmRow writes an aligned key/value line.
 func farmRow(b *strings.Builder, k, v string) {
-	fmt.Fprintf(b, "   [::b]%-20s[-:-:-] %s\n", k, v)
+	fmt.Fprintf(b, " [::b]%-20s[-:-:-] %s\n", k, v)
 }
 
 // farmCount writes a counter line, tinting it by severity only when non-zero so
