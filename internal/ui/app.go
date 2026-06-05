@@ -12,7 +12,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
-	"smartview/internal/smart"
+	"github.com/trm42/smartview/internal/smart"
 )
 
 // App is the smartview terminal application.

@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	"smartview/internal/smart"
+	"github.com/trm42/smartview/internal/smart"
 )
 
 // fetchTimeout bounds a single smartctl invocation.

@@ -5,7 +5,7 @@ package ui
 import (
 	"testing"
 
-	"smartview/internal/smart"
+	"github.com/trm42/smartview/internal/smart"
 )
 
 func tabIDs(tabs []tab) []string {
