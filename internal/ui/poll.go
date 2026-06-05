@@ -62,9 +62,16 @@ func (a *App) fetchAndApply(ctx context.Context) {
 		}
 		a.populateList()
 		// detail.update refreshes each tab's data in place (preserving table
-		// selection, scroll and sort/filter), so a live refresh no longer
-		// disturbs the user — no focus guard needed.
+		// selection, scroll and sort/filter) for the common same-drive,
+		// same-tabs case. When the set of tabs changes (e.g. the Logs tab
+		// appears after a self-test completes) it rebuilds the views, which
+		// orphans focus on the destroyed primitive — restore it so an active
+		// detail tab stays keyboard-usable across that transition.
+		detailFocused := a.detail.HasFocus()
 		a.showSelected()
+		if detailFocused {
+			a.app.SetFocus(a.detail.content())
+		}
 	})
 }
 
