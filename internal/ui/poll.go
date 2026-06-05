@@ -34,6 +34,7 @@ func (a *App) pollLoop(ctx context.Context) {
 
 // fetchAndApply queries every device, then applies the batch on the UI goroutine.
 func (a *App) fetchAndApply(ctx context.Context) {
+	a.refreshing.Store(true)
 	results := make(map[string]*smart.Report, len(a.devices))
 	for _, d := range a.devices {
 		cctx, cancel := context.WithTimeout(ctx, fetchTimeout)
@@ -72,6 +73,8 @@ func (a *App) fetchAndApply(ctx context.Context) {
 		if detailFocused {
 			a.app.SetFocus(a.detail.content())
 		}
+		a.refreshing.Store(false)
+		a.renderSpinner()
 	})
 }
 
