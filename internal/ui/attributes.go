@@ -64,7 +64,7 @@ func (m filterMode) String() string {
 // and focus survive a re-render.
 type attributesView struct {
 	*tview.Flex
-	table  *tview.Table
+	table  *scrollTable
 	footer *tview.TextView
 	attrs  []smart.ATAAttribute
 	shown  []smart.ATAAttribute // rows currently displayed; row i+1 → shown[i]
@@ -75,10 +75,11 @@ type attributesView struct {
 func newAttributesView(attrs []smart.ATAAttribute) *attributesView {
 	v := &attributesView{
 		Flex:   tview.NewFlex().SetDirection(tview.FlexRow),
-		table:  tview.NewTable().SetBorders(false).SetFixed(1, 0),
+		table:  newScrollTable(),
 		footer: tview.NewTextView().SetDynamicColors(true).SetWrap(true),
 		attrs:  attrs,
 	}
+	v.table.SetBorders(false).SetFixed(1, 0)
 	v.table.SetSelectable(true, false)
 	v.footer.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter)
 
@@ -306,7 +307,7 @@ type attrKV struct {
 // a description footer, refreshing rows in place so the selection is preserved.
 type nvmeAttributesView struct {
 	*tview.Flex
-	table  *tview.Table
+	table  *scrollTable
 	footer *tview.TextView
 	rows   []attrKV
 }
@@ -314,9 +315,10 @@ type nvmeAttributesView struct {
 func newNVMeAttributesView(h *smart.NVMeHealth) *nvmeAttributesView {
 	v := &nvmeAttributesView{
 		Flex:   tview.NewFlex().SetDirection(tview.FlexRow),
-		table:  tview.NewTable().SetBorders(false).SetFixed(1, 0),
+		table:  newScrollTable(),
 		footer: tview.NewTextView().SetDynamicColors(true).SetWrap(true),
 	}
+	v.table.SetBorders(false).SetFixed(1, 0)
 	v.table.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" NVMe health log ")
 	v.table.SetSelectable(true, false)
 	v.footer.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter)

@@ -91,15 +91,85 @@ func (s *scrollView) Draw(screen tcell.Screen) {
 	}
 
 	// Scroll indicators at the right edge, drawn unclipped inside the viewport.
-	if s.contentHeight > h {
-		arrow := tcell.StyleDefault.Foreground(tcell.ColorAqua)
-		if s.offset > 0 {
-			screen.SetContent(x+w-1, y, '▲', nil, arrow)
-		}
-		if s.offset < s.contentHeight-h {
-			screen.SetContent(x+w-1, y+h-1, '▼', nil, arrow)
-		}
+	drawScrollArrows(screen, x, y, w, h, s.offset, s.contentHeight)
+}
+
+// drawScrollArrows overlays the cyan up/down indicators at the right edge of the
+// rect (x, y, w, h) when content overflows it: ▲ when offset rows are hidden
+// above, ▼ when content extends below. This is the one scroll affordance shared
+// by every tab — the scrollView container and the natively-scrolling TextView,
+// Table and List wrappers below all route through it so the cue looks identical
+// everywhere. h is both the viewport height and the placement rect, so callers
+// pass an inner rect (border/gutter already removed); the arrows then sit just
+// inside the right border on the top and bottom content rows.
+func drawScrollArrows(screen tcell.Screen, x, y, w, h, offset, contentHeight int) {
+	if w <= 0 || h <= 0 || contentHeight <= h {
+		return
 	}
+	arrow := tcell.StyleDefault.Foreground(tcell.ColorAqua)
+	if offset > 0 {
+		screen.SetContent(x+w-1, y, '▲', nil, arrow)
+	}
+	if offset < contentHeight-h {
+		screen.SetContent(x+w-1, y+h-1, '▼', nil, arrow)
+	}
+}
+
+// scrollTextView is a TextView that draws the shared scroll arrows on overflow.
+// tview's TextView scrolls itself (arrow/j/k/PgUp/etc when focused); this only
+// adds the off-screen cue the bare widget lacks. Used by any tab whose body is a
+// single scrollable TextView (Logs, the Overview drive panel, a running test).
+type scrollTextView struct {
+	*tview.TextView
+}
+
+func newScrollTextView() *scrollTextView {
+	return &scrollTextView{TextView: tview.NewTextView()}
+}
+
+func (s *scrollTextView) Draw(screen tcell.Screen) {
+	s.TextView.Draw(screen)
+	x, y, w, h := s.GetInnerRect()
+	row, _ := s.GetScrollOffset()
+	drawScrollArrows(screen, x, y, w, h, row, s.GetWrappedLineCount())
+}
+
+// scrollTable is a Table that draws the shared scroll arrows on overflow. The
+// row offset and total row count are in the same units as the inner viewport
+// height (one row each, fixed header included on both sides), so the generic
+// helper's offset < contentHeight-h test lines up with the table's own scroll.
+type scrollTable struct {
+	*tview.Table
+}
+
+func newScrollTable() *scrollTable {
+	return &scrollTable{Table: tview.NewTable()}
+}
+
+func (s *scrollTable) Draw(screen tcell.Screen) {
+	s.Table.Draw(screen)
+	x, y, w, h := s.GetInnerRect()
+	row, _ := s.GetOffset()
+	drawScrollArrows(screen, x, y, w, h, row, s.GetRowCount())
+}
+
+// scrollList is a List that draws the shared scroll arrows on overflow. Items
+// are converted to row units via linesPerItem (a secondary-text list spends two
+// rows per item) so the cue matches the list's actual height.
+type scrollList struct {
+	*tview.List
+	linesPerItem int
+}
+
+func newScrollList(linesPerItem int) *scrollList {
+	return &scrollList{List: tview.NewList(), linesPerItem: linesPerItem}
+}
+
+func (s *scrollList) Draw(screen tcell.Screen) {
+	s.List.Draw(screen)
+	x, y, w, h := s.GetInnerRect()
+	offset, _ := s.GetOffset()
+	drawScrollArrows(screen, x, y, w, h, offset*s.linesPerItem, s.GetItemCount()*s.linesPerItem)
 }
 
 // InputHandler scrolls the viewport. These keys already reach the focused page
