@@ -70,6 +70,31 @@ func marginBar(value, worst, thresh int, sev smart.Severity) string {
 	return fmt.Sprintf("[%s]%s[-] %d", severityTag(sev), bar, value-thresh)
 }
 
+// borderColor returns the accent border colour for a pane that holds keyboard
+// focus and a dim one for an unfocused pane, so the active container is obvious.
+// Driven from App.refreshFocusChrome on every focus/tab transition.
+func borderColor(focused bool) tcell.Color {
+	if focused {
+		return tcell.ColorAqua
+	}
+	return tcell.ColorGray
+}
+
+// tempSeverity grades a drive temperature for display colouring only. The data
+// layer derives health from SMART status and attributes, never from raw
+// temperature, so these thresholds live in the UI layer to keep internal/smart
+// untouched.
+func tempSeverity(celsius int) smart.Severity {
+	switch {
+	case celsius >= 65:
+		return smart.SeverityFailing
+	case celsius >= 55:
+		return smart.SeverityCaution
+	default:
+		return smart.SeverityOK
+	}
+}
+
 // severityColor maps a health severity to its display colour.
 func severityColor(s smart.Severity) tcell.Color {
 	switch s {
