@@ -17,28 +17,39 @@ import (
 // temperature sparkline. It refreshes in place.
 type overviewView struct {
 	*tview.Flex
+	identity *scrollTextView // the drive panel; scrolls (with arrows) when tall
 }
 
 // newOverviewView builds the Overview tab. tempHistory is the runtime-accumulated
 // series used for NVMe drives, which lack an on-device temperature log.
 func newOverviewView(r *smart.Report, tempHistory []float64) *overviewView {
+	id := newScrollTextView()
+	id.SetDynamicColors(true).SetScrollable(true)
+	id.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Drive ")
 	v := &overviewView{
-		Flex: tview.NewFlex().SetDirection(tview.FlexRow),
+		Flex:     tview.NewFlex().SetDirection(tview.FlexRow),
+		identity: id,
 	}
 	v.refresh(r, tempHistory)
 	return v
 }
 
-// refresh rebuilds the panel contents for a new report.
+// refresh rebuilds the panel contents for a new report. The identity panel is
+// the one element that can outgrow its slot (a rich ATA drive lists many rows),
+// so it is a focusable, scrollable TextView with off-screen arrows; the gauges
+// and sparkline are small and fixed. Its scroll offset is preserved across polls.
 func (v *overviewView) refresh(r *smart.Report, tempHistory []float64) {
-	v.Clear()
+	row, col := v.identity.GetScrollOffset()
+	v.identity.SetText(identityText(r))
+	v.identity.ScrollTo(row, col)
 
+	v.Clear()
 	mid := tview.NewFlex() // horizontal: identity | gauges
-	mid.AddItem(buildIdentity(r), 0, 2, false)
+	mid.AddItem(v.identity, 0, 2, true)
 	if g := buildGauges(r); g != nil {
 		mid.AddItem(g, 26, 0, false)
 	}
-	v.AddItem(mid, 0, 1, false)
+	v.AddItem(mid, 0, 1, true)
 
 	if sl := buildTempSparkline(r, tempHistory); sl != nil {
 		v.AddItem(sl, 8, 0, false)
@@ -53,11 +64,8 @@ func passFailText(r *smart.Report) string {
 	return "[red]FAILED[-]"
 }
 
-// buildIdentity is the key/value panel of drive identity and wear summary.
-func buildIdentity(r *smart.Report) tview.Primitive {
-	tv := tview.NewTextView().SetDynamicColors(true)
-	tv.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Drive ")
-
+// identityText renders the key/value body of the drive identity and wear panel.
+func identityText(r *smart.Report) string {
 	var b strings.Builder
 	row := func(k, v string) { fmt.Fprintf(&b, "[::b]%-14s[-:-:-] %s\n", k, v) }
 
@@ -117,8 +125,7 @@ func buildIdentity(r *smart.Report) tview.Primitive {
 		row("Media errors", fmt.Sprintf("%d", h.MediaErrors))
 		row("Unsafe shutdn", fmt.Sprintf("%d", h.UnsafeShutdowns))
 	}
-	tv.SetText(b.String())
-	return tv
+	return b.String()
 }
 
 // interfaceString renders the SATA link speed, flagging a negotiated speed below

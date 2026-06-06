@@ -86,6 +86,14 @@ need no mutex.
   The App owns the smartctl calls, the confirm/error modals (`pushModal`/
   `popModal`, guarded by `inModal` in `onKey`), and the post-action refresh.
   Self-tests are short/long only — `smart.RunSelfTest` rejects other types.
+- **Scroll arrows are a shared affordance** (`scroll.go`): every tab that can
+  overflow shows the same cyan ▲/▼ off-screen cue via `drawScrollArrows`. The
+  `scrollView` container (FARM, Overview's whole layout uses widget composition)
+  draws them directly; widgets that scroll natively wrap in `scrollTextView`,
+  `scrollTable` or `scrollList`, which embed the tview widget and override `Draw`
+  to overlay the arrows from the widget's own scroll metrics. Make a new
+  scrollable tab body one of these wrappers rather than a bare TextView/Table/
+  List, and keep it focusable so the focused-content keys reach it.
 - **Health/severity** lives in `smart/health.go`. ATA pre-fail vs old-age comes
   from the authoritative `flags.prefailure` bit, not attribute-name heuristics.
 - Protocol branching is via `Report.IsNVMe()` / `IsATA()`; NVMe and ATA render

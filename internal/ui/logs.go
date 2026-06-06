@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rivo/tview"
-
 	"github.com/trm42/smartview/internal/smart"
 )
 
@@ -22,11 +20,12 @@ func hasLogs(r *smart.Report) bool {
 // logsView renders the Logs tab: error-log occupancy plus self-test history. It
 // refreshes its text in place, preserving the scroll position across polls.
 type logsView struct {
-	*tview.TextView
+	*scrollTextView
 }
 
 func newLogsView(r *smart.Report) *logsView {
-	v := &logsView{tview.NewTextView().SetDynamicColors(true).SetScrollable(true)}
+	v := &logsView{newScrollTextView()}
+	v.SetDynamicColors(true).SetScrollable(true)
 	v.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Logs ")
 	v.refresh(r, nil)
 	return v
