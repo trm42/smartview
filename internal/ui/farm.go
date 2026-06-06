@@ -28,7 +28,7 @@ type farmView struct {
 func newFarmView(r *smart.Report) *farmView {
 	box := func(title string) *tview.TextView {
 		tv := tview.NewTextView().SetDynamicColors(true)
-		tv.SetBorder(true).SetTitle(title)
+		tv.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(title)
 		return tv
 	}
 	v := &farmView{
@@ -167,7 +167,7 @@ func writeFarmWorkload(b *strings.Builder, f *smart.FARM) {
 
 // farmRow writes an aligned key/value line.
 func farmRow(b *strings.Builder, k, v string) {
-	fmt.Fprintf(b, " [::b]%-20s[-:-:-] %s\n", k, v)
+	fmt.Fprintf(b, "[::b]%-20s[-:-:-] %s\n", k, v)
 }
 
 // farmCount writes a counter line, tinting it by severity only when non-zero so
