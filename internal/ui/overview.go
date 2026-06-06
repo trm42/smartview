@@ -12,46 +12,26 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// overviewView renders the Overview tab: a health banner, an identity panel
-// beside protocol-specific gauges, and a temperature sparkline. It refreshes in
-// place, keeping the banner widget stable so a focused Overview is not disturbed.
+// overviewView renders the Overview tab: an identity panel (which carries the
+// SMART health verdict in its top row) beside protocol-specific gauges, and a
+// temperature sparkline. It refreshes in place.
 type overviewView struct {
 	*tview.Flex
-	banner *tview.TextView
 }
 
 // newOverviewView builds the Overview tab. tempHistory is the runtime-accumulated
 // series used for NVMe drives, which lack an on-device temperature log.
 func newOverviewView(r *smart.Report, tempHistory []float64) *overviewView {
 	v := &overviewView{
-		Flex:   tview.NewFlex().SetDirection(tview.FlexRow),
-		banner: tview.NewTextView().SetDynamicColors(true),
+		Flex: tview.NewFlex().SetDirection(tview.FlexRow),
 	}
-	v.banner.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	v.refresh(r, tempHistory)
 	return v
 }
 
-// refresh rebuilds the panel contents for a new report. The held banner widget
-// is reused (stays first), so focus on the Overview tab is preserved.
+// refresh rebuilds the panel contents for a new report.
 func (v *overviewView) refresh(r *smart.Report, tempHistory []float64) {
-	sev := r.Overall()
-	v.banner.SetText(fmt.Sprintf("[%s::b]%s[-:-:-]   SMART self-assessment: %s",
-		severityTag(sev), sev.String(), passFailText(r)))
-
 	v.Clear()
-	v.AddItem(v.banner, 1, 0, false)
-
-	// Surface a per-drive smartctl error message (a permission/open failure, or a
-	// log-read limitation common on Apple internal SSDs). It is a data-availability
-	// caveat, not a health verdict — the verdict is the banner above — so it is
-	// styled as a yellow notice rather than an alarming red one.
-	if msg, ok := r.FatalMessage(); ok {
-		errLine := tview.NewTextView().SetDynamicColors(true)
-		errLine.SetBorderPadding(0, 0, uiGutter, uiGutter)
-		errLine.SetText(fmt.Sprintf("[yellow]⚠ %s[-]", msg))
-		v.AddItem(errLine, 1, 0, false)
-	}
 
 	mid := tview.NewFlex() // horizontal: identity | gauges
 	mid.AddItem(buildIdentity(r), 0, 2, false)
@@ -80,6 +60,19 @@ func buildIdentity(r *smart.Report) tview.Primitive {
 
 	var b strings.Builder
 	row := func(k, v string) { fmt.Fprintf(&b, "[::b]%-14s[-:-:-] %s\n", k, v) }
+
+	sev := r.Overall()
+	row("Health", fmt.Sprintf("[%s::b]%s[-:-:-]  self-assessment %s",
+		severityTag(sev), sev.String(), passFailText(r)))
+
+	// Surface a per-drive smartctl error message (a permission/open failure, or a
+	// log-read limitation common on Apple internal SSDs). It is a data-availability
+	// caveat, not a health verdict, so it is styled as a yellow notice rather than
+	// an alarming red one. The message is long, so it gets its own full-width line
+	// rather than the key/value row format.
+	if msg, ok := r.FatalMessage(); ok {
+		fmt.Fprintf(&b, "[yellow]⚠ %s[-]\n", msg)
+	}
 
 	row("Model", orDash(r.ModelName))
 	if r.ModelFamily != "" {
