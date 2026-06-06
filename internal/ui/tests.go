@@ -40,8 +40,8 @@ type testsView struct {
 	*tview.Flex
 	actions selfTestActions
 	instr   *tview.TextView // idle-mode header/instructions
-	list    *tview.List     // idle-mode test selection
-	info    *tview.TextView // running-mode progress display
+	list    *scrollList     // idle-mode test selection
+	info    *scrollTextView // running-mode progress display
 	mode    testMode
 }
 
@@ -50,9 +50,11 @@ func newTestsView(r *smart.Report, actions selfTestActions) *testsView {
 		Flex:    tview.NewFlex().SetDirection(tview.FlexRow),
 		actions: actions,
 		instr:   tview.NewTextView().SetDynamicColors(true),
-		list:    tview.NewList().ShowSecondaryText(true),
-		info:    tview.NewTextView().SetDynamicColors(true).SetScrollable(true),
+		list:    newScrollList(2), // each item shows main + secondary text
+		info:    newScrollTextView(),
 	}
+	v.list.ShowSecondaryText(true)
+	v.info.SetDynamicColors(true).SetScrollable(true)
 	v.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Tests ")
 	v.list.SetHighlightFullLine(true)
 
