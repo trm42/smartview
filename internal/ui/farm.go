@@ -38,6 +38,10 @@ type farmView struct {
 func newFarmView(r *smart.Report) *farmView {
 	box := func(title string) *tview.TextView {
 		tv := tview.NewTextView().SetDynamicColors(true)
+		// Wrapping is pre-computed in relayout (hangingIndentValues) so values that
+		// overflow hang-indent under the value column; disable tview's own wrap so it
+		// does not re-break the already-wrapped text back to the left margin.
+		tv.SetWrap(false)
 		tv.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(title)
 		return tv
 	}
@@ -52,22 +56,44 @@ func newFarmView(r *smart.Report) *farmView {
 	return v
 }
 
-// boxWrappedHeight returns the bordered-box height that shows text without
-// clipping at the given column width: the count of display lines after tview's
-// word-wrapping (long values wrap, so this can exceed the raw newline count),
-// plus two for the top and bottom border. colWidth is the box's outer width;
-// the wrap budget subtracts the two border columns and the two gutter columns.
-// When the width is not yet known (colWidth ≤ borders+gutters) it falls back to
-// the unwrapped line count.
-func boxWrappedHeight(text string, colWidth int) int {
-	text = strings.TrimRight(text, "\n")
-	lines := strings.Count(text, "\n") + 1
-	if innerW := colWidth - 2 - 2*uiGutter; innerW > 0 {
-		if n := len(tview.WordWrap(text, innerW)); n > lines {
-			lines = n
+// hangingIndentValues rewraps each farmRow "label  value" line so a value too
+// long for the box wraps with a hanging indent aligned under the value column,
+// instead of tview wrapping it back to the left margin. innerW is the box's
+// wrappable inner width (outer width minus borders and gutters). Returns the
+// text unchanged when innerW leaves no room for the value column.
+func hangingIndentValues(text string, innerW int) string {
+	const valueCol = 21 // 20-char %-20s label + one space, per farmRow
+	valueW := innerW - valueCol
+	if valueW <= 0 {
+		return text
+	}
+	const marker = "[-:-:-] "
+	indent := strings.Repeat(" ", valueCol)
+
+	var out strings.Builder
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	for i, line := range lines {
+		if i > 0 {
+			out.WriteByte('\n')
+		}
+		prefix, value, found := strings.Cut(line, marker)
+		if !found {
+			out.WriteString(line)
+			continue
+		}
+		prefix += marker
+		wrapped := tview.WordWrap(value, valueW)
+		if len(wrapped) == 0 {
+			out.WriteString(prefix)
+			continue
+		}
+		out.WriteString(prefix + wrapped[0])
+		for _, cont := range wrapped[1:] {
+			out.WriteByte('\n')
+			out.WriteString(indent + cont)
 		}
 	}
-	return lines + 2
+	return out.String()
 }
 
 // refresh captures the four stat boxes' text and rebuilds the per-head charts,
@@ -116,36 +142,57 @@ func (v *farmView) Draw(screen tcell.Screen) {
 
 // relayout builds the 2×2 grid (a left column of drive then env, a right column
 // of errors then workload) above the per-head charts for a content area of the
-// given width. Each box grows to its wrapped content height and is top-anchored
-// by a trailing flexible spacer. The full layout is handed to the scroll
-// container at its total height so the bottom charts stay reachable when the
-// terminal is shorter than the content; focus stays on the scrollView, so inner
-// items are added non-focusable.
+// given width. Each box's text is pre-wrapped with a hanging indent so overflowing
+// values stay aligned under the value column, and paired side-by-side boxes are
+// grown to a common row height so the two columns end level. The full layout is
+// handed to the scroll container at its total height so the bottom charts stay
+// reachable when the terminal is shorter than the content; focus stays on the
+// scrollView, so inner items are added non-focusable.
 func (v *farmView) relayout(width int) {
 	// A horizontal Flex of two equal-weight columns splits the width as below.
 	leftW := width / 2
 	rightW := width - leftW
+	leftInner := leftW - 2 - 2*uiGutter // outer width minus borders and gutters
+	rightInner := rightW - 2 - 2*uiGutter
 
-	driveH := boxWrappedHeight(v.driveText, leftW)
-	envH := boxWrappedHeight(v.envText, leftW)
-	errorsH := boxWrappedHeight(v.errorsText, rightW)
-	workloadH := boxWrappedHeight(v.workloadText, rightW)
+	// Pre-wrap each box for its own column so values hang-indent rather than
+	// wrapping back to the left margin; SetWrap(false) on the boxes keeps tview
+	// from re-breaking this text.
+	driveText := hangingIndentValues(v.driveText, leftInner)
+	envText := hangingIndentValues(v.envText, leftInner)
+	errorsText := hangingIndentValues(v.errorsText, rightInner)
+	workloadText := hangingIndentValues(v.workloadText, rightInner)
+	v.drive.SetText(driveText)
+	v.env.SetText(envText)
+	v.errors.SetText(errorsText)
+	v.workload.SetText(workloadText)
+
+	// Height is now just the pre-wrapped line count plus the two borders.
+	boxHeight := func(text string) int {
+		return strings.Count(strings.TrimRight(text, "\n"), "\n") + 1 + 2
+	}
+	driveH := boxHeight(driveText)
+	envH := boxHeight(envText)
+	errorsH := boxHeight(errorsText)
+	workloadH := boxHeight(workloadText)
+
+	// Paired boxes share a row height so the two columns stay level.
+	topRowH := max(driveH, errorsH)
+	bottomRowH := max(envH, workloadH)
 
 	left := tview.NewFlex().SetDirection(tview.FlexRow)
-	left.AddItem(v.drive, driveH, 0, false)
-	left.AddItem(v.env, envH, 0, false)
-	left.AddItem(nil, 0, 1, false)
+	left.AddItem(v.drive, topRowH, 0, false)
+	left.AddItem(v.env, bottomRowH, 0, false)
 
 	right := tview.NewFlex().SetDirection(tview.FlexRow)
-	right.AddItem(v.errors, errorsH, 0, false)
-	right.AddItem(v.workload, workloadH, 0, false)
-	right.AddItem(nil, 0, 1, false)
+	right.AddItem(v.errors, topRowH, 0, false)
+	right.AddItem(v.workload, bottomRowH, 0, false)
 
 	grid := tview.NewFlex() // horizontal: left column | right column
 	grid.AddItem(left, 0, 1, false)
 	grid.AddItem(right, 0, 1, false)
 
-	gridHeight := max(driveH+envH, errorsH+workloadH)
+	gridHeight := topRowH + bottomRowH
 	outer := tview.NewFlex().SetDirection(tview.FlexRow)
 	outer.AddItem(grid, gridHeight, 0, false)
 	total := gridHeight
