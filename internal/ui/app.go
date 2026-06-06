@@ -66,9 +66,11 @@ func New(interval time.Duration) *App {
 // build assembles the widget tree and installs key bindings.
 func (a *App) build() {
 	a.list.ShowSecondaryText(true).SetHighlightFullLine(true)
-	a.list.SetBorder(true).SetTitle(" Drives ")
+	a.list.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Drives ")
 	a.list.SetChangedFunc(func(int, string, string, rune) { a.showSelected() })
 
+	a.banner.SetBorderPadding(0, 0, uiGutter, uiGutter)
+	a.status.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	a.status.SetText(a.statusText())
 
 	body := tview.NewFlex().
@@ -78,7 +80,7 @@ func (a *App) build() {
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
 	// Full SMART access usually requires root; warn when we lack it.
 	if os.Geteuid() != 0 {
-		a.banner.SetText("  [black:yellow] ⚠ Running without root — some drives may " +
+		a.banner.SetText("[black:yellow] ⚠ Running without root — some drives may " +
 			"report limited data; re-run with sudo for full access. [-:-]")
 		root.AddItem(a.banner, 1, 0, false)
 	}
@@ -97,7 +99,7 @@ func (a *App) build() {
 
 // statusText renders the bottom key-hint bar.
 func (a *App) statusText() string {
-	return fmt.Sprintf("  [aqua]↑/↓[-] drive   [aqua]←/→[-] nav   [aqua]1-9[-] tab   "+
+	return fmt.Sprintf("[aqua]↑/↓[-] drive   [aqua]←/→[-] nav   [aqua]1-9[-] tab   "+
 		"[aqua]Tab[-] focus   [aqua]r[-] refresh   [aqua]t[-] tests   [aqua]Esc/q[-] quit      refresh every %s", a.interval)
 }
 
@@ -238,14 +240,14 @@ func (a *App) populateList() {
 func (a *App) listRow(d smart.Device) (string, string) {
 	rep, ok := a.reports[d.Name]
 	if !ok {
-		return fmt.Sprintf("[gray]●[-] %s", shortName(d)), "  scanning…"
+		return fmt.Sprintf("[gray]●[-] %s", shortName(d)), "scanning…"
 	}
 	model := rep.ModelName
 	if model == "" {
 		model = shortName(d)
 	}
 	main := fmt.Sprintf("%s %s", healthGlyph(rep.Overall()), model)
-	sec := fmt.Sprintf("  %s · %s · %s",
+	sec := fmt.Sprintf("%s · %s · %s",
 		shortName(d), capacityString(rep), tempString(rep))
 	return main, sec
 }
@@ -353,7 +355,7 @@ func (a *App) onSelfTestRun(testType string) {
 			testLabel(testType), shortName(dev)),
 		"Run",
 		func() {
-			a.status.SetText("  [yellow]⟳[-] Starting " + testLabel(testType) +
+			a.status.SetText("[yellow]⟳[-] Starting " + testLabel(testType) +
 				" self-test on " + shortName(dev) + "…")
 			a.runSmartctl(func(ctx context.Context) error {
 				return smart.RunSelfTest(ctx, dev.Name, testType)
@@ -373,7 +375,7 @@ func (a *App) onSelfTestCancel() {
 		fmt.Sprintf("Cancel the running self-test on %s?", shortName(dev)),
 		"Cancel test",
 		func() {
-			a.status.SetText("  [yellow]⟳[-] Cancelling self-test on " + shortName(dev) + "…")
+			a.status.SetText("[yellow]⟳[-] Cancelling self-test on " + shortName(dev) + "…")
 			a.runSmartctl(func(ctx context.Context) error {
 				return smart.AbortSelfTest(ctx, dev.Name)
 			})

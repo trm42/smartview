@@ -94,6 +94,15 @@ need no mutex.
   `ata_sct_temperature_history`; NVMe has no such log, so it accumulates a
   runtime ring buffer (`App.history`, capped at `maxHistory`) across polls — it
   only appears after ≥2 samples.
+- **Padding/gutters (TUI UX).** Every text/table/list box gets a uniform
+  horizontal gutter via `SetBorderPadding(0, 0, uiGutter, uiGutter)` (`uiGutter`
+  in `format.go`); never bake a left margin into format strings. Vertical
+  padding stays 0 for density. Nest a line under an in-box header with
+  `nestIndent` (2 spaces), not a custom amount. Two things are intentionally
+  exempt and must keep their spaces: table cell padding (`" "+val+" "`) and the
+  tab-bar highlight pills. Graphical widgets (gauges, sparkline, bar charts) opt
+  out of the gutter to stay full-width. Record new TUI spacing/UX conventions in
+  this bullet so they don't drift.
 
 ## Tests
 
