@@ -16,13 +16,23 @@ import (
 // farmView renders the FARM tab: four separately-bordered panels of Seagate
 // Field Accessible Reliability Metrics (drive/wear summary, health-graded error
 // counters, environment and workload totals) laid out as a 2×2 grid above the
-// per-head bar charts. It refreshes in place, rebuilding the grid each poll.
+// per-head bar charts. It refreshes in place, and relays out (resizing each box
+// to its content) whenever the data or the available width changes.
 type farmView struct {
 	*scrollView
 	drive    *tview.TextView
 	errors   *tview.TextView
 	env      *tview.TextView
 	workload *tview.TextView
+
+	// Latest box contents and the per-head charts, captured at refresh so the
+	// layout can be rebuilt at draw time once the true column width is known.
+	driveText, errorsText, envText, workloadText string
+	charts                                       []tview.Primitive
+
+	// Width the grid was last laid out for; -1 forces a rebuild (set whenever the
+	// data changes) so a fresh poll's longer/shorter values resize their box.
+	lastWidth int
 }
 
 func newFarmView(r *smart.Report) *farmView {
@@ -42,62 +52,104 @@ func newFarmView(r *smart.Report) *farmView {
 	return v
 }
 
-// boxHeight returns the fixed height for a bordered box holding text: one row
-// per line plus two for the top and bottom border.
-func boxHeight(text string) int {
-	return strings.Count(text, "\n") + 2
+// boxWrappedHeight returns the bordered-box height that shows text without
+// clipping at the given column width: the count of display lines after tview's
+// word-wrapping (long values wrap, so this can exceed the raw newline count),
+// plus two for the top and bottom border. colWidth is the box's outer width;
+// the wrap budget subtracts the two border columns and the two gutter columns.
+// When the width is not yet known (colWidth ≤ borders+gutters) it falls back to
+// the unwrapped line count.
+func boxWrappedHeight(text string, colWidth int) int {
+	text = strings.TrimRight(text, "\n")
+	lines := strings.Count(text, "\n") + 1
+	if innerW := colWidth - 2 - 2*uiGutter; innerW > 0 {
+		if n := len(tview.WordWrap(text, innerW)); n > lines {
+			lines = n
+		}
+	}
+	return lines + 2
 }
 
-// refresh rebuilds the four stat boxes and lays them out as a 2×2 grid (a left
-// column of drive then env, a right column of errors then workload) above the
-// per-head charts. Each box is fixed to its content height and top-anchored by a
-// trailing flexible spacer. The whole layout is handed to the scroll container
-// at its full height so the bottom charts stay reachable when the terminal is
-// shorter than the content; focus stays on the scrollView, so inner items are
-// added non-focusable.
+// refresh captures the four stat boxes' text and rebuilds the per-head charts,
+// then defers the grid layout (which needs the column width) to the next Draw by
+// invalidating lastWidth.
 func (v *farmView) refresh(r *smart.Report, _ []float64) {
 	f := r.FARM
 	if f == nil {
 		return
 	}
 
-	driveText := farmBoxText(writeFarmDriveInfo, f)
-	errorsText := farmBoxText(writeFarmErrors, f)
-	envText := farmBoxText(writeFarmEnvironment, f)
-	workloadText := farmBoxText(writeFarmWorkload, f)
-	v.drive.SetText(driveText)
-	v.errors.SetText(errorsText)
-	v.env.SetText(envText)
-	v.workload.SetText(workloadText)
+	v.driveText = farmBoxText(writeFarmDriveInfo, f)
+	v.errorsText = farmBoxText(writeFarmErrors, f)
+	v.envText = farmBoxText(writeFarmEnvironment, f)
+	v.workloadText = farmBoxText(writeFarmWorkload, f)
+	v.drive.SetText(v.driveText)
+	v.errors.SetText(v.errorsText)
+	v.env.SetText(v.envText)
+	v.workload.SetText(v.workloadText)
+
+	// Per-head visualizations. Reallocated sectors per head is the health
+	// red-flag (flat zero on a healthy drive); MR head resistance always varies
+	// and surfaces an outlier head.
+	v.charts = v.charts[:0]
+	if c := farmHeadChart(" Reallocated sectors / head ", f.Reliability.ReallocatedByHead, true); c != nil {
+		v.charts = append(v.charts, c)
+	}
+	if c := farmHeadChart(" MR head resistance / head ", f.Reliability.MRHeadResistance, false); c != nil {
+		v.charts = append(v.charts, c)
+	}
+
+	v.lastWidth = -1 // content changed: relayout against the current width
+}
+
+// Draw relays out the grid when the width changed (or refresh invalidated it),
+// then defers to the scroll container. Box heights depend on word-wrapping at
+// the live column width, which is only known here, so the layout is rebuilt
+// lazily rather than in refresh.
+func (v *farmView) Draw(screen tcell.Screen) {
+	if _, _, w, _ := v.GetInnerRect(); w != v.lastWidth {
+		v.relayout(w)
+		v.lastWidth = w
+	}
+	v.scrollView.Draw(screen)
+}
+
+// relayout builds the 2×2 grid (a left column of drive then env, a right column
+// of errors then workload) above the per-head charts for a content area of the
+// given width. Each box grows to its wrapped content height and is top-anchored
+// by a trailing flexible spacer. The full layout is handed to the scroll
+// container at its total height so the bottom charts stay reachable when the
+// terminal is shorter than the content; focus stays on the scrollView, so inner
+// items are added non-focusable.
+func (v *farmView) relayout(width int) {
+	// A horizontal Flex of two equal-weight columns splits the width as below.
+	leftW := width / 2
+	rightW := width - leftW
+
+	driveH := boxWrappedHeight(v.driveText, leftW)
+	envH := boxWrappedHeight(v.envText, leftW)
+	errorsH := boxWrappedHeight(v.errorsText, rightW)
+	workloadH := boxWrappedHeight(v.workloadText, rightW)
 
 	left := tview.NewFlex().SetDirection(tview.FlexRow)
-	left.AddItem(v.drive, boxHeight(driveText), 0, false)
-	left.AddItem(v.env, boxHeight(envText), 0, false)
+	left.AddItem(v.drive, driveH, 0, false)
+	left.AddItem(v.env, envH, 0, false)
 	left.AddItem(nil, 0, 1, false)
-	leftTotal := boxHeight(driveText) + boxHeight(envText)
 
 	right := tview.NewFlex().SetDirection(tview.FlexRow)
-	right.AddItem(v.errors, boxHeight(errorsText), 0, false)
-	right.AddItem(v.workload, boxHeight(workloadText), 0, false)
+	right.AddItem(v.errors, errorsH, 0, false)
+	right.AddItem(v.workload, workloadH, 0, false)
 	right.AddItem(nil, 0, 1, false)
-	rightTotal := boxHeight(errorsText) + boxHeight(workloadText)
 
 	grid := tview.NewFlex() // horizontal: left column | right column
 	grid.AddItem(left, 0, 1, false)
 	grid.AddItem(right, 0, 1, false)
 
-	gridHeight := max(leftTotal, rightTotal)
+	gridHeight := max(driveH+envH, errorsH+workloadH)
 	outer := tview.NewFlex().SetDirection(tview.FlexRow)
 	outer.AddItem(grid, gridHeight, 0, false)
 	total := gridHeight
-	// Per-head visualizations. Reallocated sectors per head is the health
-	// red-flag (flat zero on a healthy drive); MR head resistance always varies
-	// and surfaces an outlier head.
-	if c := farmHeadChart(" Reallocated sectors / head ", f.Reliability.ReallocatedByHead, true); c != nil {
-		outer.AddItem(c, 9, 0, false)
-		total += 9
-	}
-	if c := farmHeadChart(" MR head resistance / head ", f.Reliability.MRHeadResistance, false); c != nil {
+	for _, c := range v.charts {
 		outer.AddItem(c, 9, 0, false)
 		total += 9
 	}
