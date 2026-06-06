@@ -28,6 +28,13 @@ type staticView struct{ tview.Primitive }
 
 func (staticView) refresh(*smart.Report, []float64) {}
 
+// focusChromer is implemented by tab views that can signal keyboard focus by
+// accenting their border. detail.setContentFocus routes the focus state to the
+// active view so the focused pane is always obvious.
+type focusChromer interface {
+	setFocused(focused bool)
+}
+
 // detail is the right-hand pane: a tab bar above a Pages content area. Which
 // tabs exist is recomputed from each report, so drives that omit a section
 // (e.g. the Apple NVMe with no logs) simply don't show that tab.
@@ -245,4 +252,24 @@ func (d *detail) content() tview.Primitive {
 		return prim
 	}
 	return d.pages
+}
+
+// setContentFocus accents (or dims) the active tab body's border so it reads as
+// holding — or not holding — keyboard focus. No-op for a placeholder page.
+func (d *detail) setContentFocus(focused bool) {
+	if f, ok := d.content().(focusChromer); ok {
+		f.setFocused(focused)
+	}
+}
+
+// tabCount is the number of visible tabs, used to size the "1-N tab" hint.
+func (d *detail) tabCount() int { return len(d.tabs) }
+
+// testsRunning reports whether the Tests tab currently shows a running self-test,
+// so the hint bar can offer "x cancel" rather than "Enter start".
+func (d *detail) testsRunning() bool {
+	if v, ok := d.views["tests"].(*testsView); ok {
+		return v.mode == modeRunning
+	}
+	return false
 }

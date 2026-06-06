@@ -31,6 +31,11 @@ func newLogsView(r *smart.Report) *logsView {
 	return v
 }
 
+// setFocused accents the Logs tab's border when it holds keyboard focus.
+func (v *logsView) setFocused(focused bool) {
+	v.SetBorderColor(borderColor(focused))
+}
+
 // refresh re-renders the log text, restoring the prior scroll offset so a poll
 // does not jump the view back to the top.
 func (v *logsView) refresh(r *smart.Report, _ []float64) {

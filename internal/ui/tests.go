@@ -74,6 +74,11 @@ func newTestsView(r *smart.Report, actions selfTestActions) *testsView {
 	return v
 }
 
+// setFocused accents the Tests tab's border (the Flex itself is bordered).
+func (v *testsView) setFocused(focused bool) {
+	v.SetBorderColor(borderColor(focused))
+}
+
 // refresh switches between the running and idle layouts based on whether a
 // self-test is currently executing on the drive.
 func (v *testsView) refresh(r *smart.Report, _ []float64) {
