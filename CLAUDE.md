@@ -13,7 +13,8 @@ carries an SPDX header; keep it on new files).
 
 ```sh
 go build -o smartview .        # build
-go run .                       # run (add --interval 10s to change refresh cadence)
+go run .                       # run (refresh defaults to 30s; --interval 10s sets the
+                               # starting cadence, runtime +/- keys adjust it live)
 go test ./...                  # all tests
 go test ./internal/smart/ -run TestParseNVMe   # single test
 go vet ./... && gofmt -l .     # vet + format check (gofmt -l should print nothing)
@@ -80,12 +81,20 @@ need no mutex.
   its source data exists (the Logs tab hides for drives with no error/self-test
   log; the Tests tab hides unless `Report.SupportsSelfTest()`). When adding a
   view, gate it on data presence rather than always showing it.
-- **The Tests tab is the only *interactive* view.** All other tabs are pure
-  renderers (`tabView.refresh`); the Tests tab additionally fires self-test
+- **The Tests tab is the only view that fires smartctl actions.** Most tabs are
+  pure renderers (`tabView.refresh`). Two take input: the Attributes tab handles
+  `s`/`f` (`attributes.go`) but these only toggle local view state (sort/filter)
+  with no smartctl call; the Tests tab is the one that drives self-test
   start/cancel through `selfTestActions` callbacks the App wires in `build()`.
   The App owns the smartctl calls, the confirm/error modals (`pushModal`/
   `popModal`, guarded by `inModal` in `onKey`), and the post-action refresh.
   Self-tests are short/long only — `smart.RunSelfTest` rejects other types.
+- **Runtime poll-interval control.** The `+`/`-` keys (`onKey`) walk the
+  `intervalPresets` ladder via `nextInterval` (by value, so an off-ladder
+  `--interval` snaps to a neighbour on the first press). `setInterval` updates
+  `a.interval` and signals `intervalCh`, which `poll.go`'s loop drains to call
+  `ticker.Reset` — the cadence changes live without restarting the poll loop.
+  `--interval` only sets the starting value (default 30s).
 - **Scroll arrows are a shared affordance** (`scroll.go`): every tab that can
   overflow shows the same cyan ▲/▼ off-screen cue via `drawScrollArrows`. The
   `scrollView` container (FARM, Overview's whole layout uses widget composition)
@@ -133,9 +142,9 @@ There are no UI tests; verify the UI by running it.
 
 ## Roadmap
 
-See TODO.md. Notably unimplemented: self-tests (`smartctl -t`) and a
-sudo/permission banner. The ATA path is only fixture-tested — it needs
-validation on real Linux SATA hardware.
+See TODO.md. Self-tests (`smartctl -t`, the Tests tab) and the sudo/permission
+banner have landed, and the ATA and Seagate FARM paths have been validated on
+real Linux SATA hardware.
 
 **SCSI/SAS is intentionally out of scope.** We have no SCSI/SAS gear to develop
 or test against, so smartview deliberately targets only SATA/ATA and NVMe. Don't
