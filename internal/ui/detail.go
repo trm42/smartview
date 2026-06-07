@@ -139,18 +139,18 @@ func sameTabIDs(a, b []tab) bool {
 
 // visibleTabs returns the tabs applicable to the report, in display order.
 func visibleTabs(r *smart.Report) []tab {
-	tabs := []tab{{"overview", "Overview"}}
+	tabs := []tab{{id: "overview", title: "Overview"}}
 	if (r.IsNVMe() && r.NVMeHealth != nil) || r.ATAAttributes != nil {
-		tabs = append(tabs, tab{"attributes", "Attributes"})
+		tabs = append(tabs, tab{id: "attributes", title: "Attributes"})
 	}
 	if r.HasFARM() {
-		tabs = append(tabs, tab{"farm", "FARM"})
+		tabs = append(tabs, tab{id: "farm", title: "FARM"})
 	}
 	if r.SupportsSelfTest() {
-		tabs = append(tabs, tab{"tests", "Tests"})
+		tabs = append(tabs, tab{id: "tests", title: "Tests"})
 	}
 	if hasLogs(r) {
-		tabs = append(tabs, tab{"logs", "Logs"})
+		tabs = append(tabs, tab{id: "logs", title: "Logs"})
 	}
 	return tabs
 }

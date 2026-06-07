@@ -125,8 +125,8 @@ func (v *testsView) showIdle(r *smart.Report) {
 
 	v.list.Clear()
 	for _, t := range []struct{ key, title string }{
-		{"short", "Short test"},
-		{"long", "Long (extended) test"},
+		{key: "short", title: "Short test"},
+		{key: "long", title: "Long (extended) test"},
 	} {
 		sec := "estimated duration unknown"
 		if d, ok := r.SelfTestDuration(t.key); ok {
