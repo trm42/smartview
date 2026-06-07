@@ -96,7 +96,8 @@ func (v *testsView) showRunning(label string, pct int) {
 	var b strings.Builder
 	b.WriteString("[::b]Self-test in progress[-:-:-]\n\n")
 	if label != "" {
-		fmt.Fprintf(&b, "%s\n\n", label)
+		// label is smartctl's drive-controlled status string; escape markup (see esc).
+		fmt.Fprintf(&b, "%s\n\n", esc(label))
 	}
 	fmt.Fprintf(&b, "[green]%s[-]  %d%%\n\n", progressBar(pct), pct)
 	b.WriteString("Press [aqua]x[-] to cancel the running test.\n")

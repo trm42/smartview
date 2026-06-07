@@ -77,7 +77,7 @@ func writePhyCounters(b *strings.Builder, e *smart.SATAPhyEvents) {
 	nonzero := 0
 	for _, c := range e.Table {
 		if c.Value > 0 {
-			fmt.Fprintf(b, nestIndent+"[yellow]%-52s %d[-]\n", c.Name, c.Value)
+			fmt.Fprintf(b, nestIndent+"[yellow]%-52s %d[-]\n", esc(c.Name), c.Value)
 			nonzero++
 		}
 	}
@@ -110,7 +110,7 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 	switch {
 	case r.NVMeSelfTestLog != nil:
 		if op := r.NVMeSelfTestLog.CurrentSelfTestOperation; op != nil && op.String != "" {
-			fmt.Fprintf(b, nestIndent+"Current: %s\n", op.String)
+			fmt.Fprintf(b, nestIndent+"Current: %s\n", esc(op.String))
 		}
 		if len(r.NVMeSelfTestLog.Table) == 0 {
 			fmt.Fprintln(b, nestIndent+"no self-tests recorded")
@@ -118,7 +118,7 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 		}
 		for _, e := range r.NVMeSelfTestLog.Table {
 			fmt.Fprintf(b, nestIndent+"%-10s %-28s @ %s\n",
-				e.SelfTestCode.String, colorResult(e.SelfTestResult.String), humanDuration(e.PowerOnHours))
+				esc(e.SelfTestCode.String), colorResult(e.SelfTestResult.String), humanDuration(e.PowerOnHours))
 		}
 	case r.ATASelfTestLog != nil && r.ATASelfTestLog.Extended != nil:
 		tbl := r.ATASelfTestLog.Extended.Table
@@ -128,23 +128,25 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 		}
 		for _, e := range tbl {
 			fmt.Fprintf(b, nestIndent+"%-16s %-28s @ %s\n",
-				e.Type.String, colorResult(e.Status.String), humanDuration(e.LifetimeHours))
+				esc(e.Type.String), colorResult(e.Status.String), humanDuration(e.LifetimeHours))
 		}
 	default:
 		fmt.Fprintln(b, nestIndent+"no self-test log")
 	}
 }
 
-// colorResult tints a self-test outcome string green/red by keyword.
+// colorResult tints a self-test outcome string green/red by keyword. The string
+// is drive-controlled, so the keyword test runs on the original but the rendered
+// copy is markup-escaped (see esc) — a hostile drive can't inject colour tags.
 func colorResult(s string) string {
 	low := strings.ToLower(s)
 	switch {
 	case strings.Contains(low, "without error"), strings.Contains(low, "completed"):
-		return "[green]" + s + "[-]"
+		return "[green]" + esc(s) + "[-]"
 	case strings.Contains(low, "fail"), strings.Contains(low, "error"), strings.Contains(low, "aborted"):
-		return "[red]" + s + "[-]"
+		return "[red]" + esc(s) + "[-]"
 	default:
-		return s
+		return esc(s)
 	}
 }
 
