@@ -28,7 +28,7 @@ import (
 var version = "dev"
 
 func main() {
-	interval := flag.Duration("interval", 5*time.Second, "auto-refresh interval")
+	interval := flag.Duration("interval", 30*time.Second, "auto-refresh interval")
 	fixtures := flag.String("fixtures", "", "load drive data from JSON fixtures in DIR instead of smartctl (requires -tags dev build)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
