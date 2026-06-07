@@ -25,8 +25,9 @@ type App struct {
 	status *tview.TextView
 	banner *tview.TextView
 
-	interval  time.Duration
-	refreshCh chan struct{}
+	interval   time.Duration
+	refreshCh  chan struct{}
+	intervalCh chan time.Duration // runtime interval changes → poll-loop ticker reset
 	// rootCtx is the application context (set in Run); interactive smartctl
 	// calls derive their timeout from it so they are cancelled on shutdown
 	// rather than lingering until the per-call timeout elapses.
@@ -48,27 +49,66 @@ type App struct {
 }
 
 // maxHistory bounds the runtime temperature ring buffer that backs the NVMe
-// sparkline (NVMe has no on-device temperature log). 120 samples is ~10 minutes
-// of history at the default 5s poll interval — enough to show a trend without
-// growing unbounded.
+// sparkline (NVMe has no on-device temperature log). 120 samples is a ~60-minute
+// trend window at the default 30s poll interval; since the interval is now
+// adjustable at runtime (+/- keys) the spanned duration varies — the sparkline
+// is only ever a rough trend, not a fixed-time axis. Enough to show movement
+// without growing unbounded.
 const maxHistory = 120
 
 // spinnerInterval is the cadence of the refresh spinner animation: fast enough
 // to read as motion, slow enough not to spam the event loop with redraws.
 const spinnerInterval = 120 * time.Millisecond
 
+// intervalPresets is the ladder the +/- keys walk to change the poll cadence at
+// runtime. The slowest end keeps background load gentle; the fastest is for a
+// close watch. nextInterval walks this relative to the current value, so an
+// arbitrary --interval still snaps to a neighbouring preset on the first press.
+var intervalPresets = []time.Duration{
+	2 * time.Second,
+	5 * time.Second,
+	10 * time.Second,
+	30 * time.Second,
+	time.Minute,
+	5 * time.Minute,
+}
+
+// nextInterval returns the adjacent preset relative to cur: the first preset
+// strictly greater (slower) or strictly less (faster), clamped at the ends. It
+// walks by value rather than a stored index so an off-ladder --interval (e.g.
+// 7s) still resolves to a sensible neighbour on the first keypress.
+func nextInterval(cur time.Duration, faster bool) time.Duration {
+	if faster {
+		next := intervalPresets[0]
+		for _, p := range intervalPresets {
+			if p < cur {
+				next = p
+			}
+		}
+		return next
+	}
+	next := intervalPresets[len(intervalPresets)-1]
+	for i := len(intervalPresets) - 1; i >= 0; i-- {
+		if intervalPresets[i] > cur {
+			next = intervalPresets[i]
+		}
+	}
+	return next
+}
+
 // New constructs the application with the given poll interval.
 func New(interval time.Duration) *App {
 	a := &App{
-		app:       tview.NewApplication(),
-		list:      tview.NewList(),
-		detail:    newDetail(),
-		status:    tview.NewTextView().SetDynamicColors(true),
-		banner:    tview.NewTextView().SetDynamicColors(true),
-		interval:  interval,
-		refreshCh: make(chan struct{}, 1),
-		reports:   map[string]*smart.Report{},
-		history:   map[string][]float64{},
+		app:        tview.NewApplication(),
+		list:       tview.NewList(),
+		detail:     newDetail(),
+		status:     tview.NewTextView().SetDynamicColors(true),
+		banner:     tview.NewTextView().SetDynamicColors(true),
+		interval:   interval,
+		refreshCh:  make(chan struct{}, 1),
+		intervalCh: make(chan time.Duration, 1),
+		reports:    map[string]*smart.Report{},
+		history:    map[string][]float64{},
 	}
 	a.build()
 	return a
@@ -120,6 +160,7 @@ func (a *App) statusText() string {
 	}
 	hint += "   [aqua]Tab[-] focus   [aqua]r[-] refresh   [aqua]q[-] quit"
 	hint += a.contextHints()
+	hint += "   [aqua]+/-[-] rate"
 	return hint + fmt.Sprintf("      refresh every %s", a.interval)
 }
 
@@ -185,6 +226,9 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 		case 'r':
 			a.triggerRefresh()
 			return nil
+		case '+', '-':
+			a.setInterval(nextInterval(a.interval, r == '-'))
+			return nil
 		case 't':
 			if a.detail.selectTabID("tests") {
 				a.app.SetFocus(a.detail.content())
@@ -248,6 +292,19 @@ func (a *App) triggerRefresh() {
 	case a.refreshCh <- struct{}{}:
 	default:
 	}
+}
+
+// setInterval changes the poll cadence at runtime. Runs on the UI goroutine: it
+// updates a.interval (read by statusText), signals the poll loop to reset its
+// ticker (non-blocking, like triggerRefresh), and refreshes the status bar so
+// the displayed cadence updates immediately.
+func (a *App) setInterval(d time.Duration) {
+	a.interval = d
+	select {
+	case a.intervalCh <- d:
+	default:
+	}
+	a.refreshChrome()
 }
 
 // showSelected renders the cached report for the highlighted drive.
