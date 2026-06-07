@@ -1,6 +1,6 @@
 # smartview
 
-A cross-platform terminal UI for monitoring drive health via
+A vibe-coded cross-platform terminal UI for monitoring drive health via
 [smartmontools](https://www.smartmontools.org/). Runs on **macOS** and **Linux**,
 showing SMART status, attributes, and wear indicators for SATA and NVMe drives in
 a live, auto-refreshing dashboard.
@@ -123,6 +123,12 @@ main.go           flags + smartctl preflight
 ```
 
 The data layer is fully decoupled from the UI and has no tview dependency.
+
+## Notes
+
+* The content has been made with my server's disk's SMART data so other outputs may 
+require additional visualisation work or tweaking. Please make PR's if it can improve
+the app for your disks. 
 
 ## Development
 
