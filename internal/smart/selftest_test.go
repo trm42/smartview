@@ -104,7 +104,7 @@ func TestSelfTestDuration(t *testing.T) {
 }
 
 func TestRunSelfTestRejectsBadType(t *testing.T) {
-	for _, bad := range []string{"conveyance", "selective", "offline", ""} {
+	for _, bad := range []SelfTestType{"conveyance", "selective", "offline", ""} {
 		if err := RunSelfTest(t.Context(), "/dev/sda", bad); err == nil {
 			t.Errorf("RunSelfTest(%q) = nil, want error", bad)
 		}

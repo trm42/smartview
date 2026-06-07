@@ -18,7 +18,7 @@ import (
 // confirmation/error modals and refresh scheduling — the view itself only
 // renders state and forwards intent.
 type selfTestActions struct {
-	run    func(testType string) // testType is "short" or "long"
+	run    func(testType smart.SelfTestType)
 	cancel func()
 }
 
@@ -124,9 +124,12 @@ func (v *testsView) showIdle(r *smart.Report) {
 		"([aqua]Enter[-]); starting one usually requires root.\n")
 
 	v.list.Clear()
-	for _, t := range []struct{ key, title string }{
-		{key: "short", title: "Short test"},
-		{key: "long", title: "Long (extended) test"},
+	for _, t := range []struct {
+		key   smart.SelfTestType
+		title string
+	}{
+		{key: smart.SelfTestShort, title: "Short test"},
+		{key: smart.SelfTestLong, title: "Long (extended) test"},
 	} {
 		sec := "estimated duration unknown"
 		if d, ok := r.SelfTestDuration(t.key); ok {
