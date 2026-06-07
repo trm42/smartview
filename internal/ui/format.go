@@ -7,9 +7,23 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 
 	"github.com/trm42/smartview/internal/smart"
 )
+
+// esc escapes drive-controlled free text before it is inserted into a widget
+// that interprets tview colour/region markup (every SetDynamicColors(true)
+// TextView, and all table cells). SMART identity and log fields — model name,
+// serial, firmware, self-test/error strings, PHY-counter and attribute names —
+// originate from the device and are attacker-controllable (writable via vendor
+// tooling, or fully forged by a hostile USB enclosure). Without escaping, a
+// failing drive whose model_name is "Disk [green]HEALTHY[-]" could paint a fake
+// healthy verdict or recolour the real severity. esc wraps only the data; the
+// surrounding intentional tags stay literal.
+func esc(s string) string {
+	return tview.Escape(s)
+}
 
 // dash is rendered wherever a drive does not report a value.
 const dash = "[gray]—[-]"

@@ -238,7 +238,8 @@ func farmBoxText(write func(*strings.Builder, *smart.FARM), f *smart.FARM) strin
 // writeFarmDriveInfo renders the drive/wear summary block.
 func writeFarmDriveInfo(b *strings.Builder, f *smart.FARM) {
 	d := f.DriveInfo
-	farmRow(b, "Recording", orDash(d.RecordingType))
+	// RecordingType is drive-controlled free text; escape markup (see esc).
+	farmRow(b, "Recording", orDash(esc(d.RecordingType)))
 	if d.RotationRate > 0 {
 		farmRow(b, "Spindle", fmt.Sprintf("%d rpm", d.RotationRate))
 	}

@@ -194,17 +194,19 @@ func (v *attributesView) setAttrRow(row int, a smart.ATAAttribute) {
 	if when == "" {
 		when = "-"
 	}
+	// Name, reading and when-failed are drive-controlled; table cells interpret
+	// markup, so escape them (see esc) to keep a hostile drive from injecting tags.
 	sel := selectedRowStyle(color)
-	v.table.SetCell(row, 0, tview.NewTableCell(" "+humanAttrName(a.Name)+" ").
+	v.table.SetCell(row, 0, tview.NewTableCell(" "+esc(humanAttrName(a.Name))+" ").
 		SetTextColor(color).SetExpansion(1).SetSelectedStyle(sel))
 	v.table.SetCell(row, 1, tview.NewTableCell(" "+kind+" ").
 		SetTextColor(color).SetSelectedStyle(sel))
 	// Health uses inline colour tags (keeps a green bar on healthy rows).
 	v.table.SetCell(row, 2, tview.NewTableCell(" "+healthCell(a)+" ").
 		SetSelectedStyle(sel))
-	v.table.SetCell(row, 3, tview.NewTableCell(" "+decodeReading(a)+" ").
+	v.table.SetCell(row, 3, tview.NewTableCell(" "+esc(decodeReading(a))+" ").
 		SetTextColor(color).SetAlign(tview.AlignRight).SetSelectedStyle(sel))
-	v.table.SetCell(row, 4, tview.NewTableCell(" "+when+" ").
+	v.table.SetCell(row, 4, tview.NewTableCell(" "+esc(when)+" ").
 		SetTextColor(color).SetSelectedStyle(sel))
 }
 
@@ -254,10 +256,10 @@ func (v *attributesView) updateFooter(row int) {
 	}
 	desc := ataDesc[a.ID]
 	if desc == "" {
-		desc = humanAttrName(a.Name)
+		desc = esc(humanAttrName(a.Name)) // drive-controlled fallback; escape markup
 	}
 	v.footer.SetText(fmt.Sprintf("%s\n[gray](id %d, %s)  norm %d/%d · thresh %d · raw %s[-]",
-		desc, a.ID, kind, a.Value, a.Worst, a.Thresh, a.Raw.String))
+		desc, a.ID, kind, a.Value, a.Worst, a.Thresh, esc(a.Raw.String)))
 }
 
 // attrMargin is the threshold headroom; attributes without a threshold sort last.

@@ -303,15 +303,17 @@ func (a *App) populateList() {
 func (a *App) listRow(d smart.Device) (string, string) {
 	rep, ok := a.reports[d.Name]
 	if !ok {
-		return fmt.Sprintf("[gray]●[-] %s", shortName(d)), "scanning…"
+		return fmt.Sprintf("[gray]●[-] %s", esc(shortName(d))), "scanning…"
 	}
-	model := rep.ModelName
-	if model == "" {
-		model = shortName(d)
+	// model and the device name are drive-controlled; escape markup (see esc) so
+	// the always-visible sidebar can't be made to paint a fake health verdict.
+	model := esc(rep.ModelName)
+	if rep.ModelName == "" {
+		model = esc(shortName(d))
 	}
 	main := fmt.Sprintf("%s %s", healthGlyph(rep.Overall()), model)
 	sec := fmt.Sprintf("%s · %s · %s",
-		shortName(d), capacityString(rep), tempString(rep))
+		esc(shortName(d)), capacityString(rep), tempString(rep))
 	return main, sec
 }
 
