@@ -28,6 +28,8 @@ func (a *App) pollLoop(ctx context.Context) {
 			a.fetchAndApply(ctx)
 		case <-a.refreshCh:
 			a.fetchAndApply(ctx)
+		case d := <-a.intervalCh:
+			ticker.Reset(d)
 		}
 	}
 }
