@@ -109,6 +109,11 @@ func newAttributesView(attrs []smart.ATAAttribute) *attributesView {
 	return v
 }
 
+// setFocused accents the table's border when the Attributes tab holds focus.
+func (v *attributesView) setFocused(focused bool) {
+	v.table.SetBorderColor(borderColor(focused))
+}
+
 // refresh re-applies the latest attribute data, keeping the selected attribute
 // (by ID) and the current sort/filter so a poll never disturbs the user.
 func (v *attributesView) refresh(r *smart.Report, _ []float64) {
@@ -331,6 +336,11 @@ func newNVMeAttributesView(h *smart.NVMeHealth) *nvmeAttributesView {
 	v.table.Select(1, 0)
 	v.setFooter(1)
 	return v
+}
+
+// setFocused accents the table's border when the Attributes tab holds focus.
+func (v *nvmeAttributesView) setFocused(focused bool) {
+	v.table.SetBorderColor(borderColor(focused))
 }
 
 // refresh re-applies the latest health data, keeping the selected row (field

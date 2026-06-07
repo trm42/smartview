@@ -56,22 +56,41 @@ func (v *overviewView) refresh(r *smart.Report, tempHistory []float64) {
 	}
 }
 
-// passFailText renders the headline SMART verdict.
-func passFailText(r *smart.Report) string {
-	if r.SmartStatus.Passed {
-		return "[green]PASSED[-]"
-	}
-	return "[red]FAILED[-]"
+// setFocused accents the identity panel's border when the Overview tab holds
+// focus (it is the tab's one focusable, scrollable element).
+func (v *overviewView) setFocused(focused bool) {
+	v.identity.SetBorderColor(borderColor(focused))
 }
 
-// identityText renders the key/value body of the drive identity and wear panel.
+// verdictWord renders the drive-level health as a single plain verdict, replacing
+// the cryptic "OK self-assessment PASSED" doubling with one clear word.
+func verdictWord(s smart.Severity) string {
+	switch s {
+	case smart.SeverityFailing:
+		return "Failing"
+	case smart.SeverityCaution:
+		return "Caution"
+	default:
+		return "Healthy"
+	}
+}
+
+// identityText renders the key/value body of the drive identity and wear panel,
+// grouped into Identity · Capacity & geometry · Wear & usage blocks separated by
+// a blank line. Every field is gated on presence, so a sparse drive (e.g. an
+// Apple internal NVMe with no geometry/logs) still degrades gracefully.
 func identityText(r *smart.Report) string {
 	var b strings.Builder
 	row := func(k, v string) { fmt.Fprintf(&b, "[::b]%-14s[-:-:-] %s\n", k, v) }
+	gap := func() { b.WriteByte('\n') }
 
 	sev := r.Overall()
-	row("Health", fmt.Sprintf("[%s::b]%s[-:-:-]  self-assessment %s",
-		severityTag(sev), sev.String(), passFailText(r)))
+	health := fmt.Sprintf("[%s::b]%s[-:-:-]", severityTag(sev), verdictWord(sev))
+	// Keep the raw SMART pass/fail only when it adds signal — i.e. on a failure.
+	if !r.SmartStatus.Passed {
+		health += "  [red](SMART self-test: FAILED)[-]"
+	}
+	row("Health", health)
 
 	// Surface a per-drive smartctl error message (a permission/open failure, or a
 	// log-read limitation common on Apple internal SSDs). It is a data-availability
@@ -82,6 +101,8 @@ func identityText(r *smart.Report) string {
 		fmt.Fprintf(&b, "[yellow]⚠ %s[-]\n", msg)
 	}
 
+	// Identity.
+	gap()
 	row("Model", orDash(r.ModelName))
 	if r.ModelFamily != "" {
 		row("Family", r.ModelFamily)
@@ -89,7 +110,28 @@ func identityText(r *smart.Report) string {
 	row("Type", driveKind(r))
 	row("Serial", orDash(r.SerialNumber))
 	row("Firmware", orDash(r.FirmwareVersion))
+
+	// Capacity & geometry (mostly ATA; each gated on presence).
+	gap()
 	row("Capacity", capacityString(r))
+	if r.LogicalBlockSize != nil {
+		row("Sector size", sectorSizeString(r))
+	}
+	if r.FormFactor != nil && r.FormFactor.Name != "" {
+		row("Form factor", r.FormFactor.Name)
+	}
+	if s := interfaceString(r.InterfaceSpeed); s != "" {
+		row("Interface", s)
+	}
+	if r.SATAVersion != nil && r.SATAVersion.String != "" {
+		row("SATA", r.SATAVersion.String)
+	}
+	if r.Trim != nil {
+		row("TRIM", yesNo(r.Trim.Supported))
+	}
+
+	// Wear & usage.
+	gap()
 	row("Temp", tempString(r))
 	if r.PowerOnTime != nil {
 		row("Power-on", humanDuration(r.PowerOnTime.Hours))
@@ -99,24 +141,6 @@ func identityText(r *smart.Report) string {
 	if r.PowerCycleCount != nil {
 		row("Power cycles", fmt.Sprintf("%d", *r.PowerCycleCount))
 	}
-
-	// Interface and geometry (mostly ATA; each gated on presence).
-	if s := interfaceString(r.InterfaceSpeed); s != "" {
-		row("Interface", s)
-	}
-	if r.LogicalBlockSize != nil {
-		row("Sector size", sectorSizeString(r))
-	}
-	if r.FormFactor != nil && r.FormFactor.Name != "" {
-		row("Form factor", r.FormFactor.Name)
-	}
-	if r.SATAVersion != nil && r.SATAVersion.String != "" {
-		row("SATA", r.SATAVersion.String)
-	}
-	if r.Trim != nil {
-		row("TRIM", yesNo(r.Trim.Supported))
-	}
-
 	if r.NVMeHealth != nil {
 		h := r.NVMeHealth
 		if h.PercentageUsed != nil {
@@ -178,6 +202,9 @@ func buildGauges(r *smart.Report) tview.Primitive {
 		g.SetBorder(true)
 		g.SetMaxValue(100)
 		g.SetValue(clampPct(*h.PercentageUsed))
+		// Colour by the value itself, not the drive-wide verdict: a near-worn
+		// drive should read caution/red even when nothing else is wrong.
+		g.SetPgBgColor(severityColor(lifeUsedSeverity(*h.PercentageUsed)))
 		col.AddItem(g, 3, 0, false)
 		added = true
 	}
@@ -187,6 +214,7 @@ func buildGauges(r *smart.Report) tview.Primitive {
 		g.SetBorder(true)
 		g.SetMaxValue(100)
 		g.SetValue(clampPct(*h.AvailableSpare))
+		g.SetPgBgColor(severityColor(spareSeverity(h)))
 		col.AddItem(g, 3, 0, false)
 		added = true
 	}
@@ -196,6 +224,32 @@ func buildGauges(r *smart.Report) tview.Primitive {
 	return col
 }
 
+// lifeUsedSeverity grades NVMe endurance consumption for the "Life used" gauge:
+// caution as it nears the rated writes, red once past 100%. The data layer's
+// PctUsedSeverity never returns failing, so the >=100 red is added here.
+func lifeUsedSeverity(pct int) smart.Severity {
+	if pct >= 100 {
+		return smart.SeverityFailing
+	}
+	return smart.PctUsedSeverity(pct)
+}
+
+// spareSeverity grades the "Spare avail" gauge: failing once available spare has
+// fallen to the drive's threshold, caution as it approaches it.
+func spareSeverity(h *smart.NVMeHealth) smart.Severity {
+	if h.AvailableSpare == nil || h.AvailableSpareThreshold == nil {
+		return smart.SeverityOK
+	}
+	switch thr := *h.AvailableSpareThreshold; {
+	case *h.AvailableSpare <= thr:
+		return smart.SeverityFailing
+	case *h.AvailableSpare <= thr+10:
+		return smart.SeverityCaution
+	default:
+		return smart.SeverityOK
+	}
+}
+
 // buildTempSparkline returns a temperature trend widget. ATA drives seed it from
 // the on-device SCT history (instant); NVMe drives use the runtime series.
 func buildTempSparkline(r *smart.Report, runtime []float64) tview.Primitive {
@@ -203,12 +257,27 @@ func buildTempSparkline(r *smart.Report, runtime []float64) tview.Primitive {
 	if len(data) < 2 {
 		return nil
 	}
+	now := int(data[len(data)-1])
+	lo, hi := now, now
+	for _, v := range data {
+		iv := int(v)
+		if iv < lo {
+			lo = iv
+		}
+		if iv > hi {
+			hi = iv
+		}
+	}
+
 	sl := tvxwidgets.NewSparkline()
 	sl.SetBorder(true)
-	sl.SetTitle(" Temperature trend ")
+	// Title with live values so the trend is readable, and colour by the current
+	// temperature rather than the drive-wide verdict — a hot-but-otherwise-OK
+	// drive should not show a calm green line.
+	sl.SetTitle(fmt.Sprintf(" Temperature trend — now %d°C · min %d · max %d ", now, lo, hi))
 	sl.SetDataTitle("°C")
 	sl.SetData(data)
-	sl.SetLineColor(severityColor(r.Overall()))
+	sl.SetLineColor(severityColor(tempSeverity(now)))
 	return sl
 }
 

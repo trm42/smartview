@@ -94,19 +94,20 @@ func (s *scrollView) Draw(screen tcell.Screen) {
 	drawScrollArrows(screen, x, y, w, h, s.offset, s.contentHeight)
 }
 
-// drawScrollArrows overlays the cyan up/down indicators at the right edge of the
-// rect (x, y, w, h) when content overflows it: ▲ when offset rows are hidden
-// above, ▼ when content extends below. This is the one scroll affordance shared
-// by every tab — the scrollView container and the natively-scrolling TextView,
-// Table and List wrappers below all route through it so the cue looks identical
-// everywhere. h is both the viewport height and the placement rect, so callers
-// pass an inner rect (border/gutter already removed); the arrows then sit just
-// inside the right border on the top and bottom content rows.
+// drawScrollArrows overlays the up/down indicators at the right edge of the rect
+// (x, y, w, h) when content overflows it: ▲ when offset rows are hidden above, ▼
+// when content extends below. This is the one scroll affordance shared by every
+// tab — the scrollView container and the natively-scrolling TextView, Table and
+// List wrappers below all route through it so the cue looks identical everywhere.
+// h is both the viewport height and the placement rect, so callers pass an inner
+// rect (border/gutter already removed); the arrows then sit just inside the right
+// border on the top and bottom content rows. The arrows are a neutral white so
+// they read as chrome rather than competing with the aqua focus/accent colour.
 func drawScrollArrows(screen tcell.Screen, x, y, w, h, offset, contentHeight int) {
 	if w <= 0 || h <= 0 || contentHeight <= h {
 		return
 	}
-	arrow := tcell.StyleDefault.Foreground(tcell.ColorAqua)
+	arrow := tcell.StyleDefault.Foreground(tcell.ColorWhite)
 	if offset > 0 {
 		screen.SetContent(x+w-1, y, '▲', nil, arrow)
 	}
