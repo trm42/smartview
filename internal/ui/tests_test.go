@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -67,15 +68,52 @@ func TestTestsViewRunning(t *testing.T) {
 	}
 }
 
+// visibleBarText strips tview color markup so the bar's printed characters
+// (the centered percent label) can be asserted independent of per-cell colors.
+func visibleBarText(bar string) string {
+	var b strings.Builder
+	depth := 0
+	for _, r := range bar {
+		switch r {
+		case '[':
+			depth++
+		case ']':
+			if depth > 0 {
+				depth--
+			}
+		default:
+			if depth == 0 {
+				b.WriteRune(r)
+			}
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
 func TestProgressBar(t *testing.T) {
-	if got := progressBar(0); got != "░░░░░░░░░░░░░░░░░░░░░░░░" {
-		t.Errorf("0%% bar = %q", got)
+	// 0%: nothing filled (no green segments) but the label is present.
+	if got := progressBar(0); strings.Count(got, "[black:green]") != 0 {
+		t.Errorf("0%% bar should have no filled cells: %q", got)
 	}
-	if got := []rune(progressBar(50)); len(got) != 24 {
-		t.Errorf("bar width = %d, want 24", len(got))
+	if got := visibleBarText(progressBar(0)); got != "0%" {
+		t.Errorf("0%% bar label = %q, want \"0%%\"", got)
 	}
-	if got := progressBar(150); got != "████████████████████████" {
-		t.Errorf("clamped 150%% bar = %q", got)
+	// 50%: half (12 of 24) cells filled, label centered inside.
+	if got := progressBar(50); strings.Count(got, "[black:green]") != 12 {
+		t.Errorf("50%% bar filled cells = %d, want 12", strings.Count(got, "[black:green]"))
+	}
+	if got := visibleBarText(progressBar(50)); got != "50%" {
+		t.Errorf("50%% bar label = %q, want \"50%%\"", got)
+	}
+	// 100% (and clamped 150%): all 24 cells filled.
+	if got := progressBar(100); strings.Count(got, "[black:green]") != barWidth {
+		t.Errorf("100%% bar filled cells = %d, want %d", strings.Count(got, "[black:green]"), barWidth)
+	}
+	if got := visibleBarText(progressBar(100)); got != "100%" {
+		t.Errorf("100%% bar label = %q, want \"100%%\"", got)
+	}
+	if got := progressBar(150); strings.Count(got, "[black:green]") != barWidth {
+		t.Errorf("clamped 150%% bar filled cells = %d, want %d", strings.Count(got, "[black:green]"), barWidth)
 	}
 }
 
