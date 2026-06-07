@@ -1,0 +1,26 @@
+# golangci-lint configuration (schema v2).
+#
+# We run the curated "standard" linter set (errcheck, govet, ineffassign,
+# staticcheck, unused) — the same set golangci-lint enables by default, pinned
+# here so the policy is explicit and reproducible rather than drifting with the
+# tool version. To tighten coverage, add linters under `linters.enable` (e.g.
+# misspell, revive, unconvert) and re-run `golangci-lint run` locally first.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  exclusions:
+    # Generated/vendored code is not linted by default in v2; nothing extra here.
+    rules:
+      # smartview deliberately shells out to `smartctl`; the binary name is a
+      # constant and arguments come from internal call sites (device names are
+      # round-tripped verbatim from `smartctl --scan-open`), so gosec's G204
+      # "subprocess launched with variable" would be a false positive if gosec
+      # is ever enabled. Documented here so the intent is recorded.
+      - path: internal/smart/smart.go
+        text: "G204"
+        linters:
+          - gosec

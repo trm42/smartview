@@ -4,6 +4,17 @@ package smart
 
 import "time"
 
+// SelfTestType is the kind of SMART self-test smartview can start. smartctl also
+// accepts conveyance and selective tests, but smartview deliberately exposes only
+// the short and long (extended) variants; using a named type keeps the valid set
+// discoverable and compiler-checked at call sites instead of passing raw strings.
+type SelfTestType string
+
+const (
+	SelfTestShort SelfTestType = "short"
+	SelfTestLong  SelfTestType = "long"
+)
+
 // SupportsSelfTest reports whether the drive can run SMART self-tests, gating
 // the Tests tab. ATA exposes the capability bit directly; NVMe self-test is an
 // optional admin command. Drives that omit these sections (e.g. Apple internal
@@ -64,19 +75,18 @@ func (r *Report) SelfTestProgress() (label string, percent int, running bool) {
 	}
 }
 
-// SelfTestDuration returns the estimated runtime for a self-test type ("short"
-// or "long"), when the drive advertises it. Only ATA reports polling minutes;
-// NVMe returns ok=false.
-func (r *Report) SelfTestDuration(testType string) (time.Duration, bool) {
+// SelfTestDuration returns the estimated runtime for a self-test type, when the
+// drive advertises it. Only ATA reports polling minutes; NVMe returns ok=false.
+func (r *Report) SelfTestDuration(testType SelfTestType) (time.Duration, bool) {
 	if r.ATASmartData == nil || r.ATASmartData.SelfTest == nil || r.ATASmartData.SelfTest.PollingMinutes == nil {
 		return 0, false
 	}
 	p := r.ATASmartData.SelfTest.PollingMinutes
 	var min int
 	switch testType {
-	case "short":
+	case SelfTestShort:
 		min = p.Short
-	case "long":
+	case SelfTestLong:
 		min = p.Extended
 	default:
 		return 0, false

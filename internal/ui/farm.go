@@ -166,9 +166,32 @@ func (v *farmView) relayout(width int) {
 	leftInner := leftW - 2 - 2*uiGutter // outer width minus borders and gutters
 	rightInner := rightW - 2 - 2*uiGutter
 
-	// Pre-wrap each box for its own column so values hang-indent rather than
-	// wrapping back to the left margin; SetWrap(false) on the boxes keeps tview
-	// from re-breaking this text.
+	topRowH, bottomRowH := v.wrapBoxes(leftInner, rightInner)
+	grid := buildFarmGrid(v.drive, v.env, v.errors, v.workload, topRowH, bottomRowH)
+
+	gridHeight := topRowH + bottomRowH
+	outer := tview.NewFlex().SetDirection(tview.FlexRow)
+	outer.AddItem(grid, gridHeight, 0, false)
+	total := gridHeight
+	for _, c := range v.charts {
+		outer.AddItem(c, farmChartHeight, 0, false)
+		total += farmChartHeight
+	}
+
+	v.setContent(outer, total)
+}
+
+// farmChartHeight is the fixed cell height of each per-head bar chart (border +
+// labelled bars); they stack below the 2×2 stat grid inside the scroll viewport.
+const farmChartHeight = 9
+
+// wrapBoxes pre-wraps each stat box's text for its column's inner width so long
+// values hang-indent under the value column rather than wrapping to the left
+// margin (SetWrap(false) on the boxes keeps tview from re-breaking it), sets the
+// boxes, and returns the shared heights for the top (drive|errors) and bottom
+// (env|workload) rows — each paired box grown to a common height so the two
+// columns end level.
+func (v *farmView) wrapBoxes(leftInner, rightInner int) (topRowH, bottomRowH int) {
 	driveText := hangingIndentValues(v.driveText, leftInner)
 	envText := hangingIndentValues(v.envText, leftInner)
 	errorsText := hangingIndentValues(v.errorsText, rightInner)
@@ -178,41 +201,31 @@ func (v *farmView) relayout(width int) {
 	v.errors.SetText(errorsText)
 	v.workload.SetText(workloadText)
 
-	// Height is now just the pre-wrapped line count plus the two borders.
+	// Height is just the pre-wrapped line count plus the two borders.
 	boxHeight := func(text string) int {
 		return strings.Count(strings.TrimRight(text, "\n"), "\n") + 1 + 2
 	}
-	driveH := boxHeight(driveText)
-	envH := boxHeight(envText)
-	errorsH := boxHeight(errorsText)
-	workloadH := boxHeight(workloadText)
+	topRowH = max(boxHeight(driveText), boxHeight(errorsText))
+	bottomRowH = max(boxHeight(envText), boxHeight(workloadText))
+	return topRowH, bottomRowH
+}
 
-	// Paired boxes share a row height so the two columns stay level.
-	topRowH := max(driveH, errorsH)
-	bottomRowH := max(envH, workloadH)
-
+// buildFarmGrid arranges the four stat boxes into the 2×2 grid: a left column of
+// drive over env beside a right column of errors over workload, paired rows
+// sharing a height so the columns stay level.
+func buildFarmGrid(drive, env, errors, workload tview.Primitive, topRowH, bottomRowH int) tview.Primitive {
 	left := tview.NewFlex().SetDirection(tview.FlexRow)
-	left.AddItem(v.drive, topRowH, 0, false)
-	left.AddItem(v.env, bottomRowH, 0, false)
+	left.AddItem(drive, topRowH, 0, false)
+	left.AddItem(env, bottomRowH, 0, false)
 
 	right := tview.NewFlex().SetDirection(tview.FlexRow)
-	right.AddItem(v.errors, topRowH, 0, false)
-	right.AddItem(v.workload, bottomRowH, 0, false)
+	right.AddItem(errors, topRowH, 0, false)
+	right.AddItem(workload, bottomRowH, 0, false)
 
 	grid := tview.NewFlex() // horizontal: left column | right column
 	grid.AddItem(left, 0, 1, false)
 	grid.AddItem(right, 0, 1, false)
-
-	gridHeight := topRowH + bottomRowH
-	outer := tview.NewFlex().SetDirection(tview.FlexRow)
-	outer.AddItem(grid, gridHeight, 0, false)
-	total := gridHeight
-	for _, c := range v.charts {
-		outer.AddItem(c, 9, 0, false)
-		total += 9
-	}
-
-	v.setContent(outer, total)
+	return grid
 }
 
 // farmBoxText builds a single box's text via the matching writeFarm* helper.
