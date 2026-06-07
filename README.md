@@ -26,8 +26,10 @@ and whether anything has ever failed.
   Metrics, a richer reliability panel: error statistics, environment (temperature
   range, 12 V rail), workload counters, and per-head reallocated-sector and
   head-resistance charts.
-- **Self-test & error logs** — the SMART error log and self-test history
-  (short / extended / conveyance), with pass/fail status and estimated durations.
+- **Self-tests & error logs** — view the SMART error log and self-test history
+  (short / extended / conveyance) with pass/fail status and estimated durations,
+  and — on drives that support it — start short or extended self-tests right from
+  the interactive **Tests** tab, with a live progress bar and cancel.
 - **Failing/pre-fail highlighting** — uses smartmontools' authoritative
   `prefailure` flag plus `when_failed` / threshold checks, not name heuristics.
 - **Graceful degradation** — the SMART JSON is sparse and drive-dependent (e.g.
@@ -45,7 +47,8 @@ sparkline instantly from the on-disk temperature history; NVMe drives build it u
 across polls.
 
 **Attributes** — the per-drive SMART attributes, sorted by severity so anything
-worrying floats to the top. Select a row to read what it means.
+worrying floats to the top. Select a row to read what it means. Press `s` to
+cycle the sort order and `f` to cycle the filter (e.g. only flagged attributes).
 
 ![smartview attributes tab — severity-sorted SMART attribute table](docs/images/attributes.png)
 
@@ -60,6 +63,13 @@ per-head reallocated-sector and head-resistance charts.
 conveyance offline tests) with their results and estimated run times.
 
 ![smartview Logs tab — SMART error log and self-test history](docs/images/logs.png)
+
+**Tests** — shown only on drives that support self-tests. Select a **Short** or
+**Long (extended)** test and press `Enter` to start it (usually requires root);
+a live progress bar with a centered percent tracks the running test, and `x`
+cancels it. Results land in the **Logs** tab when the test completes.
+
+![smartview Tests tab — start a short or extended self-test](docs/images/tests.png)
 
 ## Requirements
 
@@ -90,22 +100,47 @@ go run .
 ## Usage
 
 ```sh
-smartview                 # auto-refresh every 5s (default)
-smartview --interval 10s  # custom refresh interval
+smartview                 # auto-refresh every 30s (default)
+smartview --interval 10s  # custom starting refresh interval
 sudo smartview            # if attributes require root
 ```
 
+The refresh interval can also be changed at runtime with the `+` / `-` keys (see
+below) — `--interval` only sets the starting cadence.
+
 ### Keys
 
-| Key        | Action                          |
-| ---------- | ------------------------------- |
-| `↑` / `↓`  | Select a drive                  |
-| `Tab`      | Move focus between panes        |
-| `1`–`4`    | Switch detail tab (Overview / Attributes / FARM / Logs) |
-| `r`        | Refresh now                     |
-| `q`        | Quit                            |
+| Key                       | Action                                                        |
+| ------------------------- | ------------------------------------------------------------- |
+| `↑` / `↓` (or `j` / `k`)  | Select a drive (list focus) or scroll content (detail focus)  |
+| `PgUp` / `PgDn`, `g` / `G`| Page / jump to top / bottom of scrollable content             |
+| `←` / `→`                 | Move between panes and step through detail tabs (no wrap)     |
+| `Tab`                     | Toggle focus between the drive list and the detail pane       |
+| `1`–`9`                   | Switch detail tab by number                                   |
+| `t`                       | Jump straight to the **Tests** tab                            |
+| `r`                       | Refresh now                                                   |
+| `+` / `-`                 | Slower / faster refresh (2s → 5s → 10s → 30s → 1m → 5m ladder)|
+| `s` / `f` (Attributes)    | Cycle the attribute sort / filter                             |
+| `Enter` / `x` (Tests)     | Start the selected self-test / cancel the running test        |
+| `q` or `Esc`              | Quit                                                          |
 
-Mouse is also supported (click drives and tabs).
+Mouse is also supported (click drives and tabs, scroll with the wheel).
+
+### Dev / fixture mode
+
+To eyeball the UI without real drives — or to render hardware you don't have on
+hand — build with the `dev` tag and point `--fixtures` at a directory of captured
+`smartctl -j -x` JSON:
+
+```sh
+go build -tags dev -o smartview .
+./smartview --fixtures internal/smart/testdata   # render the committed fixtures
+```
+
+The committed `internal/smart/testdata/` fixtures cover ATA, NVMe, a sparse Apple
+NVMe, and a Seagate FARM log. Fixture mode bypasses the `smartctl` preflight, so
+smartmontools need not be installed. A plain release build (`go build`) still
+accepts `--fixtures` but rejects it at startup with a rebuild hint.
 
 ## How it works
 
@@ -142,8 +177,9 @@ fixture that guards the graceful-degradation behaviour.
 
 ## Roadmap
 
-See [TODO.md](TODO.md). Highlights: validation on Linux SATA hardware, a
-permission/sudo banner, and self-test triggering (`smartctl -t`).
+See [TODO.md](TODO.md). Self-test triggering (`smartctl -t`) and a
+permission/sudo banner have landed, and the ATA and Seagate FARM paths have been
+validated on real Linux SATA hardware.
 
 **SCSI/SAS drives are not supported, on purpose.** smartview targets SATA/ATA and
 NVMe only — we don't have SCSI/SAS hardware to develop or test against, so that
