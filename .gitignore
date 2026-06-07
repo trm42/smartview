@@ -1,4 +1,5 @@
 /smartview
+/dist/
 *.out
 .context
 .DS_Store

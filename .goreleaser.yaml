@@ -1,0 +1,127 @@
+# GoReleaser configuration for smartview.
+# Docs: https://goreleaser.com — schema v2.
+#
+# Release flow: push a SemVer tag (`v*`) and .github/workflows/release.yml runs
+# `goreleaser release --clean`, which builds the binaries, archives, checksums,
+# Linux packages, and the Homebrew formula declared below.
+#
+# Local dry-run (no publish, no tokens needed):
+#   goreleaser release --snapshot --clean
+# Validate this file:
+#   goreleaser check
+version: 2
+
+project_name: smartview
+
+before:
+  hooks:
+    # Release-gate on a tidy module and a clean test run.
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: smartview
+    main: .
+    binary: smartview
+    env:
+      # Pure-Go (tcell/tview, no cgo) — static binaries cross-compile cleanly.
+      - CGO_ENABLED=0
+    ldflags:
+      # Strip debug info and inject the tag-derived version into main.version
+      # (see main.go: `var version = "dev"`). {{.Version}} drops the leading `v`.
+      - -s -w -X main.version={{.Version}}
+    # Reproducible builds: stamp binaries with the commit time, not build time.
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - arm64
+      - amd64
+    ignore:
+      # Targets are darwin/arm64 (Apple Silicon) and linux/amd64 only.
+      - goos: darwin
+        goarch: amd64
+      - goos: linux
+        goarch: arm64
+
+archives:
+  - id: smartview
+    formats: [tar.gz]
+    name_template: smartview_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+nfpms:
+  - id: smartview
+    package_name: smartview
+    # Only the linux/amd64 build is packaged; darwin gets Homebrew.
+    formats:
+      - deb
+      - rpm
+    maintainer: trm42
+    description: Cross-platform terminal UI for monitoring drive health via smartmontools.
+    license: GPL-3.0-or-later
+    homepage: https://github.com/trm42/smartview
+    dependencies:
+      # smartview hard-requires smartctl at runtime (preflight exits without it).
+      - smartmontools
+
+# Homebrew now distributes pre-built binaries as casks (GoReleaser v2 deprecated
+# the formula-based `brews:` in favour of `homebrew_casks:`). The cask installs
+# the smartview binary extracted from the darwin/arm64 archive.
+homebrew_casks:
+  - name: smartview
+    repository:
+      owner: trm42
+      name: homebrew-tap
+      # PAT with write access to the tap repo (the default GITHUB_TOKEN can't
+      # push to another repo). Set in release.yml as HOMEBREW_TAP_GITHUB_TOKEN.
+      token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
+    binaries:
+      - smartview
+    homepage: https://github.com/trm42/smartview
+    description: Cross-platform terminal UI for monitoring drive health via smartmontools.
+    license: GPL-3.0-or-later
+    dependencies:
+      - formula: smartmontools
+    hooks:
+      post:
+        # The binary is unsigned; clear the Gatekeeper quarantine flag so it runs
+        # without the "cannot be opened" prompt on first launch.
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/smartview"]
+          end
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    # Match the repo's conventional-commit style — drop noise from the notes.
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: trm42
+    name: smartview

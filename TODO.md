@@ -51,7 +51,11 @@ for drive health via smartmontools.
 - [ ] **Alerts / thresholds.** Optional notification or log when an attribute crosses
       into Caution/Failing; persist temperature history to disk for longer trends.
 - [ ] **Config file** for refresh interval, default device, and colour theme.
-- [ ] **Packaging.** Homebrew formula (macOS) and a release binary / distro package (Linux).
+- [x] **Packaging.** Tag-driven GoReleaser pipeline (`.goreleaser.yaml` +
+      `.github/workflows/release.yml`): GitHub Release archives + checksums, a
+      Homebrew formula (`trm42/homebrew-tap`), and Linux `.deb`/`.rpm`
+      (Depends: smartmontools). Build matrix is **darwin/arm64 + linux/amd64
+      only** — darwin/amd64 and linux/arm64 are intentionally excluded.
 
 ## Out of scope
 
