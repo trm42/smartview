@@ -73,6 +73,9 @@ func (a *App) fetchAndApply(ctx context.Context) {
 		if detailFocused {
 			a.app.SetFocus(a.detail.content())
 		}
+		// A rebuild resets tab borders to default and a self-test may have flipped
+		// the Tests tab idle↔running, so resync the focus accents and hint bar.
+		a.refreshChrome()
 		a.refreshing.Store(false)
 		a.renderSpinner()
 	})

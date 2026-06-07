@@ -95,12 +95,57 @@ func (a *App) build() {
 	a.root = root
 	a.app.SetRoot(root, true).EnableMouse(true)
 	a.app.SetInputCapture(a.onKey)
+	// The drive list is the initial focus; accent its border from the start.
+	a.refreshFocusChrome()
 }
 
-// statusText renders the bottom key-hint bar.
+// statusText renders the bottom key-hint bar. A stable global prefix is followed
+// by a context segment for the focused tab (the sort/filter and self-test keys
+// are otherwise undiscoverable), then the refresh cadence.
 func (a *App) statusText() string {
-	return fmt.Sprintf("[aqua]↑/↓[-] drive   [aqua]←/→[-] nav   [aqua]1-9[-] tab   "+
-		"[aqua]Tab[-] focus   [aqua]r[-] refresh   [aqua]t[-] tests   [aqua]Esc/q[-] quit      refresh every %s", a.interval)
+	hint := "[aqua]↑/↓[-] drive   [aqua]←/→[-] nav"
+	if n := a.detail.tabCount(); n >= 2 {
+		hint += fmt.Sprintf("   [aqua]1-%d[-] tab", n)
+	}
+	hint += "   [aqua]Tab[-] focus   [aqua]r[-] refresh   [aqua]q[-] quit"
+	hint += a.contextHints()
+	return hint + fmt.Sprintf("      refresh every %s", a.interval)
+}
+
+// contextHints returns the key hints specific to the focused detail tab. They
+// apply only while the detail pane holds focus (the keys reach the focused tab
+// body, not the drive list), so the bar stays honest about what works right now.
+func (a *App) contextHints() string {
+	if a.list.HasFocus() {
+		return ""
+	}
+	switch a.detail.activeID() {
+	case "attributes":
+		return "   [aqua]s[-] sort   [aqua]f[-] filter"
+	case "tests":
+		if a.detail.testsRunning() {
+			return "   [aqua]x[-] cancel test"
+		}
+		return "   [aqua]Enter[-] start test"
+	}
+	return ""
+}
+
+// refreshChrome resyncs the focus-border accents and the context-aware hint bar.
+// Call it after any focus change, tab change, or poll (the Tests tab can flip
+// idle↔running, and the available tab set can change).
+func (a *App) refreshChrome() {
+	a.refreshFocusChrome()
+	a.status.SetText(a.statusText())
+}
+
+// refreshFocusChrome accents the border of whichever pane (drive list or detail
+// content) holds keyboard focus and dims the other, so the focused container is
+// always obvious. Must be called after focus has actually moved.
+func (a *App) refreshFocusChrome() {
+	listFocused := a.list.HasFocus()
+	a.list.SetBorderColor(borderColor(listFocused))
+	a.detail.setContentFocus(!listFocused)
 }
 
 // onKey is the global key handler.
@@ -132,11 +177,13 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 		case 't':
 			if a.detail.selectTabID("tests") {
 				a.app.SetFocus(a.detail.content())
+				a.refreshChrome()
 			}
 			return nil
 		case '1', '2', '3', '4', '5', '6', '7', '8', '9':
 			a.detail.selectTab(int(r - '1'))
 			a.app.SetFocus(a.detail.content())
+			a.refreshChrome()
 			return nil
 		}
 	}
@@ -150,6 +197,7 @@ func (a *App) toggleFocus() {
 	} else {
 		a.app.SetFocus(a.list)
 	}
+	a.refreshChrome()
 }
 
 // focusRight advances along the focus chain list → tab0 → tab1 … → tabN. From
@@ -158,10 +206,12 @@ func (a *App) toggleFocus() {
 func (a *App) focusRight() {
 	if a.list.HasFocus() {
 		a.app.SetFocus(a.detail.content())
+		a.refreshChrome()
 		return
 	}
 	if a.detail.stepTab(1) {
 		a.app.SetFocus(a.detail.content())
+		a.refreshChrome()
 	}
 }
 
@@ -173,10 +223,12 @@ func (a *App) focusLeft() {
 	}
 	if a.detail.active == 0 {
 		a.app.SetFocus(a.list)
+		a.refreshChrome()
 		return
 	}
 	a.detail.stepTab(-1)
 	a.app.SetFocus(a.detail.content())
+	a.refreshChrome()
 }
 
 // triggerRefresh asks the poll loop to fetch immediately (non-blocking).
@@ -333,6 +385,7 @@ func (a *App) popModal() {
 	a.inModal = false
 	a.app.SetRoot(a.root, true)
 	a.app.SetFocus(a.detail.content())
+	a.refreshChrome()
 }
 
 // testLabel renders a friendly self-test name for prompts.
@@ -408,8 +461,10 @@ func (a *App) confirm(text, yesLabel string, onYes func()) {
 	modal := tview.NewModal().
 		SetText(text).
 		AddButtons([]string{yesLabel, "Back"}).
+		// Aqua (not green) activated button: the affirmative may be a destructive
+		// "Cancel test", so green stays reserved for healthy/go semantics.
 		SetButtonActivatedStyle(tcell.StyleDefault.
-			Background(tcell.ColorGreen).Foreground(tcell.ColorBlack)).
+			Background(tcell.ColorAqua).Foreground(tcell.ColorBlack)).
 		SetDoneFunc(func(_ int, label string) {
 			a.popModal()
 			if label == yesLabel {

@@ -56,6 +56,17 @@ func newFarmView(r *smart.Report) *farmView {
 	return v
 }
 
+// setFocused accents the FARM tab's borders when it holds keyboard focus. The
+// scroll container is borderless (inner content supplies the borders), so the
+// focus cue is applied to the four stat boxes.
+func (v *farmView) setFocused(focused bool) {
+	c := borderColor(focused)
+	v.drive.SetBorderColor(c)
+	v.errors.SetBorderColor(c)
+	v.env.SetBorderColor(c)
+	v.workload.SetBorderColor(c)
+}
+
 // hangingIndentValues rewraps each farmRow "label  value" line so a value too
 // long for the box wraps with a hanging indent aligned under the value column,
 // instead of tview wrapping it back to the left margin. innerW is the box's
