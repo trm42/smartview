@@ -98,18 +98,18 @@ func identityText(r *smart.Report) string {
 	// an alarming red one. The message is long, so it gets its own full-width line
 	// rather than the key/value row format.
 	if msg, ok := r.FatalMessage(); ok {
-		fmt.Fprintf(&b, "[yellow]⚠ %s[-]\n", msg)
+		fmt.Fprintf(&b, "[yellow]⚠ %s[-]\n", esc(msg))
 	}
 
-	// Identity.
+	// Identity. Free-text fields are drive-controlled, so escape markup (see esc).
 	gap()
-	row("Model", orDash(r.ModelName))
+	row("Model", orDash(esc(r.ModelName)))
 	if r.ModelFamily != "" {
-		row("Family", r.ModelFamily)
+		row("Family", esc(r.ModelFamily))
 	}
 	row("Type", driveKind(r))
-	row("Serial", orDash(r.SerialNumber))
-	row("Firmware", orDash(r.FirmwareVersion))
+	row("Serial", orDash(esc(r.SerialNumber)))
+	row("Firmware", orDash(esc(r.FirmwareVersion)))
 
 	// Capacity & geometry (mostly ATA; each gated on presence).
 	gap()
@@ -118,13 +118,13 @@ func identityText(r *smart.Report) string {
 		row("Sector size", sectorSizeString(r))
 	}
 	if r.FormFactor != nil && r.FormFactor.Name != "" {
-		row("Form factor", r.FormFactor.Name)
+		row("Form factor", esc(r.FormFactor.Name))
 	}
 	if s := interfaceString(r.InterfaceSpeed); s != "" {
 		row("Interface", s)
 	}
 	if r.SATAVersion != nil && r.SATAVersion.String != "" {
-		row("SATA", r.SATAVersion.String)
+		row("SATA", esc(r.SATAVersion.String))
 	}
 	if r.Trim != nil {
 		row("TRIM", yesNo(r.Trim.Supported))
@@ -160,9 +160,9 @@ func interfaceString(is *smart.InterfaceSpeed) string {
 	}
 	cur := is.Current.String
 	if is.Max != nil && is.Max.String != "" && is.Max.String != cur {
-		return fmt.Sprintf("%s  [yellow](max %s)[-]", cur, is.Max.String)
+		return fmt.Sprintf("%s  [yellow](max %s)[-]", esc(cur), esc(is.Max.String))
 	}
-	return cur
+	return esc(cur)
 }
 
 // sectorSizeString renders the logical (and physical, when different) block size.

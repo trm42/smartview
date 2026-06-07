@@ -12,6 +12,12 @@ run:
 
 linters:
   default: standard
+  # gosec is added on top of the standard set: this tool shells out as root, so a
+  # security linter earns its keep as a regression guard (catches a future
+  # subprocess/file-handling slip). Its one expected finding (G204) is excluded
+  # below with the rationale.
+  enable:
+    - gosec
   exclusions:
     # Generated/vendored code is not linted by default in v2; nothing extra here.
     rules:
@@ -22,5 +28,11 @@ linters:
       # is ever enabled. Documented here so the intent is recorded.
       - path: internal/smart/smart.go
         text: "G204"
+        linters:
+          - gosec
+      # gosec's threat model is the shipped binary, not test code. Tests read
+      # fixtures by computed path (G304) and index slices they just built
+      # (G602) — both safe in-test, so don't run gosec over *_test.go.
+      - path: _test\.go
         linters:
           - gosec

@@ -94,6 +94,18 @@ need no mutex.
   to overlay the arrows from the widget's own scroll metrics. Make a new
   scrollable tab body one of these wrappers rather than a bare TextView/Table/
   List, and keep it focusable so the focused-content keys reach it.
+- **Escape drive-controlled strings before rendering** (`esc()`/`tview.Escape`
+  in `format.go`). SMART identity and log free-text — model/family/serial/
+  firmware, form factor, SATA/link-speed strings, the smartctl fatal message,
+  self-test/error-log strings, SATA PHY-counter and ATA attribute names, raw
+  attribute values, FARM recording type — is device-controlled (writable via
+  vendor tooling, or forged by a hostile USB enclosure). It is written into
+  widgets that interpret tview markup (`SetDynamicColors(true)` TextViews **and
+  all table cells**), so pass it through `esc()` at the sink or a malicious drive
+  can inject colour tags and spoof the health display. Escape only the data, not
+  the surrounding intentional tags; keyword/severity tests run on the original,
+  the escaped copy is what gets wrapped (see `colorResult`). Purely numeric/
+  enumerated/formatted values don't need it.
 - **Health/severity** lives in `smart/health.go`. ATA pre-fail vs old-age comes
   from the authoritative `flags.prefailure` bit, not attribute-name heuristics.
 - Protocol branching is via `Report.IsNVMe()` / `IsATA()`; NVMe and ATA render

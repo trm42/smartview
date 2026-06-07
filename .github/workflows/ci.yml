@@ -38,3 +38,7 @@ jobs:
         run: go build -tags dev -o /dev/null .
       - name: go test
         run: go test -race -cover ./...
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
