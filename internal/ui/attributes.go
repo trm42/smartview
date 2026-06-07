@@ -177,30 +177,35 @@ func (v *attributesView) renderRows() {
 	}
 
 	for i, a := range v.shown {
-		// Healthy rows render neutral so the table is easy to scan; yellow/red
-		// is reserved for attributes that need attention.
-		color := attrTextColor(a.Severity())
-		kind := "old-age"
-		if a.Flags.Prefailure {
-			kind = "pre-fail"
-		}
-		when := a.WhenFailed
-		if when == "" {
-			when = "-"
-		}
-		sel := selectedRowStyle(color)
-		v.table.SetCell(i+1, 0, tview.NewTableCell(" "+humanAttrName(a.Name)+" ").
-			SetTextColor(color).SetExpansion(1).SetSelectedStyle(sel))
-		v.table.SetCell(i+1, 1, tview.NewTableCell(" "+kind+" ").
-			SetTextColor(color).SetSelectedStyle(sel))
-		// Health uses inline colour tags (keeps a green bar on healthy rows).
-		v.table.SetCell(i+1, 2, tview.NewTableCell(" "+healthCell(a)+" ").
-			SetSelectedStyle(sel))
-		v.table.SetCell(i+1, 3, tview.NewTableCell(" "+decodeReading(a)+" ").
-			SetTextColor(color).SetAlign(tview.AlignRight).SetSelectedStyle(sel))
-		v.table.SetCell(i+1, 4, tview.NewTableCell(" "+when+" ").
-			SetTextColor(color).SetSelectedStyle(sel))
+		v.setAttrRow(i+1, a)
 	}
+}
+
+// setAttrRow fills table row (1-based) with the cells for attribute a. Healthy
+// rows render neutral so the table is easy to scan; yellow/red is reserved for
+// attributes that need attention.
+func (v *attributesView) setAttrRow(row int, a smart.ATAAttribute) {
+	color := attrTextColor(a.Severity())
+	kind := "old-age"
+	if a.Flags.Prefailure {
+		kind = "pre-fail"
+	}
+	when := a.WhenFailed
+	if when == "" {
+		when = "-"
+	}
+	sel := selectedRowStyle(color)
+	v.table.SetCell(row, 0, tview.NewTableCell(" "+humanAttrName(a.Name)+" ").
+		SetTextColor(color).SetExpansion(1).SetSelectedStyle(sel))
+	v.table.SetCell(row, 1, tview.NewTableCell(" "+kind+" ").
+		SetTextColor(color).SetSelectedStyle(sel))
+	// Health uses inline colour tags (keeps a green bar on healthy rows).
+	v.table.SetCell(row, 2, tview.NewTableCell(" "+healthCell(a)+" ").
+		SetSelectedStyle(sel))
+	v.table.SetCell(row, 3, tview.NewTableCell(" "+decodeReading(a)+" ").
+		SetTextColor(color).SetAlign(tview.AlignRight).SetSelectedStyle(sel))
+	v.table.SetCell(row, 4, tview.NewTableCell(" "+when+" ").
+		SetTextColor(color).SetSelectedStyle(sel))
 }
 
 // visibleRows applies the current filter then sort.

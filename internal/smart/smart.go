@@ -13,9 +13,7 @@ import (
 // binary is the smartctl executable name; resolved via PATH.
 const binary = "smartctl"
 
-// commandTimeout-free: callers pass a context to bound execution.
-
-// ScanResult mirrors `smartctl --scan-open -j`.
+// scanResult mirrors `smartctl --scan-open -j`.
 type scanResult struct {
 	Smartctl Smartctl `json:"smartctl"`
 	Devices  []Device `json:"devices"`
@@ -99,17 +97,18 @@ func FarmLog(ctx context.Context, name string) (*FARM, error) {
 }
 
 // RunSelfTest starts a SMART self-test on the named device. testType must be
-// "short" or "long" (extended) — smartview deliberately does not expose
-// conveyance/selective tests. It returns nil once smartctl confirms the test
-// has been queued; it does NOT wait for completion (progress is observed via
-// later Info polls). Starting a test usually requires root.
-func RunSelfTest(ctx context.Context, name, testType string) error {
+// SelfTestShort or SelfTestLong (extended) — smartview deliberately does not
+// expose conveyance/selective tests. It returns nil once smartctl confirms the
+// test has been queued; it does NOT wait for completion (progress is observed
+// via later Info polls). Starting a test usually requires root.
+func RunSelfTest(ctx context.Context, name string, testType SelfTestType) error {
 	switch testType {
-	case "short", "long":
+	case SelfTestShort, SelfTestLong:
 	default:
-		return fmt.Errorf("unsupported self-test type %q (want short or long)", testType)
+		return fmt.Errorf("unsupported self-test type %q (want %q or %q)",
+			testType, SelfTestShort, SelfTestLong)
 	}
-	return runSelfTestCommand(ctx, name, "start", "-t", testType, "-j", name)
+	return runSelfTestCommand(ctx, name, "start", "-t", string(testType), "-j", name)
 }
 
 // AbortSelfTest cancels the self-test currently running on the named device
@@ -137,7 +136,7 @@ func runSelfTestCommand(ctx context.Context, name, action string, args ...string
 	}
 	for _, m := range wrapper.Smartctl.Messages {
 		if m.Severity == "error" {
-			return errors.New(m.String)
+			return fmt.Errorf("self-test %s for %s: %s", action, name, m.String)
 		}
 	}
 	return nil

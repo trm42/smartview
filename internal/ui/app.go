@@ -27,6 +27,10 @@ type App struct {
 
 	interval  time.Duration
 	refreshCh chan struct{}
+	// rootCtx is the application context (set in Run); interactive smartctl
+	// calls derive their timeout from it so they are cancelled on shutdown
+	// rather than lingering until the per-call timeout elapses.
+	rootCtx context.Context
 
 	// refreshing is set on the poll goroutine and read on the animation
 	// goroutine, so it is an atomic. This does not violate the event-loop-only
@@ -43,8 +47,15 @@ type App struct {
 	inModal bool                 // true while a modal overlay is shown
 }
 
-// maxHistory bounds the runtime temperature ring buffer (NVMe sparkline).
+// maxHistory bounds the runtime temperature ring buffer that backs the NVMe
+// sparkline (NVMe has no on-device temperature log). 120 samples is ~10 minutes
+// of history at the default 5s poll interval — enough to show a trend without
+// growing unbounded.
 const maxHistory = 120
+
+// spinnerInterval is the cadence of the refresh spinner animation: fast enough
+// to read as motion, slow enough not to spam the event loop with redraws.
+const spinnerInterval = 120 * time.Millisecond
 
 // New constructs the application with the given poll interval.
 func New(interval time.Duration) *App {
@@ -306,6 +317,7 @@ func (a *App) listRow(d smart.Device) (string, string) {
 
 // Run performs the initial scan and starts the event loop and poll goroutine.
 func (a *App) Run(ctx context.Context) error {
+	a.rootCtx = ctx
 	devices, err := smart.Scan(ctx)
 	if err != nil && len(devices) == 0 {
 		return fmt.Errorf("scan drives: %w (try running with sudo)", err)
@@ -346,7 +358,7 @@ func (a *App) renderSpinner() {
 // animateSpinner advances the spinner animation while a refresh is underway.
 // When idle it queues no redraws, so it does not busy-spin the event loop.
 func (a *App) animateSpinner(ctx context.Context) {
-	ticker := time.NewTicker(120 * time.Millisecond)
+	ticker := time.NewTicker(spinnerInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -389,16 +401,16 @@ func (a *App) popModal() {
 }
 
 // testLabel renders a friendly self-test name for prompts.
-func testLabel(testType string) string {
-	if testType == "long" {
+func testLabel(testType smart.SelfTestType) string {
+	if testType == smart.SelfTestLong {
 		return "long (extended)"
 	}
-	return testType
+	return string(testType)
 }
 
 // onSelfTestRun confirms, then starts a self-test on the selected drive. It is
 // wired into the Tests view via selfTestActions and runs on the event loop.
-func (a *App) onSelfTestRun(testType string) {
+func (a *App) onSelfTestRun(testType smart.SelfTestType) {
 	dev, ok := a.selectedDevice()
 	if !ok {
 		return
@@ -410,9 +422,11 @@ func (a *App) onSelfTestRun(testType string) {
 		func() {
 			a.status.SetText("[yellow]⟳[-] Starting " + testLabel(testType) +
 				" self-test on " + shortName(dev) + "…")
-			a.runSmartctl(func(ctx context.Context) error {
-				return smart.RunSelfTest(ctx, dev.Name, testType)
-			})
+			a.runSmartctl(
+				fmt.Sprintf("start the %s self-test on %s", testLabel(testType), shortName(dev)),
+				func(ctx context.Context) error {
+					return smart.RunSelfTest(ctx, dev.Name, testType)
+				})
 		},
 	)
 }
@@ -429,9 +443,11 @@ func (a *App) onSelfTestCancel() {
 		"Cancel test",
 		func() {
 			a.status.SetText("[yellow]⟳[-] Cancelling self-test on " + shortName(dev) + "…")
-			a.runSmartctl(func(ctx context.Context) error {
-				return smart.AbortSelfTest(ctx, dev.Name)
-			})
+			a.runSmartctl(
+				fmt.Sprintf("cancel the self-test on %s", shortName(dev)),
+				func(ctx context.Context) error {
+					return smart.AbortSelfTest(ctx, dev.Name)
+				})
 		},
 	)
 }
@@ -439,15 +455,19 @@ func (a *App) onSelfTestCancel() {
 // runSmartctl runs a self-test control call off the event loop, then restores
 // the status bar and either surfaces the error or triggers an immediate refresh
 // so the Tests view reflects the new state.
-func (a *App) runSmartctl(fn func(context.Context) error) {
+func (a *App) runSmartctl(action string, fn func(context.Context) error) {
+	parent := a.rootCtx
+	if parent == nil {
+		parent = context.Background()
+	}
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		ctx, cancel := context.WithTimeout(parent, fetchTimeout)
 		defer cancel()
 		err := fn(ctx)
 		a.app.QueueUpdateDraw(func() {
 			a.status.SetText(a.statusText())
 			if err != nil {
-				a.showError(err)
+				a.showError(action, err)
 				return
 			}
 			a.triggerRefresh()
@@ -475,10 +495,11 @@ func (a *App) confirm(text, yesLabel string, onYes func()) {
 }
 
 // showError displays a smartctl failure (commonly a permission error) in a
-// dismissable modal.
-func (a *App) showError(err error) {
+// dismissable modal. action names the operation that failed (e.g. "start the
+// short self-test on disk0") so the message says which drive and command.
+func (a *App) showError(action string, err error) {
 	modal := tview.NewModal().
-		SetText(fmt.Sprintf("Self-test command failed:\n%s", err)).
+		SetText(fmt.Sprintf("Could not %s:\n%s", action, err)).
 		AddButtons([]string{"OK"}).
 		SetDoneFunc(func(int, string) { a.popModal() })
 	a.pushModal(modal)
