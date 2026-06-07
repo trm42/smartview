@@ -95,11 +95,15 @@ func (v *testsView) refresh(r *smart.Report, _ []float64) {
 func (v *testsView) showRunning(label string, pct int) {
 	var b strings.Builder
 	b.WriteString("[::b]Self-test in progress[-:-:-]\n\n")
-	if label != "" {
+	// The bar carries its own percent; ATA's raw status string duplicates it as
+	// "in progress, N% remaining", so suppress any "remaining" label to avoid
+	// showing the same fact twice in contradictory forms. NVMe operation names
+	// and plain ATA strings (no "remaining") are kept.
+	if label != "" && !strings.Contains(strings.ToLower(label), "remaining") {
 		// label is smartctl's drive-controlled status string; escape markup (see esc).
 		fmt.Fprintf(&b, "%s\n\n", esc(label))
 	}
-	fmt.Fprintf(&b, "[green]%s[-]  %d%%\n\n", progressBar(pct), pct)
+	fmt.Fprintf(&b, "%s\n\n", progressBar(pct))
 	b.WriteString("Press [aqua]x[-] to cancel the running test.\n")
 	b.WriteString("Results appear in the [aqua]Logs[-] tab when complete.\n")
 	v.info.SetText(b.String())
@@ -149,17 +153,39 @@ func (v *testsView) showIdle(r *smart.Report) {
 	v.AddItem(v.list, 0, 1, true)
 }
 
-// progressBar renders a fixed-width filled/empty bar for a 0..100 percentage.
+// barWidth is the fixed cell count of the self-test progress bar.
+const barWidth = 24
+
+// progressBar renders a fixed-width bar for a 0..100 percentage with the
+// percent label centered inside it. Done cells are green, remaining cells are a
+// dim grey; the split shows progress without a separate number elsewhere. The
+// result is tview markup (dynamic colors are enabled on the running view).
 func progressBar(pct int) string {
-	const width = 24
 	if pct < 0 {
 		pct = 0
 	}
 	if pct > 100 {
 		pct = 100
 	}
-	filled := pct * width / 100
-	return strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
+	filled := pct * barWidth / 100
+	label := fmt.Sprintf("%d%%", pct) // ASCII, so byte len == rune count
+	start := (barWidth - len(label)) / 2
+
+	var b strings.Builder
+	for i := 0; i < barWidth; i++ {
+		if i < filled {
+			b.WriteString("[black:green]")
+		} else {
+			b.WriteString("[white:#3a3a3a]")
+		}
+		if i >= start && i < start+len(label) {
+			b.WriteByte(label[i-start])
+		} else {
+			b.WriteByte(' ')
+		}
+	}
+	b.WriteString("[-:-]")
+	return b.String()
 }
 
 // formatTestDuration renders an estimated self-test runtime compactly.
