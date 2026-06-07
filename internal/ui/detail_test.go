@@ -68,14 +68,14 @@ func TestVisibleTabs(t *testing.T) {
 }
 
 func TestSameTabIDs(t *testing.T) {
-	a := []tab{{"overview", "Overview"}, {"attributes", "Attributes"}}
+	a := []tab{{id: "overview", title: "Overview"}, {id: "attributes", title: "Attributes"}}
 	if !sameTabIDs(nil, nil) {
 		t.Error("empty/empty should match")
 	}
-	if !sameTabIDs(a, []tab{{"overview", "x"}, {"attributes", "y"}}) {
+	if !sameTabIDs(a, []tab{{id: "overview", title: "x"}, {id: "attributes", title: "y"}}) {
 		t.Error("same ids should match regardless of title")
 	}
-	if sameTabIDs(a, []tab{{"attributes", ""}, {"overview", ""}}) {
+	if sameTabIDs(a, []tab{{id: "attributes", title: ""}, {id: "overview", title: ""}}) {
 		t.Error("reordered ids should not match")
 	}
 	if sameTabIDs(a, a[:1]) {
