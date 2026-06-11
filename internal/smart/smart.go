@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strings"
 )
 
 // binary is the smartctl executable name; resolved via PATH.
@@ -161,11 +162,22 @@ func run(ctx context.Context, args ...string) ([]byte, error) {
 
 // FatalMessage returns the first error-severity smartctl message, if any. It is
 // how permission/open failures are surfaced despite a parseable report.
+// Known-benign messages are skipped (see isBenignLogReadFailure).
 func (r *Report) FatalMessage() (string, bool) {
 	for _, m := range r.Smartctl.Messages {
-		if m.Severity == "error" {
+		if m.Severity == "error" && !isBenignLogReadFailure(m.String) {
 			return m.String, true
 		}
 	}
 	return "", false
+}
+
+// isBenignLogReadFailure reports whether msg is the error-log read failure that
+// Apple internal NVMe emits on every poll ("Read N entries from Error
+// Information Log failed: GetLogPage failed: ..."): macOS reads these drives
+// through Apple's private NVMeSMARTLib, which rejects that log page, so the
+// message is a permanent platform limitation, not an actionable fault. The
+// missing log is already conveyed by the Logs tab hiding itself.
+func isBenignLogReadFailure(msg string) bool {
+	return strings.Contains(msg, "Error Information Log failed: GetLogPage failed")
 }
