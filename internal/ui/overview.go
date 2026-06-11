@@ -92,11 +92,12 @@ func identityText(r *smart.Report) string {
 	}
 	row("Health", health)
 
-	// Surface a per-drive smartctl error message (a permission/open failure, or a
-	// log-read limitation common on Apple internal SSDs). It is a data-availability
-	// caveat, not a health verdict, so it is styled as a yellow notice rather than
-	// an alarming red one. The message is long, so it gets its own full-width line
-	// rather than the key/value row format.
+	// Surface a per-drive smartctl error message (a permission/open failure;
+	// known-benign messages like the Apple-NVMe log-read limitation are already
+	// filtered out by FatalMessage). It is a data-availability caveat, not a
+	// health verdict, so it is styled as a yellow notice rather than an alarming
+	// red one. The message is long, so it gets its own full-width line rather
+	// than the key/value row format.
 	if msg, ok := r.FatalMessage(); ok {
 		fmt.Fprintf(&b, "[yellow]⚠ %s[-]\n", esc(msg))
 	}
