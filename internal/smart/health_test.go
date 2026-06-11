@@ -129,4 +129,12 @@ func TestFatalMessage(t *testing.T) {
 	if msg, ok := mixed.FatalMessage(); !ok || msg != "permission denied" {
 		t.Errorf("FatalMessage = %q,%v want permission denied,true", msg, ok)
 	}
+	// The Apple-internal-NVMe log-read failure is a permanent platform
+	// limitation, not an actionable fault; it must be filtered out.
+	apple := &Report{Smartctl: Smartctl{Messages: []Message{
+		{String: "Read 1 entries from Error Information Log failed: GetLogPage failed: system=0x38, sub=0x0, code=745", Severity: "error"},
+	}}}
+	if msg, ok := apple.FatalMessage(); ok {
+		t.Errorf("benign GetLogPage message should be filtered, got %q", msg)
+	}
 }
