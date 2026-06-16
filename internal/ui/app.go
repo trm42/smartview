@@ -26,6 +26,7 @@ type App struct {
 	banner *tview.TextView
 
 	interval   time.Duration
+	themeName  string // active colour theme; cycled by the 'T' key
 	refreshCh  chan struct{}
 	intervalCh chan time.Duration // runtime interval changes → poll-loop ticker reset
 	// rootCtx is the application context (set in Run); interactive smartctl
@@ -46,6 +47,11 @@ type App struct {
 	reports map[string]*smart.Report
 	history map[string][]float64 // runtime temperature series per device
 	inModal bool                 // true while a modal overlay is shown
+
+	// bannerShown is true when the root-warning banner is part of the layout (we
+	// lack root). refreshBanner re-renders its theme-coloured text on a theme
+	// cycle; the banner is set once at build, so it is the easy repaint miss.
+	bannerShown bool
 }
 
 // maxHistory bounds the runtime temperature ring buffer that backs the NVMe
@@ -96,8 +102,11 @@ func nextInterval(cur time.Duration, faster bool) time.Duration {
 	return next
 }
 
-// New constructs the application with the given poll interval.
-func New(interval time.Duration) *App {
+// New constructs the application with the given poll interval and colour theme.
+// themeName must be a known theme (validated by the caller via HasTheme); the
+// theme is installed before build so every widget is created with its colours.
+func New(interval time.Duration, themeName string) *App {
+	setTheme(themes[themeName])
 	a := &App{
 		app:        tview.NewApplication(),
 		list:       tview.NewList(),
@@ -105,6 +114,7 @@ func New(interval time.Duration) *App {
 		status:     tview.NewTextView().SetDynamicColors(true),
 		banner:     tview.NewTextView().SetDynamicColors(true),
 		interval:   interval,
+		themeName:  themeName,
 		refreshCh:  make(chan struct{}, 1),
 		intervalCh: make(chan time.Duration, 1),
 		reports:    map[string]*smart.Report{},
@@ -131,8 +141,8 @@ func (a *App) build() {
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
 	// Full SMART access usually requires root; warn when we lack it.
 	if os.Geteuid() != 0 {
-		a.banner.SetText("[black:yellow] ⚠ Running without root — some drives may " +
-			"report limited data; re-run with sudo for full access. [-:-]")
+		a.bannerShown = true
+		a.refreshBanner()
 		root.AddItem(a.banner, 1, 0, false)
 	}
 	root.AddItem(body, 0, 1, true).
@@ -154,14 +164,15 @@ func (a *App) build() {
 // by a context segment for the focused tab (the sort/filter and self-test keys
 // are otherwise undiscoverable), then the refresh cadence.
 func (a *App) statusText() string {
-	hint := "[aqua]↑/↓[-] drive   [aqua]←/→[-] nav"
+	aq := accentTag()
+	hint := aq + "↑/↓[-] drive   " + aq + "←/→[-] nav"
 	if n := a.detail.tabCount(); n >= 2 {
-		hint += fmt.Sprintf("   [aqua]1-%d[-] tab", n)
+		hint += fmt.Sprintf("   %s1-%d[-] tab", aq, n)
 	}
-	hint += "   [aqua]Tab[-] focus   [aqua]r[-] refresh   [aqua]q[-] quit"
+	hint += "   " + aq + "Tab[-] focus   " + aq + "r[-] refresh   " + aq + "q[-] quit"
 	hint += a.contextHints()
-	hint += "   [aqua]+/-[-] rate"
-	return hint + fmt.Sprintf("      refresh every %s", a.interval)
+	hint += "   " + aq + "+/-[-] rate   " + aq + "T[-] theme"
+	return hint + fmt.Sprintf("      %s · refresh every %s", a.themeName, a.interval)
 }
 
 // contextHints returns the key hints specific to the focused detail tab. They
@@ -171,14 +182,15 @@ func (a *App) contextHints() string {
 	if a.list.HasFocus() {
 		return ""
 	}
+	aq := accentTag()
 	switch a.detail.activeID() {
 	case "attributes":
-		return "   [aqua]s[-] sort   [aqua]f[-] filter"
+		return "   " + aq + "s[-] sort   " + aq + "f[-] filter"
 	case "tests":
 		if a.detail.testsRunning() {
-			return "   [aqua]x[-] cancel test"
+			return "   " + aq + "x[-] cancel test"
 		}
-		return "   [aqua]Enter[-] start test"
+		return "   " + aq + "Enter[-] start test"
 	}
 	return ""
 }
@@ -198,6 +210,41 @@ func (a *App) refreshFocusChrome() {
 	listFocused := a.list.HasFocus()
 	a.list.SetBorderColor(borderColor(listFocused))
 	a.detail.setContentFocus(!listFocused)
+}
+
+// refreshBanner re-renders the root-warning banner text in the active theme.
+// The banner is set once at build, so it is the one surface a theme cycle would
+// otherwise leave at the old colours; no-op when no banner is shown.
+func (a *App) refreshBanner() {
+	if !a.bannerShown {
+		return
+	}
+	a.banner.SetText(fgbgTag(activeTheme.Inverse, activeTheme.BannerBg) +
+		" ⚠ Running without root — some drives may report limited data; " +
+		"re-run with sudo for full access. [-:-]")
+}
+
+// cycleTheme advances to the next built-in theme and repaints everything. Runs
+// on the UI goroutine (called from onKey), so it mutates activeTheme and widgets
+// directly without QueueUpdateDraw — the same reasoning as setInterval.
+func (a *App) cycleTheme() {
+	a.themeName = nextThemeName(a.themeName)
+	setTheme(themes[a.themeName])
+	a.repaintAll()
+}
+
+// repaintAll re-applies the active theme everywhere a colour was baked in at
+// build time. Forcing a detail rebuild (by invalidating the cached device) is
+// the robust hammer: it recreates every tab view with current-theme borders and
+// selected-row styles. The list rows, focus chrome/hint bar and the one-shot
+// banner are then re-rendered explicitly. Accepted trade-off: the rebuild resets
+// the Attributes table selection/scroll — fine for an explicit user action.
+func (a *App) repaintAll() {
+	a.detail.device = "" // invalidate cache → next update() takes the rebuild branch
+	a.showSelected()     // rebuild + re-render all tabs (preserves active tab index)
+	a.populateList()     // re-render list rows (scanning + severity glyphs)
+	a.refreshChrome()    // status hints + focus borders
+	a.refreshBanner()    // re-set the root-warning banner text if shown
 }
 
 // onKey is the global key handler.
@@ -234,6 +281,11 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 				a.app.SetFocus(a.detail.content())
 				a.refreshChrome()
 			}
+			return nil
+		case 'T':
+			// Uppercase T cycles the colour theme; lowercase t (above) jumps to the
+			// Tests tab. ev.Rune() distinguishes the case.
+			a.cycleTheme()
 			return nil
 		case '1', '2', '3', '4', '5', '6', '7', '8', '9':
 			a.detail.selectTab(int(r - '1'))
@@ -360,7 +412,7 @@ func (a *App) populateList() {
 func (a *App) listRow(d smart.Device) (string, string) {
 	rep, ok := a.reports[d.Name]
 	if !ok {
-		return fmt.Sprintf("[gray]●[-] %s", esc(shortName(d))), "scanning…"
+		return fmt.Sprintf("%s●[-] %s", mutedTag(), esc(shortName(d))), "scanning…"
 	}
 	// model and the device name are drive-controlled; escape markup (see esc) so
 	// the always-visible sidebar can't be made to paint a fake health verdict.
@@ -407,8 +459,8 @@ var spinnerFrames = []rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
 // state. Called only on the event-loop goroutine.
 func (a *App) renderSpinner() {
 	if a.refreshing.Load() {
-		a.detail.spinner.SetText(fmt.Sprintf("[aqua]%c[-] ",
-			spinnerFrames[a.spinFrame%len(spinnerFrames)]))
+		a.detail.spinner.SetText(fmt.Sprintf("%s%c[-] ",
+			accentTag(), spinnerFrames[a.spinFrame%len(spinnerFrames)]))
 	} else {
 		a.detail.spinner.SetText("")
 	}
@@ -479,7 +531,7 @@ func (a *App) onSelfTestRun(testType smart.SelfTestType) {
 			testLabel(testType), shortName(dev)),
 		"Run",
 		func() {
-			a.status.SetText("[yellow]⟳[-] Starting " + testLabel(testType) +
+			a.status.SetText(cautionTag() + "⟳[-] Starting " + testLabel(testType) +
 				" self-test on " + shortName(dev) + "…")
 			a.runSmartctl(
 				fmt.Sprintf("start the %s self-test on %s", testLabel(testType), shortName(dev)),
@@ -501,7 +553,7 @@ func (a *App) onSelfTestCancel() {
 		fmt.Sprintf("Cancel the running self-test on %s?", shortName(dev)),
 		"Cancel test",
 		func() {
-			a.status.SetText("[yellow]⟳[-] Cancelling self-test on " + shortName(dev) + "…")
+			a.status.SetText(cautionTag() + "⟳[-] Cancelling self-test on " + shortName(dev) + "…")
 			a.runSmartctl(
 				fmt.Sprintf("cancel the self-test on %s", shortName(dev)),
 				func(ctx context.Context) error {
@@ -540,10 +592,11 @@ func (a *App) confirm(text, yesLabel string, onYes func()) {
 	modal := tview.NewModal().
 		SetText(text).
 		AddButtons([]string{yesLabel, "Back"}).
-		// Aqua (not green) activated button: the affirmative may be a destructive
-		// "Cancel test", so green stays reserved for healthy/go semantics.
+		// Accent (not the OK colour) activated button: the affirmative may be a
+		// destructive "Cancel test", so the OK colour stays reserved for healthy/go
+		// semantics.
 		SetButtonActivatedStyle(tcell.StyleDefault.
-			Background(tcell.ColorAqua).Foreground(tcell.ColorBlack)).
+			Background(activeTheme.Accent).Foreground(activeTheme.Inverse)).
 		SetDoneFunc(func(_ int, label string) {
 			a.popModal()
 			if label == yesLabel {

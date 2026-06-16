@@ -59,7 +59,7 @@ func TestHumanMinutes(t *testing.T) {
 func TestMarginBar(t *testing.T) {
 	// Full headroom (value at base, far above threshold) → full bar, margin shown.
 	full := marginBar(100, 100, 10, smart.SeverityOK)
-	if !strings.Contains(full, "[green]") || !strings.HasSuffix(full, " 90") {
+	if !strings.Contains(full, "["+severityTag(smart.SeverityOK)+"]") || !strings.HasSuffix(full, " 90") {
 		t.Errorf("full bar = %q", full)
 	}
 	if strings.Count(full, "█") != 10 {
@@ -72,7 +72,7 @@ func TestMarginBar(t *testing.T) {
 	}
 	// Value below threshold clamps to an empty bar.
 	empty := marginBar(5, 5, 10, smart.SeverityFailing)
-	if strings.Count(empty, "█") != 0 || !strings.Contains(empty, "[red]") {
+	if strings.Count(empty, "█") != 0 || !strings.Contains(empty, "["+severityTag(smart.SeverityFailing)+"]") {
 		t.Errorf("below-threshold bar = %q", empty)
 	}
 }

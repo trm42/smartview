@@ -160,7 +160,7 @@ func (v *attributesView) selectByID(id int) {
 func (v *attributesView) renderRows() {
 	v.table.Clear()
 	v.table.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(fmt.Sprintf(
-		" SMART attributes — sort: %s · filter: %s  [aqua][s/f][-] ", v.sortBy, v.filter))
+		" SMART attributes — sort: %s · filter: %s  %s[s/f][-] ", v.sortBy, v.filter, accentTag()))
 
 	// No ID column: the numeric ID is shown in the footer for the selected row.
 	headers := []string{"Attribute", "Kind", "Health", "Reading", "When"}
@@ -171,7 +171,7 @@ func (v *attributesView) renderRows() {
 	v.shown = v.visibleRows()
 	if len(v.shown) == 0 {
 		v.table.SetCell(1, 0, tview.NewTableCell(" No attributes match — all healthy ").
-			SetTextColor(tcell.ColorGreen).SetSelectable(false))
+			SetTextColor(activeTheme.OK).SetSelectable(false))
 		v.footer.SetText("")
 		return
 	}
@@ -258,8 +258,8 @@ func (v *attributesView) updateFooter(row int) {
 	if desc == "" {
 		desc = esc(humanAttrName(a.Name)) // drive-controlled fallback; escape markup
 	}
-	v.footer.SetText(fmt.Sprintf("%s\n[gray](id %d, %s)  norm %d/%d · thresh %d · raw %s[-]",
-		desc, a.ID, kind, a.Value, a.Worst, a.Thresh, esc(a.Raw.String)))
+	v.footer.SetText(fmt.Sprintf("%s\n%s(id %d, %s)  norm %d/%d · thresh %d · raw %s[-]",
+		desc, mutedTag(), a.ID, kind, a.Value, a.Worst, a.Thresh, esc(a.Raw.String)))
 }
 
 // attrMargin is the threshold headroom; attributes without a threshold sort last.
@@ -378,7 +378,7 @@ func (v *nvmeAttributesView) setRows(h *smart.NVMeHealth) {
 	v.table.SetCell(0, 1, headerCell("Value"))
 	for i, r := range v.rows {
 		v.table.SetCell(i+1, 0, tview.NewTableCell(" "+r.k+" ").
-			SetTextColor(tcell.ColorWhite).SetSelectedStyle(selectedRowStyle(tcell.ColorWhite)))
+			SetTextColor(activeTheme.SelectionFg).SetSelectedStyle(selectedRowStyle(activeTheme.SelectionFg)))
 		v.table.SetCell(i+1, 1, tview.NewTableCell(" "+r.v+" ").
 			SetTextColor(severityColor(r.sev)).SetSelectedStyle(selectedRowStyle(severityColor(r.sev))))
 	}
@@ -395,7 +395,7 @@ func (v *nvmeAttributesView) setFooter(row int) {
 	if desc == "" {
 		desc = v.rows[i].k
 	}
-	v.footer.SetText(fmt.Sprintf("%s\n[gray]%s: %s[-]", desc, v.rows[i].k, v.rows[i].v))
+	v.footer.SetText(fmt.Sprintf("%s\n%s%s: %s[-]", desc, mutedTag(), v.rows[i].k, v.rows[i].v))
 }
 
 // nvmeRows builds the NVMe health key/value rows with per-row severity.
@@ -462,7 +462,7 @@ func nvmeRows(h *smart.NVMeHealth) []attrKV {
 // headerCell builds a non-selectable bold header cell.
 func headerCell(s string) *tview.TableCell {
 	return tview.NewTableCell(" " + s + " ").
-		SetTextColor(tcell.ColorAqua).
+		SetTextColor(activeTheme.Accent).
 		SetAttributes(tcell.AttrBold).
 		SetSelectable(false)
 }
