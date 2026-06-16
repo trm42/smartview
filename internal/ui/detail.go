@@ -204,9 +204,9 @@ func (d *detail) renderBar() {
 	s := ""
 	for i, t := range d.tabs {
 		if i == d.active {
-			s += fmt.Sprintf(" [black:aqua] %d %s [-:-] ", i+1, t.title)
+			s += fmt.Sprintf(" %s %d %s [-:-] ", fgbgTag(activeTheme.Inverse, activeTheme.Accent), i+1, t.title)
 		} else {
-			s += fmt.Sprintf(" [aqua] %d %s [-] ", i+1, t.title)
+			s += fmt.Sprintf(" %s %d %s [-] ", accentTag(), i+1, t.title)
 		}
 	}
 	d.bar.SetText(s)

@@ -99,12 +99,12 @@ func writePhyCounters(b *strings.Builder, e *smart.SATAPhyEvents) {
 	nonzero := 0
 	for _, c := range e.Table {
 		if c.Value > 0 {
-			fmt.Fprintf(b, nestIndent+"[yellow]%-52s %d[-]\n", esc(c.Name), c.Value)
+			fmt.Fprintf(b, nestIndent+cautionTag()+"%-52s %d[-]\n", esc(c.Name), c.Value)
 			nonzero++
 		}
 	}
 	if nonzero == 0 {
-		fmt.Fprintf(b, nestIndent+"[green]No link errors logged[-] (%d counters)\n", len(e.Table))
+		fmt.Fprintf(b, nestIndent+okTag()+"No link errors logged[-] (%d counters)\n", len(e.Table))
 	}
 }
 
@@ -119,9 +119,9 @@ func writeErrorLog(b *strings.Builder, r *smart.Report) {
 	case r.ATAErrorLog != nil && r.ATAErrorLog.Extended != nil:
 		n := r.ATAErrorLog.Extended.Count
 		if n == 0 {
-			fmt.Fprintln(b, nestIndent+"[green]No errors logged[-]")
+			fmt.Fprintln(b, nestIndent+okTag()+"No errors logged[-]")
 		} else {
-			fmt.Fprintf(b, nestIndent+"[yellow]%d error(s) logged[-]\n", n)
+			fmt.Fprintf(b, nestIndent+cautionTag()+"%d error(s) logged[-]\n", n)
 		}
 		writeATAErrorEntries(b, r.ATAErrorLog.Extended.Table)
 	default:
@@ -138,14 +138,14 @@ const maxErrorEntries = 8
 func writeNVMeErrorEntries(b *strings.Builder, table []smart.NVMeErrorLogEntry) {
 	for i, e := range table {
 		if i >= maxErrorEntries {
-			fmt.Fprintf(b, nestIndent+"[gray]… %d more[-]\n", len(table)-maxErrorEntries)
+			fmt.Fprintf(b, nestIndent+mutedTag()+"… %d more[-]\n", len(table)-maxErrorEntries)
 			break
 		}
 		status := e.StatusField.String
 		if status == "" {
 			status = fmt.Sprintf("0x%x", e.StatusField.Value)
 		}
-		fmt.Fprintf(b, nestIndent+"[yellow]#%d[-] %s [gray](cmd %d)[-]\n", e.ErrorCount, colorResult(esc(status)), e.CommandID)
+		fmt.Fprintf(b, nestIndent+cautionTag()+"#%d[-] %s %s(cmd %d)[-]\n", e.ErrorCount, colorResult(esc(status)), mutedTag(), e.CommandID)
 	}
 }
 
@@ -154,15 +154,15 @@ func writeNVMeErrorEntries(b *strings.Builder, table []smart.NVMeErrorLogEntry) 
 func writeATAErrorEntries(b *strings.Builder, table []smart.ATAErrorLogEntry) {
 	for i, e := range table {
 		if i >= maxErrorEntries {
-			fmt.Fprintf(b, nestIndent+"[gray]… %d more[-]\n", len(table)-maxErrorEntries)
+			fmt.Fprintf(b, nestIndent+mutedTag()+"… %d more[-]\n", len(table)-maxErrorEntries)
 			break
 		}
 		desc := esc(e.ErrorDescription)
 		if e.ErrorDescription == "" {
 			desc = fmt.Sprintf("error %d", e.ErrorNumber)
 		}
-		fmt.Fprintf(b, nestIndent+"[yellow]#%d[-] %s [gray]@ %s[-]\n",
-			e.ErrorNumber, desc, humanDuration(e.LifetimeHours))
+		fmt.Fprintf(b, nestIndent+cautionTag()+"#%d[-] %s %s@ %s[-]\n",
+			e.ErrorNumber, desc, mutedTag(), humanDuration(e.LifetimeHours))
 	}
 }
 
@@ -173,10 +173,10 @@ func writePendingDefects(b *strings.Builder, d *smart.ATAPendingDefects) {
 		return
 	}
 	if d.Count == 0 {
-		fmt.Fprintln(b, nestIndent+"[green]No pending defects[-]")
+		fmt.Fprintln(b, nestIndent+okTag()+"No pending defects[-]")
 		return
 	}
-	fmt.Fprintf(b, nestIndent+"[yellow]%d sector(s) pending reallocation[-]\n", d.Count)
+	fmt.Fprintf(b, nestIndent+cautionTag()+"%d sector(s) pending reallocation[-]\n", d.Count)
 }
 
 // writeSelfTestLog renders the self-test history for either protocol.
@@ -217,9 +217,9 @@ func colorResult(s string) string {
 	low := strings.ToLower(s)
 	switch {
 	case strings.Contains(low, "without error"), strings.Contains(low, "completed"):
-		return "[green]" + esc(s) + "[-]"
+		return okTag() + esc(s) + "[-]"
 	case strings.Contains(low, "fail"), strings.Contains(low, "error"), strings.Contains(low, "aborted"):
-		return "[red]" + esc(s) + "[-]"
+		return failingTag() + esc(s) + "[-]"
 	default:
 		return esc(s)
 	}
