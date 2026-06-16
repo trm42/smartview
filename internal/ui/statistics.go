@@ -93,9 +93,9 @@ func statValue(p smart.ATAStatPage, e smart.ATAStatEntry, sectorBytes int64) str
 	switch {
 	case strings.HasSuffix(e.Name, "Hours"):
 		// Any "* Hours" counter (Power-on, Spindle Motor Power-on, Head Flying).
-		val = fmt.Sprintf("%s  [gray](%d h)[-]", humanDuration(int(e.Value)), e.Value)
+		val = fmt.Sprintf("%s  %s(%d h)[-]", humanDuration(int(e.Value)), mutedTag(), e.Value)
 	case e.Name == "Logical Sectors Written" || e.Name == "Logical Sectors Read":
-		val = fmt.Sprintf("%s  [gray](%d sectors)[-]", humanBytes(e.Value*sectorBytes), e.Value)
+		val = fmt.Sprintf("%s  %s(%d sectors)[-]", humanBytes(e.Value*sectorBytes), mutedTag(), e.Value)
 	case isTemperatureStat(p, e):
 		val = fmt.Sprintf("%d°C", e.Value)
 	default:

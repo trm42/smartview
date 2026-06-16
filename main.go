@@ -30,12 +30,18 @@ var version = "dev"
 func main() {
 	interval := flag.Duration("interval", 30*time.Second, "auto-refresh interval")
 	fixtures := flag.String("fixtures", "", "load drive data from JSON fixtures in DIR instead of smartctl (requires -tags dev build)")
+	theme := flag.String("theme", "dark", "colour theme: "+ui.ThemeNames())
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println("smartview", buildVersion())
 		return
+	}
+
+	if !ui.HasTheme(*theme) {
+		fmt.Fprintf(os.Stderr, "smartview: unknown theme %q (choices: %s)\n", *theme, ui.ThemeNames())
+		os.Exit(1)
 	}
 
 	if *fixtures != "" {
@@ -52,7 +58,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	app := ui.New(*interval)
+	app := ui.New(*interval, *theme)
 	if err := app.Run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "smartview:", err)
 		os.Exit(1)
