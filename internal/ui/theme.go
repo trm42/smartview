@@ -140,6 +140,28 @@ var electric = Theme{
 	ListSecondary: tcell.NewHexColor(0x35c46a), // dim phosphor green for the secondary line
 }
 
+// phosphor is the classic monochrome green-CRT terminal palette: every green
+// sits in the same ~120° hue family (like a VT100 green-screen monitor), which
+// reads visibly distinct from electric's cyan-leaning mint. Amber caution and
+// red failing are the only departures from pure green. All-hex so it renders
+// identically across terminals.
+var phosphor = Theme{
+	Name:          "phosphor",
+	Accent:        tcell.NewHexColor(0x33ff33), // pure neon CRT green: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x1f8f1f), // dim green: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x4dff4d), // bright healthy green
+	Caution:       tcell.NewHexColor(0xffb000), // phosphor amber
+	Failing:       tcell.NewHexColor(0xff3030), // bright red
+	Neutral:       tcell.NewHexColor(0x2ad42a), // standard green body text
+	Inverse:       tcell.NewHexColor(0x001a00), // near-black green: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0x0f4f0f), // dark green selected-row bg
+	SelectionFg:   tcell.NewHexColor(0xd6ffd6), // pale green text on selection
+	BannerBg:      tcell.NewHexColor(0xffb000), // amber root-warning banner (stands out from green)
+	BarHealthy:    tcell.NewHexColor(0x33ff33), // FARM healthy bar: neon green
+	ScrollArrow:   tcell.NewHexColor(0x33ff33), // neon green arrows
+	ListSecondary: tcell.NewHexColor(0x1f9f1f), // dim green secondary line
+}
+
 // themes is the registry of built-in palettes by name. themeCycle gives the
 // stable order for the runtime cycle key and the ThemeNames listing, since a map
 // does not preserve insertion order.
@@ -147,9 +169,10 @@ var themes = map[string]Theme{
 	"dark":     dark,
 	"mono":     mono,
 	"electric": electric,
+	"phosphor": phosphor,
 }
 
-var themeCycle = []string{"dark", "electric", "mono"}
+var themeCycle = []string{"dark", "electric", "phosphor", "mono"}
 
 // HasTheme reports whether name is a known built-in theme.
 func HasTheme(name string) bool {
