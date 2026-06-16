@@ -37,7 +37,11 @@ This is the canonical way to verify UI changes for hardware not on hand.
 `internal/smart/testdata/` fixtures cover ATA, NVMe, sparse Apple NVMe, and a
 Seagate FARM log. Fixture mode **bypasses the smartctl preflight** entirely, so
 smartmontools need not be installed. Drive the resulting TUI with `expect` under
-a pty (`sleep`, `send` keys, `send "q"` to quit), exactly as above.
+a pty (`sleep`, `send` keys, `send "q"` to quit), exactly as above. Two
+fixtures (`smart-sda-errors.json`, `smart-nvme-errors.json`) are hand-crafted
+copies with populated error-log tables and unique device names — the only ones
+that exercise the Logs tab's decoded-error-entry renderer, since every captured
+fixture has an empty error log.
 
 `--fixtures` is only honored by a `-tags dev` build: a release build (plain
 `go build`) still accepts the flag but rejects it at startup with a rebuild
@@ -137,8 +141,10 @@ need no mutex.
 
 `internal/smart/smart_test.go` parses real captured fixtures in
 `internal/smart/testdata/` (WD NVMe, Seagate HDD, Samsung SSD, sparse Apple
-NVMe). Capture new ones with `smartctl -j -x <dev> > internal/smart/testdata/<name>.json`.
-There are no UI tests; verify the UI by running it.
+NVMe) plus two hand-crafted error-log variants (`smart-{sda,nvme}-errors.json`)
+that populate the otherwise-empty error tables. Capture new ones with
+`smartctl -j -x <dev> > internal/smart/testdata/<name>.json`. There are no UI
+tests; verify the UI by running it.
 
 ## Roadmap
 

@@ -143,6 +143,9 @@ func visibleTabs(r *smart.Report) []tab {
 	if (r.IsNVMe() && r.NVMeHealth != nil) || r.ATAAttributes != nil {
 		tabs = append(tabs, tab{id: "attributes", title: "Attributes"})
 	}
+	if r.HasDeviceStats() {
+		tabs = append(tabs, tab{id: "statistics", title: "Statistics"})
+	}
 	if r.HasFARM() {
 		tabs = append(tabs, tab{id: "farm", title: "FARM"})
 	}
@@ -166,6 +169,8 @@ func (d *detail) buildTabView(id string, r *smart.Report, tempHistory []float64)
 			return newNVMeAttributesView(r.NVMeHealth)
 		}
 		return newAttributesView(r.ATAAttributes.Table)
+	case "statistics":
+		return newStatisticsView(r)
 	case "farm":
 		return newFarmView(r)
 	case "tests":
