@@ -24,10 +24,25 @@ type NVMeHealth struct {
 	CriticalCompTime        int   `json:"critical_comp_time"`   // minutes
 }
 
-// NVMeErrorLog reports the NVMe error information log occupancy.
+// NVMeErrorLog reports the NVMe error information log occupancy and, when
+// errors are present, the decoded entries (Table is empty on a healthy drive).
 type NVMeErrorLog struct {
-	Size int `json:"size"`
-	Read int `json:"read"`
+	Size  int                 `json:"size"`
+	Read  int                 `json:"read"`
+	Table []NVMeErrorLogEntry `json:"table"`
+}
+
+// NVMeErrorLogEntry is one entry of the NVMe error information log. ErrorCount
+// is the running controller-wide error counter at the time of the entry;
+// StatusField decodes the failing command's status.
+type NVMeErrorLogEntry struct {
+	ErrorCount  int64       `json:"error_count"`
+	CommandID   int         `json:"command_id"`
+	StatusField StringValue `json:"status_field"`
+	LBA         *struct {
+		Value int64 `json:"value"`
+	} `json:"lba"`
+	NSID int64 `json:"nsid"`
 }
 
 // NVMeSelfTestLog holds NVMe device self-test history. While a test runs,

@@ -111,6 +111,21 @@ func identityText(r *smart.Report) string {
 	row("Type", driveKind(r))
 	row("Serial", orDash(esc(r.SerialNumber)))
 	row("Firmware", orDash(esc(r.FirmwareVersion)))
+	if r.WWN != nil {
+		row("WWN", wwnString(r.WWN))
+	}
+	if r.NVMeVersion != nil && r.NVMeVersion.String != "" {
+		row("NVMe ver", esc(r.NVMeVersion.String))
+	}
+	if r.NVMeNumberOfNamespaces != nil {
+		row("Namespaces", fmt.Sprintf("%d", *r.NVMeNumberOfNamespaces))
+	}
+	if r.NVMeControllerID != nil {
+		row("Controller", fmt.Sprintf("%d", *r.NVMeControllerID))
+	}
+	if r.NVMePCIVendor != nil {
+		row("PCI vendor", fmt.Sprintf("0x%04x", r.NVMePCIVendor.ID))
+	}
 
 	// Capacity & geometry (mostly ATA; each gated on presence).
 	gap()
@@ -144,13 +159,27 @@ func identityText(r *smart.Report) string {
 	}
 	if r.NVMeHealth != nil {
 		h := r.NVMeHealth
-		if h.PercentageUsed != nil {
+		switch {
+		case h.PercentageUsed != nil:
 			row("Life used", fmt.Sprintf("%d%%", *h.PercentageUsed))
+		case r.EnduranceUsed != nil:
+			// Apple internal SSDs can omit the standard percentage_used field and
+			// report endurance_used instead; surface it as the same metric.
+			row("Life used", fmt.Sprintf("%d%%", r.EnduranceUsed.CurrentPercent))
+		}
+		if h.AvailableSpare == nil && r.SpareAvailable != nil {
+			row("Spare avail", fmt.Sprintf("%d%%", r.SpareAvailable.CurrentPercent))
 		}
 		row("Media errors", fmt.Sprintf("%d", h.MediaErrors))
 		row("Unsafe shutdn", fmt.Sprintf("%d", h.UnsafeShutdowns))
 	}
 	return b.String()
+}
+
+// wwnString renders a World Wide Name in smartctl's "LU WWN Device Id" form:
+// the NAA nibble, the 24-bit OUI, and the 36-bit vendor id, each in hex.
+func wwnString(w *smart.WWN) string {
+	return fmt.Sprintf("%x %06x %09x", w.NAA, w.OUI, w.ID)
 }
 
 // interfaceString renders the SATA link speed, flagging a negotiated speed below

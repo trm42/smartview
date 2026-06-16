@@ -54,11 +54,100 @@ type ATASelfTestEntry struct {
 	LifetimeHours int         `json:"lifetime_hours"`
 }
 
-// ATAErrorLog summarises logged ATA command errors.
+// ATAErrorLog summarises logged ATA command errors. When errors exist, Table
+// carries the decoded per-error detail (empty on a healthy drive).
 type ATAErrorLog struct {
 	Extended *struct {
-		Count int `json:"count"`
+		Count int                `json:"count"`
+		Table []ATAErrorLogEntry `json:"table"`
 	} `json:"extended"`
+}
+
+// ATAErrorLogEntry is one entry of the extended comprehensive SMART error log:
+// the lifetime hour it occurred at and smartctl's decoded description.
+type ATAErrorLogEntry struct {
+	ErrorNumber      int    `json:"error_number"`
+	LifetimeHours    int    `json:"lifetime_hours"`
+	ErrorDescription string `json:"error_description"`
+}
+
+// WWN is the drive's World Wide Name (a stable, globally-unique identifier),
+// rendered like smartctl's "LU WWN Device Id" line.
+type WWN struct {
+	NAA int   `json:"naa"`
+	OUI int   `json:"oui"`
+	ID  int64 `json:"id"`
+}
+
+// ATAPendingDefects is the Pending Defects log (GP Log 0x0C): Count is the
+// number of sectors awaiting reallocation — a direct, cheap health signal.
+type ATAPendingDefects struct {
+	Count int `json:"count"`
+	Size  int `json:"size"`
+}
+
+// ATASCTErc is the SCT Error Recovery Control (TLER/ERC/CCTL) configuration:
+// the per-command time limit before the drive gives up on a read/write and
+// reports an error. A long (or disabled) limit is the classic cause of a drive
+// being dropped from a hardware RAID array. Read-only here — smartview never
+// changes it.
+type ATASCTErc struct {
+	Read  *ERCTimer `json:"read"`
+	Write *ERCTimer `json:"write"`
+}
+
+// ERCTimer is one ERC time limit. Deciseconds is the limit in tenths of a
+// second; Enabled reports whether the limit is active (vs left to the firmware
+// default, which is typically much longer).
+type ERCTimer struct {
+	Enabled     bool `json:"enabled"`
+	Deciseconds int  `json:"deciseconds"`
+}
+
+// ATADeviceStatistics is the Device Statistics log (GP Log 0x04): vendor-neutral
+// counters grouped into pages. These are more reliable than vendor-specific ATA
+// attribute raw values and carry a true endurance indicator for SATA SSDs.
+type ATADeviceStatistics struct {
+	Pages []ATAStatPage `json:"pages"`
+}
+
+// ATAStatPage is one named page of the Device Statistics log.
+type ATAStatPage struct {
+	Number int            `json:"number"`
+	Name   string         `json:"name"`
+	Table  []ATAStatEntry `json:"table"`
+}
+
+// ATAStatEntry is one statistic. Value is only meaningful when Flags.Valid is
+// true; smartctl emits placeholder rows (e.g. a timestamp) with Valid false.
+type ATAStatEntry struct {
+	Offset int          `json:"offset"`
+	Name   string       `json:"name"`
+	Size   int          `json:"size"`
+	Value  int64        `json:"value"`
+	Flags  ATAStatFlags `json:"flags"`
+}
+
+// ATAStatFlags carries the per-statistic flag bits; only Valid is consumed.
+type ATAStatFlags struct {
+	Valid bool `json:"valid"`
+}
+
+// HasDeviceStats reports whether the Device Statistics log holds at least one
+// valid entry, gating the Statistics tab. A drive that omits the log (every
+// fixture but the Seagate HDD) or reports only placeholder rows yields false.
+func (r *Report) HasDeviceStats() bool {
+	if r.ATADeviceStatistics == nil {
+		return false
+	}
+	for _, p := range r.ATADeviceStatistics.Pages {
+		for _, e := range p.Table {
+			if e.Flags.Valid {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ATASmartData carries SMART capability metadata: self-test durations, the

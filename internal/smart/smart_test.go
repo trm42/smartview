@@ -56,6 +56,55 @@ func TestParseATA(t *testing.T) {
 	if temp, ok := r.CurrentTemp(); !ok || temp <= 0 {
 		t.Errorf("CurrentTemp = %d, %v", temp, ok)
 	}
+
+	// World Wide Name.
+	if r.WWN == nil {
+		t.Error("expected a WWN")
+	} else if r.WWN.NAA != 5 {
+		t.Errorf("WWN.NAA = %d, want 5", r.WWN.NAA)
+	}
+
+	// Device Statistics log (GP Log 0x04): the richest unused source.
+	if !r.HasDeviceStats() {
+		t.Fatal("expected Device Statistics with valid entries")
+	}
+	if got := statEntry(r, "Power-on Hours"); got != 9438 {
+		t.Errorf("Power-on Hours stat = %d, want 9438", got)
+	}
+	if got := statEntry(r, "Number of Reallocated Logical Sectors"); got != 0 {
+		t.Errorf("Reallocated stat = %d, want 0 (healthy drive)", got)
+	}
+
+	// Pending Defects log.
+	if r.ATAPendingDefects == nil {
+		t.Error("expected a pending defects log")
+	} else if r.ATAPendingDefects.Count != 0 {
+		t.Errorf("PendingDefects.Count = %d, want 0", r.ATAPendingDefects.Count)
+	}
+
+	// SCT Error Recovery Control (TLER).
+	if r.ATASCTErc == nil || r.ATASCTErc.Read == nil {
+		t.Fatal("expected SCT ERC read/write timers")
+	}
+	if !r.ATASCTErc.Read.Enabled || r.ATASCTErc.Read.Deciseconds != 70 {
+		t.Errorf("ERC read = %+v, want enabled 70 ds", *r.ATASCTErc.Read)
+	}
+}
+
+// statEntry returns the value of the first valid Device Statistics entry with
+// the given name, or -1 if absent.
+func statEntry(r *Report, name string) int64 {
+	if r.ATADeviceStatistics == nil {
+		return -1
+	}
+	for _, p := range r.ATADeviceStatistics.Pages {
+		for _, e := range p.Table {
+			if e.Flags.Valid && e.Name == name {
+				return e.Value
+			}
+		}
+	}
+	return -1
 }
 
 func TestParseNVMe(t *testing.T) {
@@ -74,6 +123,20 @@ func TestParseNVMe(t *testing.T) {
 	}
 	if r.Overall() != SeverityOK {
 		t.Errorf("healthy WD drive Overall = %v", r.Overall())
+	}
+
+	// NVMe identity enrichment.
+	if r.NVMeVersion == nil || r.NVMeVersion.String != "1.4" {
+		t.Errorf("NVMeVersion = %+v, want string 1.4", r.NVMeVersion)
+	}
+	if r.NVMeNumberOfNamespaces == nil || *r.NVMeNumberOfNamespaces != 1 {
+		t.Errorf("NVMeNumberOfNamespaces = %v, want 1", r.NVMeNumberOfNamespaces)
+	}
+	if r.NVMePCIVendor == nil || r.NVMePCIVendor.ID == 0 {
+		t.Errorf("NVMePCIVendor = %+v, want a nonzero id", r.NVMePCIVendor)
+	}
+	if r.HasDeviceStats() {
+		t.Error("NVMe drive should not report ATA Device Statistics")
 	}
 }
 
@@ -100,6 +163,49 @@ func TestParseSparseAppleNVMe(t *testing.T) {
 	if _, ok := r.CurrentTemp(); !ok {
 		t.Error("expected a temperature reading")
 	}
+
+	// Apple's own wear metrics, the fallback for drives that report them.
+	if r.EnduranceUsed == nil || r.EnduranceUsed.CurrentPercent != 3 {
+		t.Errorf("EnduranceUsed = %+v, want current_percent 3", r.EnduranceUsed)
+	}
+	if r.SpareAvailable == nil || r.SpareAvailable.CurrentPercent != 100 {
+		t.Errorf("SpareAvailable = %+v, want current_percent 100", r.SpareAvailable)
+	}
+}
+
+// TestParseErrorLogEntries exercises the populated-error-log renderer inputs:
+// the committed healthy fixtures all carry empty error tables, so these
+// hand-crafted fixtures are the only ones that decode real entries.
+func TestParseErrorLogEntries(t *testing.T) {
+	t.Run("nvme", func(t *testing.T) {
+		r := parseFixture(t, "smart-nvme-errors.json")
+		if r.NVMeErrorLog == nil {
+			t.Fatal("expected an NVMe error log")
+		}
+		if len(r.NVMeErrorLog.Table) != 3 {
+			t.Fatalf("NVMe error entries = %d, want 3", len(r.NVMeErrorLog.Table))
+		}
+		e := r.NVMeErrorLog.Table[0]
+		if e.ErrorCount != 3 || e.StatusField.String != "Unrecovered Read Error" {
+			t.Errorf("first NVMe error entry = %+v", e)
+		}
+	})
+	t.Run("ata", func(t *testing.T) {
+		r := parseFixture(t, "smart-sda-errors.json")
+		if r.ATAErrorLog == nil || r.ATAErrorLog.Extended == nil {
+			t.Fatal("expected an ATA extended error log")
+		}
+		if r.ATAErrorLog.Extended.Count != 2 {
+			t.Errorf("ATA error count = %d, want 2", r.ATAErrorLog.Extended.Count)
+		}
+		if len(r.ATAErrorLog.Extended.Table) != 2 {
+			t.Fatalf("ATA error entries = %d, want 2", len(r.ATAErrorLog.Extended.Table))
+		}
+		e := r.ATAErrorLog.Extended.Table[0]
+		if e.LifetimeHours != 9421 || e.ErrorDescription == "" {
+			t.Errorf("first ATA error entry = %+v", e)
+		}
+	})
 }
 
 // TestParseFARM exercises the Seagate FARM parse path used by FarmLog, including

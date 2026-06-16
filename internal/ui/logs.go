@@ -14,7 +14,8 @@ import (
 func hasLogs(r *smart.Report) bool {
 	return r.ATASelfTestLog != nil || r.ATAErrorLog != nil ||
 		r.NVMeSelfTestLog != nil || r.NVMeErrorLog != nil ||
-		r.ATASmartData != nil || r.SATAPhyEvents != nil
+		r.ATASmartData != nil || r.SATAPhyEvents != nil ||
+		r.ATAPendingDefects != nil || r.ATASCTErc != nil
 }
 
 // logsView renders the Logs tab: error-log occupancy plus self-test history. It
@@ -53,11 +54,32 @@ func buildLogsText(r *smart.Report) string {
 	if dur := selfTestDurations(r); dur != "" {
 		fmt.Fprintf(&b, nestIndent+"Estimated duration: %s\n", dur)
 	}
+	if r.ATASCTErc != nil {
+		b.WriteString("\n")
+		writeSCTErc(&b, r.ATASCTErc)
+	}
 	if r.SATAPhyEvents != nil {
 		b.WriteString("\n")
 		writePhyCounters(&b, r.SATAPhyEvents)
 	}
 	return b.String()
+}
+
+// writeSCTErc renders the SCT Error Recovery Control (TLER/ERC) read/write time
+// limits. A configured short limit is what keeps a drive from being dropped by a
+// RAID controller; "disabled" leaves the (much longer) firmware default in play.
+func writeSCTErc(b *strings.Builder, e *smart.ATASCTErc) {
+	fmt.Fprintln(b, "[::b]SCT Error Recovery Control (TLER)[-:-:-]")
+	fmt.Fprintf(b, nestIndent+"%-6s %s\n", "Read", ercTimerString(e.Read))
+	fmt.Fprintf(b, nestIndent+"%-6s %s\n", "Write", ercTimerString(e.Write))
+}
+
+// ercTimerString renders one ERC limit as seconds, or "disabled".
+func ercTimerString(t *smart.ERCTimer) string {
+	if t == nil || !t.Enabled {
+		return "disabled (firmware default)"
+	}
+	return fmt.Sprintf("%.1f s", float64(t.Deciseconds)/10)
 }
 
 // selfTestDurations renders the polling time for each self-test type, or "".
@@ -86,12 +108,14 @@ func writePhyCounters(b *strings.Builder, e *smart.SATAPhyEvents) {
 	}
 }
 
-// writeErrorLog summarises the drive's logged command errors.
+// writeErrorLog summarises the drive's logged command errors, listing the most
+// recent decoded entries when the log carries any.
 func writeErrorLog(b *strings.Builder, r *smart.Report) {
 	fmt.Fprintln(b, "[::b]Error log[-:-:-]")
 	switch {
 	case r.NVMeErrorLog != nil:
 		fmt.Fprintf(b, nestIndent+"%d entries (%d unread)\n", r.NVMeErrorLog.Size, sub(r.NVMeErrorLog.Size, r.NVMeErrorLog.Read))
+		writeNVMeErrorEntries(b, r.NVMeErrorLog.Table)
 	case r.ATAErrorLog != nil && r.ATAErrorLog.Extended != nil:
 		n := r.ATAErrorLog.Extended.Count
 		if n == 0 {
@@ -99,9 +123,60 @@ func writeErrorLog(b *strings.Builder, r *smart.Report) {
 		} else {
 			fmt.Fprintf(b, nestIndent+"[yellow]%d error(s) logged[-]\n", n)
 		}
+		writeATAErrorEntries(b, r.ATAErrorLog.Extended.Table)
 	default:
 		fmt.Fprintln(b, nestIndent+strings.TrimPrefix(dash, ""))
 	}
+	writePendingDefects(b, r.ATAPendingDefects)
+}
+
+// maxErrorEntries caps how many decoded log entries the Logs tab lists, newest
+// first, so a drive with a full error log does not flood the view.
+const maxErrorEntries = 8
+
+// writeNVMeErrorEntries lists decoded NVMe error-log entries (newest first).
+func writeNVMeErrorEntries(b *strings.Builder, table []smart.NVMeErrorLogEntry) {
+	for i, e := range table {
+		if i >= maxErrorEntries {
+			fmt.Fprintf(b, nestIndent+"[gray]… %d more[-]\n", len(table)-maxErrorEntries)
+			break
+		}
+		status := e.StatusField.String
+		if status == "" {
+			status = fmt.Sprintf("0x%x", e.StatusField.Value)
+		}
+		fmt.Fprintf(b, nestIndent+"[yellow]#%d[-] %s [gray](cmd %d)[-]\n", e.ErrorCount, colorResult(esc(status)), e.CommandID)
+	}
+}
+
+// writeATAErrorEntries lists decoded ATA extended-error-log entries (newest
+// first), pairing each with the lifetime hour it occurred at.
+func writeATAErrorEntries(b *strings.Builder, table []smart.ATAErrorLogEntry) {
+	for i, e := range table {
+		if i >= maxErrorEntries {
+			fmt.Fprintf(b, nestIndent+"[gray]… %d more[-]\n", len(table)-maxErrorEntries)
+			break
+		}
+		desc := esc(e.ErrorDescription)
+		if e.ErrorDescription == "" {
+			desc = fmt.Sprintf("error %d", e.ErrorNumber)
+		}
+		fmt.Fprintf(b, nestIndent+"[yellow]#%d[-] %s [gray]@ %s[-]\n",
+			e.ErrorNumber, desc, humanDuration(e.LifetimeHours))
+	}
+}
+
+// writePendingDefects renders the Pending Defects count: sectors awaiting
+// reallocation. Nonzero is a caution worth surfacing; zero reads as healthy.
+func writePendingDefects(b *strings.Builder, d *smart.ATAPendingDefects) {
+	if d == nil {
+		return
+	}
+	if d.Count == 0 {
+		fmt.Fprintln(b, nestIndent+"[green]No pending defects[-]")
+		return
+	}
+	fmt.Fprintf(b, nestIndent+"[yellow]%d sector(s) pending reallocation[-]\n", d.Count)
 }
 
 // writeSelfTestLog renders the self-test history for either protocol.
