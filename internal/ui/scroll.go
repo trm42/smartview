@@ -101,13 +101,14 @@ func (s *scrollView) Draw(screen tcell.Screen) {
 // List wrappers below all route through it so the cue looks identical everywhere.
 // h is both the viewport height and the placement rect, so callers pass an inner
 // rect (border/gutter already removed); the arrows then sit just inside the right
-// border on the top and bottom content rows. The arrows are a neutral white so
-// they read as chrome rather than competing with the aqua focus/accent colour.
+// border on the top and bottom content rows. The arrows use the theme's neutral
+// ScrollArrow colour so they read as chrome rather than competing with the
+// accent/focus colour.
 func drawScrollArrows(screen tcell.Screen, x, y, w, h, offset, contentHeight int) {
 	if w <= 0 || h <= 0 || contentHeight <= h {
 		return
 	}
-	arrow := tcell.StyleDefault.Foreground(tcell.ColorWhite)
+	arrow := tcell.StyleDefault.Foreground(activeTheme.ScrollArrow)
 	if offset > 0 {
 		screen.SetContent(x+w-1, y, '▲', nil, arrow)
 	}

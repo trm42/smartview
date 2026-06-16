@@ -334,9 +334,9 @@ func farmHeadChart(title string, data []int, health bool) tview.Primitive {
 	chart.SetMaxValue(max)
 
 	for i, v := range data {
-		color := tcell.ColorTeal
+		color := activeTheme.BarHealthy
 		if health && v > 0 {
-			color = tcell.ColorRed
+			color = activeTheme.Failing
 		}
 		chart.AddBar(fmt.Sprintf("%d", i), v, color)
 	}

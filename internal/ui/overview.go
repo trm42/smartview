@@ -88,7 +88,7 @@ func identityText(r *smart.Report) string {
 	health := fmt.Sprintf("[%s::b]%s[-:-:-]", severityTag(sev), verdictWord(sev))
 	// Keep the raw SMART pass/fail only when it adds signal — i.e. on a failure.
 	if !r.SmartStatus.Passed {
-		health += "  [red](SMART self-test: FAILED)[-]"
+		health += "  " + failingTag() + "(SMART self-test: FAILED)[-]"
 	}
 	row("Health", health)
 
@@ -99,7 +99,7 @@ func identityText(r *smart.Report) string {
 	// red one. The message is long, so it gets its own full-width line rather
 	// than the key/value row format.
 	if msg, ok := r.FatalMessage(); ok {
-		fmt.Fprintf(&b, "[yellow]⚠ %s[-]\n", esc(msg))
+		fmt.Fprintf(&b, "%s⚠ %s[-]\n", cautionTag(), esc(msg))
 	}
 
 	// Identity. Free-text fields are drive-controlled, so escape markup (see esc).
@@ -190,7 +190,7 @@ func interfaceString(is *smart.InterfaceSpeed) string {
 	}
 	cur := is.Current.String
 	if is.Max != nil && is.Max.String != "" && is.Max.String != cur {
-		return fmt.Sprintf("%s  [yellow](max %s)[-]", esc(cur), esc(is.Max.String))
+		return fmt.Sprintf("%s  %s(max %s)[-]", esc(cur), cautionTag(), esc(is.Max.String))
 	}
 	return esc(cur)
 }

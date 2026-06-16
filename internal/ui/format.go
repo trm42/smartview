@@ -25,8 +25,8 @@ func esc(s string) string {
 	return tview.Escape(s)
 }
 
-// dash is rendered wherever a drive does not report a value.
-const dash = "[gray]—[-]"
+// dash is defined in theme.go (it carries the active theme's muted colour and is
+// recomputed in setTheme); its call sites here use it as a plain value.
 
 // uiGutter is the standard horizontal inset (cells) between a box border and its
 // text, applied via SetBorderPadding on every text/table/list box so the left
@@ -89,9 +89,9 @@ func marginBar(value, worst, thresh int, sev smart.Severity) string {
 // Driven from App.refreshFocusChrome on every focus/tab transition.
 func borderColor(focused bool) tcell.Color {
 	if focused {
-		return tcell.ColorAqua
+		return activeTheme.Accent
 	}
-	return tcell.ColorGray
+	return activeTheme.Muted
 }
 
 // tempSeverity grades a drive temperature for display colouring only. The data
@@ -113,24 +113,19 @@ func tempSeverity(celsius int) smart.Severity {
 func severityColor(s smart.Severity) tcell.Color {
 	switch s {
 	case smart.SeverityFailing:
-		return tcell.ColorRed
+		return activeTheme.Failing
 	case smart.SeverityCaution:
-		return tcell.ColorYellow
+		return activeTheme.Caution
 	default:
-		return tcell.ColorGreen
+		return activeTheme.OK
 	}
 }
 
-// severityTag returns a tview colour tag for inline markup.
+// severityTag returns a tview colour token (e.g. "#dc322f", or "-" under the
+// mono theme) for inline markup. Every caller interpolates it into a "[%s]"
+// bracket, so the bare token is what they need.
 func severityTag(s smart.Severity) string {
-	switch s {
-	case smart.SeverityFailing:
-		return "red"
-	case smart.SeverityCaution:
-		return "yellow"
-	default:
-		return "green"
-	}
+	return tag(severityColor(s))
 }
 
 // healthGlyph is the coloured status dot shown beside each drive.
@@ -148,10 +143,10 @@ func selectedRowStyle(fg tcell.Color) tcell.Style {
 	// dark on light themes and thus illegible on the dark highlight; pin it to
 	// white so neutral rows stay readable everywhere.
 	if fg == tcell.ColorDefault {
-		fg = tcell.ColorWhite
+		fg = activeTheme.SelectionFg
 	}
 	return tcell.StyleDefault.
-		Background(tcell.ColorDarkSlateGray).
+		Background(activeTheme.SelectionBg).
 		Foreground(fg).
 		Attributes(tcell.AttrBold)
 }
@@ -161,11 +156,11 @@ func selectedRowStyle(fg tcell.Color) tcell.Style {
 func attrTextColor(s smart.Severity) tcell.Color {
 	switch s {
 	case smart.SeverityFailing:
-		return tcell.ColorRed
+		return activeTheme.Failing
 	case smart.SeverityCaution:
-		return tcell.ColorYellow
+		return activeTheme.Caution
 	default:
-		return tcell.ColorDefault
+		return activeTheme.Neutral
 	}
 }
 

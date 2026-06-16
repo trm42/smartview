@@ -121,6 +121,22 @@ need no mutex.
   enumerated/formatted values don't need it.
 - **Health/severity** lives in `smart/health.go`. ATA pre-fail vs old-age comes
   from the authoritative `flags.prefailure` bit, not attribute-name heuristics.
+- **Colour theming** (`theme.go`). All colour flows through a package-level
+  `var activeTheme Theme` of semantic roles (`Accent`, `Muted`, `OK`/`Caution`/
+  `Failing`, `Inverse`, `SelectionBg/Fg`, `BannerBg`, `BarHealthy`,
+  `ScrollArrow`); `setTheme` swaps it (read/written only on the event-loop
+  goroutine, so no mutex — same as `App.reports`). Never write a raw `[aqua]`/
+  `[gray]`/`tcell.ColorRed` literal: use the tag helpers (`accentTag()`,
+  `mutedTag()`, `okTag()`, `severityTag()`, `fgbgTag(fg,bg)`) for markup or read
+  `activeTheme.X` for a `tcell.Color`. The `dark` theme reproduces the original
+  palette byte-for-byte (pinned by `theme_test.go`) so the default is unchanged;
+  `light`/`mono`/`solarized` are the alternates. `--theme NAME` selects at
+  startup, the `T` key cycles live (`cycleTheme`→`repaintAll`, which forces a
+  detail rebuild so widgets that baked colour in at build time get re-coloured —
+  the one-shot root-warning banner is the easy miss, hence `refreshBanner`).
+  Known limits: `mono` drops all our colour (severity survives via the `●` glyph
+  + bold), and tview's built-in List secondary-text green / selection inverse are
+  outside the theme and stay as tview defaults.
 - Protocol branching is via `Report.IsNVMe()` / `IsATA()`; NVMe and ATA render
   different attribute tables and gauges.
 - **Temperature sparkline**: ATA seeds it instantly from

@@ -104,8 +104,8 @@ func (v *testsView) showRunning(label string, pct int) {
 		fmt.Fprintf(&b, "%s\n\n", esc(label))
 	}
 	fmt.Fprintf(&b, "%s\n\n", progressBar(pct))
-	b.WriteString("Press [aqua]x[-] to cancel the running test.\n")
-	b.WriteString("Results appear in the [aqua]Logs[-] tab when complete.\n")
+	fmt.Fprintf(&b, "Press %sx[-] to cancel the running test.\n", accentTag())
+	fmt.Fprintf(&b, "Results appear in the %sLogs[-] tab when complete.\n", accentTag())
 	v.info.SetText(b.String())
 
 	if v.mode == modeRunning {
@@ -126,7 +126,7 @@ func (v *testsView) showIdle(r *smart.Report) {
 	v.mode = modeIdle
 
 	v.instr.SetText("No self-test running. Select a test to start " +
-		"([aqua]Enter[-]); starting one usually requires root.\n")
+		"(" + accentTag() + "Enter[-]); starting one usually requires root.\n")
 
 	v.list.Clear()
 	for _, t := range []struct {
