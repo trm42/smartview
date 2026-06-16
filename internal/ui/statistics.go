@@ -48,6 +48,12 @@ func buildStatisticsText(r *smart.Report) string {
 	if r.ATADeviceStatistics == nil {
 		return ""
 	}
+	// "Logical Sectors *" counts are in logical-block units, which are 4096 B on
+	// a 4Kn drive — use the reported size, falling back to the 512 B common case.
+	sectorBytes := int64(512)
+	if r.LogicalBlockSize != nil && *r.LogicalBlockSize > 0 {
+		sectorBytes = int64(*r.LogicalBlockSize)
+	}
 	first := true
 	for _, p := range r.ATADeviceStatistics.Pages {
 		valid := validStatEntries(p.Table)
@@ -60,7 +66,7 @@ func buildStatisticsText(r *smart.Report) string {
 		first = false
 		fmt.Fprintf(&b, "[::b]%s[-:-:-]\n", orDash(esc(p.Name)))
 		for _, e := range valid {
-			fmt.Fprintf(&b, nestIndent+"%-46s %s\n", esc(e.Name), statValue(p, e))
+			fmt.Fprintf(&b, nestIndent+"%-46s %s\n", esc(e.Name), statValue(p, e, sectorBytes))
 		}
 	}
 	return b.String()
@@ -78,17 +84,22 @@ func validStatEntries(table []smart.ATAStatEntry) []smart.ATAStatEntry {
 	return out
 }
 
-// statValue formats one statistic, tinting health-relevant counters when set and
-// appending a human-readable form for a few well-known names.
-func statValue(p smart.ATAStatPage, e smart.ATAStatEntry) string {
-	val := fmt.Sprintf("%d", e.Value)
+// statValue formats one statistic, tinting health-relevant counters when set.
+// Well-known counters lead with the human-readable form (a duration, capacity or
+// temperature) and keep the exact raw counter in gray — this is the detailed
+// view, so the precise number stays available without dominating the column.
+func statValue(p smart.ATAStatPage, e smart.ATAStatEntry, sectorBytes int64) string {
+	var val string
 	switch {
-	case e.Name == "Power-on Hours":
-		val += fmt.Sprintf("  [gray](%s)[-]", humanDuration(int(e.Value)))
+	case strings.HasSuffix(e.Name, "Hours"):
+		// Any "* Hours" counter (Power-on, Spindle Motor Power-on, Head Flying).
+		val = fmt.Sprintf("%s  [gray](%d h)[-]", humanDuration(int(e.Value)), e.Value)
 	case e.Name == "Logical Sectors Written" || e.Name == "Logical Sectors Read":
-		val += fmt.Sprintf("  [gray](%s)[-]", humanBytes(e.Value*512))
+		val = fmt.Sprintf("%s  [gray](%d sectors)[-]", humanBytes(e.Value*sectorBytes), e.Value)
 	case isTemperatureStat(p, e):
 		val = fmt.Sprintf("%d°C", e.Value)
+	default:
+		val = fmt.Sprintf("%d", e.Value)
 	}
 	if sev := statSeverity(e); sev != smart.SeverityOK && e.Value > 0 {
 		return fmt.Sprintf("[%s]%s[-]", severityTag(sev), val)
