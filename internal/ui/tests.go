@@ -157,9 +157,10 @@ func (v *testsView) showIdle(r *smart.Report) {
 const barWidth = 24
 
 // progressBar renders a fixed-width bar for a 0..100 percentage with the
-// percent label centered inside it. Done cells are green, remaining cells are a
-// dim grey; the split shows progress without a separate number elsewhere. The
-// result is tview markup (dynamic colors are enabled on the running view).
+// percent label centered inside it. Done cells use the theme's OK colour,
+// remaining cells are a dim grey; the split shows progress without a separate
+// number elsewhere. The result is tview markup (dynamic colors are enabled on
+// the running view).
 func progressBar(pct int) string {
 	if pct < 0 {
 		pct = 0
@@ -174,7 +175,7 @@ func progressBar(pct int) string {
 	var b strings.Builder
 	for i := 0; i < barWidth; i++ {
 		if i < filled {
-			b.WriteString("[black:green]")
+			b.WriteString(fgbgTag(activeTheme.Inverse, activeTheme.OK))
 		} else {
 			b.WriteString("[white:#3a3a3a]")
 		}

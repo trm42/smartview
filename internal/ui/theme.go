@@ -33,6 +33,8 @@ type Theme struct {
 	BannerBg    tcell.Color // root-warning banner background
 	BarHealthy  tcell.Color // FARM per-head healthy bar
 	ScrollArrow tcell.Color // scroll ▲/▼ arrows
+
+	ListSecondary tcell.Color // drive-list secondary line (device · capacity · temp)
 }
 
 // tag renders a colour as a tview markup token (without the surrounding
@@ -80,40 +82,20 @@ func init() { setTheme(dark) }
 // default behaviour is unchanged. theme_test.go pins each role to its legacy
 // colour to guard against silent drift.
 var dark = Theme{
-	Name:        "dark",
-	Accent:      tcell.ColorAqua,
-	Muted:       tcell.ColorGray,
-	OK:          tcell.ColorGreen,
-	Caution:     tcell.ColorYellow,
-	Failing:     tcell.ColorRed,
-	Neutral:     tcell.ColorDefault,
-	Inverse:     tcell.ColorBlack,
-	SelectionBg: tcell.ColorDarkSlateGray,
-	SelectionFg: tcell.ColorWhite,
-	BannerBg:    tcell.ColorYellow,
-	BarHealthy:  tcell.ColorTeal,
-	ScrollArrow: tcell.ColorWhite,
-}
-
-// light is tuned for a white/bright terminal: severity colours are darkened and
-// saturated so they stay legible on white, the neutral text is explicit black
-// (not the terminal default, which a dark-on-light scheme already supplies but
-// we pin for predictability), and the selection uses a light-grey background
-// with black text.
-var light = Theme{
-	Name:        "light",
-	Accent:      tcell.ColorTeal,
-	Muted:       tcell.ColorGray,
-	OK:          tcell.ColorDarkGreen,
-	Caution:     tcell.ColorOlive,
-	Failing:     tcell.ColorDarkRed,
-	Neutral:     tcell.ColorBlack,
-	Inverse:     tcell.ColorWhite,
-	SelectionBg: tcell.ColorLightGray,
-	SelectionFg: tcell.ColorBlack,
-	BannerBg:    tcell.ColorDarkRed,
-	BarHealthy:  tcell.ColorTeal,
-	ScrollArrow: tcell.ColorBlack,
+	Name:          "dark",
+	Accent:        tcell.ColorAqua,
+	Muted:         tcell.ColorGray,
+	OK:            tcell.ColorGreen,
+	Caution:       tcell.ColorYellow,
+	Failing:       tcell.ColorRed,
+	Neutral:       tcell.ColorDefault,
+	Inverse:       tcell.ColorBlack,
+	SelectionBg:   tcell.ColorDarkSlateGray,
+	SelectionFg:   tcell.ColorWhite,
+	BannerBg:      tcell.ColorYellow,
+	BarHealthy:    tcell.ColorTeal,
+	ScrollArrow:   tcell.ColorWhite,
+	ListSecondary: tcell.ColorGreen,
 }
 
 // mono is a no-colour degrade for high-contrast or colour-averse terminals:
@@ -122,49 +104,52 @@ var light = Theme{
 // selected row stands out by bold alone — an accepted limitation of no-colour
 // mode.
 var mono = Theme{
-	Name:        "mono",
-	Accent:      tcell.ColorDefault,
-	Muted:       tcell.ColorDefault,
-	OK:          tcell.ColorDefault,
-	Caution:     tcell.ColorDefault,
-	Failing:     tcell.ColorDefault,
-	Neutral:     tcell.ColorDefault,
-	Inverse:     tcell.ColorDefault,
-	SelectionBg: tcell.ColorDefault,
-	SelectionFg: tcell.ColorDefault,
-	BannerBg:    tcell.ColorDefault,
-	BarHealthy:  tcell.ColorDefault,
-	ScrollArrow: tcell.ColorDefault,
+	Name:          "mono",
+	Accent:        tcell.ColorDefault,
+	Muted:         tcell.ColorDefault,
+	OK:            tcell.ColorDefault,
+	Caution:       tcell.ColorDefault,
+	Failing:       tcell.ColorDefault,
+	Neutral:       tcell.ColorDefault,
+	Inverse:       tcell.ColorDefault,
+	SelectionBg:   tcell.ColorDefault,
+	SelectionFg:   tcell.ColorDefault,
+	BannerBg:      tcell.ColorDefault,
+	BarHealthy:    tcell.ColorDefault,
+	ScrollArrow:   tcell.ColorDefault,
+	ListSecondary: tcell.ColorDefault,
 }
 
-// solarized maps the roles onto the Solarized Dark palette.
-var solarized = Theme{
-	Name:        "solarized",
-	Accent:      tcell.NewHexColor(0x2aa198), // cyan
-	Muted:       tcell.NewHexColor(0x586e75), // base01
-	OK:          tcell.NewHexColor(0x859900), // green
-	Caution:     tcell.NewHexColor(0xb58900), // yellow
-	Failing:     tcell.NewHexColor(0xdc322f), // red
-	Neutral:     tcell.NewHexColor(0x839496), // base0
-	Inverse:     tcell.NewHexColor(0x002b36), // base03
-	SelectionBg: tcell.NewHexColor(0x073642), // base02
-	SelectionFg: tcell.NewHexColor(0x93a1a1), // base1
-	BannerBg:    tcell.NewHexColor(0xb58900), // yellow
-	BarHealthy:  tcell.NewHexColor(0x2aa198), // cyan
-	ScrollArrow: tcell.NewHexColor(0x93a1a1), // base1
+// electric is an "elite BBS" green-phosphor-terminal palette: bright neon green
+// on near-black, amber caution, red failing. Every role is truecolor hex so it
+// renders identically across terminals regardless of the 16-colour palette.
+var electric = Theme{
+	Name:          "electric",
+	Accent:        tcell.NewHexColor(0x00ff9c), // electric mint-green: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x3f8f63), // dim phosphor green: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x39ff14), // electric lime (classic neon green)
+	Caution:       tcell.NewHexColor(0xffb000), // phosphor amber
+	Failing:       tcell.NewHexColor(0xff3030), // bright red
+	Neutral:       tcell.NewHexColor(0xc8ffd8), // soft phosphor-green healthy text
+	Inverse:       tcell.NewHexColor(0x001008), // near-black green: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0x10532e), // dark green selected-row bg
+	SelectionFg:   tcell.NewHexColor(0xeafff2), // bright text on selection
+	BannerBg:      tcell.NewHexColor(0xffb000), // amber root-warning banner (stands out from green)
+	BarHealthy:    tcell.NewHexColor(0x39ff14), // FARM healthy bar
+	ScrollArrow:   tcell.NewHexColor(0x00ff9c), // accent green
+	ListSecondary: tcell.NewHexColor(0x35c46a), // dim phosphor green for the secondary line
 }
 
 // themes is the registry of built-in palettes by name. themeCycle gives the
 // stable order for the runtime cycle key and the ThemeNames listing, since a map
 // does not preserve insertion order.
 var themes = map[string]Theme{
-	"dark":      dark,
-	"light":     light,
-	"mono":      mono,
-	"solarized": solarized,
+	"dark":     dark,
+	"mono":     mono,
+	"electric": electric,
 }
 
-var themeCycle = []string{"dark", "light", "mono", "solarized"}
+var themeCycle = []string{"dark", "electric", "mono"}
 
 // HasTheme reports whether name is a known built-in theme.
 func HasTheme(name string) bool {
