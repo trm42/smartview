@@ -18,6 +18,7 @@ type Report struct {
 	FirmwareVersion string       `json:"firmware_version"`
 	UserCapacity    *Capacity    `json:"user_capacity"`
 	RotationRate    *int         `json:"rotation_rate"` // absent/0 => SSD
+	WWN             *WWN         `json:"wwn"`           // ATA World Wide Name
 	SmartStatus     SmartStatus  `json:"smart_status"`
 	Temperature     *Temperature `json:"temperature"`
 	PowerOnTime     *PowerOnTime `json:"power_on_time"`
@@ -38,6 +39,9 @@ type Report struct {
 	ATASelfTestLog        *ATASelfTestLog        `json:"ata_smart_self_test_log"`
 	ATAErrorLog           *ATAErrorLog           `json:"ata_smart_error_log"`
 	ATATemperatureHistory *ATATemperatureHistory `json:"ata_sct_temperature_history"`
+	ATADeviceStatistics   *ATADeviceStatistics   `json:"ata_device_statistics"`
+	ATAPendingDefects     *ATAPendingDefects     `json:"ata_pending_defects_log"`
+	ATASCTErc             *ATASCTErc             `json:"ata_sct_erc"`
 	SATAPhyEvents         *SATAPhyEvents         `json:"sata_phy_event_counters"`
 
 	// NVMe
@@ -46,6 +50,18 @@ type Report struct {
 	NVMeSelfTestLog   *NVMeSelfTestLog `json:"nvme_self_test_log"`
 	NVMeOptAdmin      *NVMeOptAdmin    `json:"nvme_optional_admin_commands"`
 	NVMeTotalCapacity *int64           `json:"nvme_total_capacity"`
+
+	// NVMe identity (cheap one-liners; each absent on drives that omit it).
+	NVMeVersion            *StringValue   `json:"nvme_version"`
+	NVMeNumberOfNamespaces *int           `json:"nvme_number_of_namespaces"`
+	NVMeControllerID       *int           `json:"nvme_controller_id"`
+	NVMePCIVendor          *NVMePCIVendor `json:"nvme_pci_vendor"`
+
+	// Apple internal-SSD wear metrics. Apple drives can omit the standard NVMe
+	// health-log wear fields and report these instead, so they are consumed as a
+	// fallback for endurance/spare.
+	EnduranceUsed  *PercentValue   `json:"endurance_used"`
+	SpareAvailable *SpareAvailable `json:"spare_available"`
 
 	// Seagate FARM. Not part of `-j -x`; fetched separately via FarmLog and
 	// attached by the caller, so it is never populated by Info's unmarshal.
@@ -128,6 +144,25 @@ type Trim struct {
 type StringValue struct {
 	Value  int    `json:"value"`
 	String string `json:"string"`
+}
+
+// NVMePCIVendor identifies the controller's PCI vendor (and subsystem vendor).
+type NVMePCIVendor struct {
+	ID          int `json:"id"`
+	SubsystemID int `json:"subsystem_id"`
+}
+
+// PercentValue is smartmontools' {current_percent:int} encoding (e.g. Apple's
+// endurance_used).
+type PercentValue struct {
+	CurrentPercent int `json:"current_percent"`
+}
+
+// SpareAvailable is Apple's spare-capacity report: the current spare percentage
+// and the threshold below which it is considered depleted.
+type SpareAvailable struct {
+	CurrentPercent   int `json:"current_percent"`
+	ThresholdPercent int `json:"threshold_percent"`
 }
 
 // IsNVMe reports whether the report describes an NVMe drive.
