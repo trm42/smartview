@@ -204,10 +204,10 @@ func (d *detail) renderBar() {
 	s := ""
 	for i, t := range d.tabs {
 		if i == d.active {
-			// Bold so the active tab stays distinguishable under mono, where
-			// Inverse/Accent collapse to the terminal default and the colour pill
-			// would otherwise vanish (mirrors selectedRowStyle's bold fallback).
-			s += fmt.Sprintf(" [%s:%s:b] %d %s [-:-:-] ", tag(activeTheme.Inverse), tag(activeTheme.Accent), i+1, t.title)
+			// activeTabTag is the themed pill, with a black-on-white fallback so
+			// the active tab stays legible under mono (where the colour pill
+			// would otherwise collapse to the terminal default).
+			s += fmt.Sprintf(" %s %d %s [-:-:-] ", activeTabTag(), i+1, t.title)
 		} else {
 			s += fmt.Sprintf(" %s %d %s [-] ", accentTag(), i+1, t.title)
 		}
