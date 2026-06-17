@@ -60,6 +60,19 @@ func failingTag() string { return "[" + tag(activeTheme.Failing) + "]" }
 // fgbgTag builds a compound "[fg:bg]" token for text drawn on a coloured field.
 func fgbgTag(fg, bg tcell.Color) string { return "[" + tag(fg) + ":" + tag(bg) + "]" }
 
+// activeTabTag is the bold "[fg:bg:b]" pill for the active tab: the theme's
+// Inverse-on-Accent colours normally. Under a themeless palette (mono, where
+// Accent is ColorDefault) that pill collapses to the terminal default and
+// vanishes, so it falls back to a high-contrast black-on-white selector — still
+// monochrome, just legible. Bold keeps it distinct even where colour is absent.
+func activeTabTag() string {
+	fg, bg := activeTheme.Inverse, activeTheme.Accent
+	if bg == tcell.ColorDefault {
+		fg, bg = tcell.ColorBlack, tcell.ColorWhite
+	}
+	return "[" + tag(fg) + ":" + tag(bg) + ":b]"
+}
+
 // activeTheme is the live palette every colour helper reads. setTheme installs a
 // new one; it is initialised to dark (the original hard-coded colours) in init.
 var activeTheme Theme
