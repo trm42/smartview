@@ -127,7 +127,7 @@ func New(interval time.Duration, themeName string) *App {
 // build assembles the widget tree and installs key bindings.
 func (a *App) build() {
 	a.list.ShowSecondaryText(true).SetHighlightFullLine(true)
-	a.list.SetSecondaryTextColor(activeTheme.ListSecondary)
+	styleList(a.list)
 	a.list.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Drives ")
 	a.list.SetChangedFunc(func(int, string, string, rune) { a.showSelected() })
 
@@ -243,7 +243,7 @@ func (a *App) cycleTheme() {
 func (a *App) repaintAll() {
 	a.detail.device = "" // invalidate cache → next update() takes the rebuild branch
 	a.showSelected()     // rebuild + re-render all tabs (preserves active tab index)
-	a.list.SetSecondaryTextColor(activeTheme.ListSecondary)
+	styleList(a.list)
 	a.populateList()  // re-render list rows (scanning + severity glyphs)
 	a.refreshChrome() // status hints + focus borders
 	a.refreshBanner() // re-set the root-warning banner text if shown
