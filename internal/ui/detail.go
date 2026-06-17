@@ -204,7 +204,10 @@ func (d *detail) renderBar() {
 	s := ""
 	for i, t := range d.tabs {
 		if i == d.active {
-			s += fmt.Sprintf(" %s %d %s [-:-] ", fgbgTag(activeTheme.Inverse, activeTheme.Accent), i+1, t.title)
+			// Bold so the active tab stays distinguishable under mono, where
+			// Inverse/Accent collapse to the terminal default and the colour pill
+			// would otherwise vanish (mirrors selectedRowStyle's bold fallback).
+			s += fmt.Sprintf(" [%s:%s:b] %d %s [-:-:-] ", tag(activeTheme.Inverse), tag(activeTheme.Accent), i+1, t.title)
 		} else {
 			s += fmt.Sprintf(" %s %d %s [-] ", accentTag(), i+1, t.title)
 		}
