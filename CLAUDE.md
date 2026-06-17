@@ -140,9 +140,13 @@ need no mutex.
   `--theme NAME` selects at startup, the `T` key cycles live
   (`cycleTheme`→`repaintAll`, which forces a detail rebuild so widgets that baked
   colour in at build time get re-coloured — the one-shot root-warning banner is
-  the easy miss, hence `refreshBanner`). Known limits: `mono` drops all our colour
-  (severity survives via the `●` glyph + bold), and tview's built-in List
-  selection inverse is outside the theme and stays a tview default.
+  the easy miss, hence `refreshBanner`). List widgets (drive list, Tests-tab
+  selector) must be themed via `styleList` (format.go) at build **and** in
+  `repaintAll`: it pins the secondary-text colour (tview Lists default it to
+  `Styles.TertiaryTextColor`, a green that otherwise leaks into every theme) and
+  routes selection through `selectedRowStyle` so list and table selections match.
+  Known limit: `mono` drops all our colour (severity and the selected row survive
+  via the `●` glyph + bold).
 - Protocol branching is via `Report.IsNVMe()` / `IsATA()`; NVMe and ATA render
   different attribute tables and gauges.
 - **Temperature sparkline**: ATA seeds it instantly from
