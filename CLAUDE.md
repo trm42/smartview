@@ -131,9 +131,12 @@ need no mutex.
   `mutedTag()`, `okTag()`, `severityTag()`, `fgbgTag(fg,bg)`) for markup or read
   `activeTheme.X` for a `tcell.Color`. The `dark` theme reproduces the original
   palette byte-for-byte (pinned by `theme_test.go`) so the default is unchanged;
-  `electric` (a green-phosphor "elite BBS" palette, mint/cyan-leaning green),
-  `phosphor` (the classic monochrome green-CRT palette — every green in one hue,
-  vs `electric`'s mint), and `mono` are the alternates.
+  `electric` (an "elite BBS" palette in blue/cyan/white/gray — bright azure-cyan
+  borders, white body text, amber caution + red failing for legibility),
+  `phosphor` (the classic monochrome green-CRT palette — *pure green only*, no
+  amber/red; severity reads via green brightness + the `●` glyph + bold),
+  `amber` (a Hercules monochrome amber-monitor palette — warm amber accent/text
+  with a warm amber→orange→red severity ramp), and `mono` are the alternates.
   `--theme NAME` selects at startup, the `T` key cycles live
   (`cycleTheme`→`repaintAll`, which forces a detail rebuild so widgets that baked
   colour in at build time get re-coloured — the one-shot root-warning banner is
