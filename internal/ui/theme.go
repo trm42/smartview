@@ -120,46 +120,68 @@ var mono = Theme{
 	ListSecondary: tcell.ColorDefault,
 }
 
-// electric is an "elite BBS" green-phosphor-terminal palette: bright neon green
-// on near-black, amber caution, red failing. Every role is truecolor hex so it
-// renders identically across terminals regardless of the 16-colour palette.
+// electric is an "elite BBS" terminal palette: bright azure-cyan and white on
+// near-black with a dark-blue identity, amber caution, red failing. Every role
+// is truecolor hex so it renders identically across terminals regardless of the
+// 16-colour palette.
 var electric = Theme{
 	Name:          "electric",
-	Accent:        tcell.NewHexColor(0x00ff9c), // electric mint-green: borders, headers, active tab, key hints
-	Muted:         tcell.NewHexColor(0x3f8f63), // dim phosphor green: dashes, unfocused border, raw values
-	OK:            tcell.NewHexColor(0x39ff14), // electric lime (classic neon green)
-	Caution:       tcell.NewHexColor(0xffb000), // phosphor amber
-	Failing:       tcell.NewHexColor(0xff3030), // bright red
-	Neutral:       tcell.NewHexColor(0xc8ffd8), // soft phosphor-green healthy text
-	Inverse:       tcell.NewHexColor(0x001008), // near-black green: text drawn on Accent / BannerBg
-	SelectionBg:   tcell.NewHexColor(0x10532e), // dark green selected-row bg
-	SelectionFg:   tcell.NewHexColor(0xeafff2), // bright text on selection
-	BannerBg:      tcell.NewHexColor(0xffb000), // amber root-warning banner (stands out from green)
-	BarHealthy:    tcell.NewHexColor(0x39ff14), // FARM healthy bar
-	ScrollArrow:   tcell.NewHexColor(0x00ff9c), // accent green
-	ListSecondary: tcell.NewHexColor(0x35c46a), // dim phosphor green for the secondary line
+	Accent:        tcell.NewHexColor(0x00b7ff), // bright azure-cyan: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x5f7184), // dark slate gray: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x3ddc84), // healthy green (universal "good" cue)
+	Caution:       tcell.NewHexColor(0xffb000), // amber
+	Failing:       tcell.NewHexColor(0xff3b30), // red
+	Neutral:       tcell.NewHexColor(0xe6f1ff), // bright white: healthy attribute-row text
+	Inverse:       tcell.NewHexColor(0x001830), // dark navy: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0x0f3a63), // deep blue selected-row bg
+	SelectionFg:   tcell.NewHexColor(0xeaf4ff), // bright white on selection
+	BannerBg:      tcell.NewHexColor(0xffb000), // amber root-warning banner (stands out from blue)
+	BarHealthy:    tcell.NewHexColor(0x00b7ff), // cyan FARM healthy bar
+	ScrollArrow:   tcell.NewHexColor(0x00b7ff), // cyan arrows
+	ListSecondary: tcell.NewHexColor(0x6f9fc0), // muted blue-cyan secondary line
 }
 
-// phosphor is the classic monochrome green-CRT terminal palette: every green
-// sits in the same ~120° hue family (like a VT100 green-screen monitor), which
-// reads visibly distinct from electric's cyan-leaning mint. Amber caution and
-// red failing are the only departures from pure green. All-hex so it renders
-// identically across terminals.
+// phosphor is the classic monochrome green-CRT terminal palette: every role
+// sits in the same ~120° hue family (like a VT100 green-screen monitor), pure
+// green with no departures. Severity reads through green brightness (a dim→
+// bright OK→Caution→Failing ramp) plus the ● glyph and bold weight, exactly as
+// an authentic green CRT would. All-hex so it renders identically across
+// terminals.
 var phosphor = Theme{
 	Name:          "phosphor",
 	Accent:        tcell.NewHexColor(0x33ff33), // pure neon CRT green: borders, headers, active tab, key hints
 	Muted:         tcell.NewHexColor(0x1f8f1f), // dim green: dashes, unfocused border, raw values
-	OK:            tcell.NewHexColor(0x4dff4d), // bright healthy green
-	Caution:       tcell.NewHexColor(0xffb000), // phosphor amber
-	Failing:       tcell.NewHexColor(0xff3030), // bright red
+	OK:            tcell.NewHexColor(0x33c633), // dim healthy green (low end of the severity ramp)
+	Caution:       tcell.NewHexColor(0x66ff66), // brighter green (was amber) — severity by brightness + ● + bold
+	Failing:       tcell.NewHexColor(0x99ff99), // pale/near-white bright green (was red) — visually "hottest"
 	Neutral:       tcell.NewHexColor(0x2ad42a), // standard green body text
 	Inverse:       tcell.NewHexColor(0x001a00), // near-black green: text drawn on Accent / BannerBg
 	SelectionBg:   tcell.NewHexColor(0x0f4f0f), // dark green selected-row bg
 	SelectionFg:   tcell.NewHexColor(0xd6ffd6), // pale green text on selection
-	BannerBg:      tcell.NewHexColor(0xffb000), // amber root-warning banner (stands out from green)
+	BannerBg:      tcell.NewHexColor(0x4dff4d), // bright-green root-warning banner (was amber); dark Inverse text reads on it
 	BarHealthy:    tcell.NewHexColor(0x33ff33), // FARM healthy bar: neon green
 	ScrollArrow:   tcell.NewHexColor(0x33ff33), // neon green arrows
 	ListSecondary: tcell.NewHexColor(0x1f9f1f), // dim green secondary line
+}
+
+// amber is the classic monochrome amber-CRT terminal palette — a Hercules amber
+// monitor look: warm orange/red on near-black, with an amber→orange→red severity
+// ramp. All-hex so it renders identically across terminals.
+var amber = Theme{
+	Name:          "amber",
+	Accent:        tcell.NewHexColor(0xffb000), // bright amber: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x8a5a10), // dim brown-amber: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0xffcc33), // gold-amber (healthy)
+	Caution:       tcell.NewHexColor(0xff7f00), // orange
+	Failing:       tcell.NewHexColor(0xff2d00), // red-orange
+	Neutral:       tcell.NewHexColor(0xf0a830), // warm amber body text
+	Inverse:       tcell.NewHexColor(0x1a0a00), // near-black brown: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0x4a2600), // dark brown selected-row bg
+	SelectionFg:   tcell.NewHexColor(0xffe0b0), // pale amber on selection
+	BannerBg:      tcell.NewHexColor(0xff5000), // vivid orange-red banner (stands out from amber)
+	BarHealthy:    tcell.NewHexColor(0xffb000), // amber FARM healthy bar
+	ScrollArrow:   tcell.NewHexColor(0xffb000), // amber arrows
+	ListSecondary: tcell.NewHexColor(0xb87818), // dim amber secondary line
 }
 
 // themes is the registry of built-in palettes by name. themeCycle gives the
@@ -170,9 +192,10 @@ var themes = map[string]Theme{
 	"mono":     mono,
 	"electric": electric,
 	"phosphor": phosphor,
+	"amber":    amber,
 }
 
-var themeCycle = []string{"dark", "electric", "phosphor", "mono"}
+var themeCycle = []string{"dark", "electric", "phosphor", "amber", "mono"}
 
 // HasTheme reports whether name is a known built-in theme.
 func HasTheme(name string) bool {
