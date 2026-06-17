@@ -57,6 +57,7 @@ func newTestsView(r *smart.Report, actions selfTestActions) *testsView {
 	v.info.SetDynamicColors(true).SetScrollable(true)
 	v.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Tests ")
 	v.list.SetHighlightFullLine(true)
+	styleList(v.list.List) // theme secondary text + selection (else tview leaks green)
 
 	// 'x' cancels a running test. The global key handler ignores 'x', so it
 	// reaches the focused view here; we act on it only while a test runs.
@@ -157,9 +158,11 @@ func (v *testsView) showIdle(r *smart.Report) {
 const barWidth = 24
 
 // progressBar renders a fixed-width bar for a 0..100 percentage with the
-// percent label centered inside it. Done cells are green, remaining cells are a
-// dim grey; the split shows progress without a separate number elsewhere. The
-// result is tview markup (dynamic colors are enabled on the running view).
+// percent label centered inside it. Done cells are █ in the theme's OK colour,
+// remaining cells ░ in the muted colour — the same glyph/role vocabulary as
+// marginBar, so the bar stays visible even under the mono theme (where colour
+// drops out and only the glyph distinction remains). The result is tview markup
+// (dynamic colors are enabled on the running view).
 func progressBar(pct int) string {
 	if pct < 0 {
 		pct = 0
@@ -174,17 +177,20 @@ func progressBar(pct int) string {
 	var b strings.Builder
 	for i := 0; i < barWidth; i++ {
 		if i < filled {
-			b.WriteString("[black:green]")
+			b.WriteString(okTag())
 		} else {
-			b.WriteString("[white:#3a3a3a]")
+			b.WriteString(mutedTag())
 		}
-		if i >= start && i < start+len(label) {
-			b.WriteByte(label[i-start])
-		} else {
-			b.WriteByte(' ')
+		switch {
+		case i >= start && i < start+len(label):
+			b.WriteByte(label[i-start]) // percent digit, in the cell's region colour
+		case i < filled:
+			b.WriteString("█")
+		default:
+			b.WriteString("░")
 		}
+		b.WriteString("[-]")
 	}
-	b.WriteString("[-:-]")
 	return b.String()
 }
 

@@ -151,6 +151,17 @@ func selectedRowStyle(fg tcell.Color) tcell.Style {
 		Attributes(tcell.AttrBold)
 }
 
+// styleList applies the active theme to a List: the secondary-text colour and a
+// selected-row highlight that matches the themed table selection (SelectionBg/Fg
+// via selectedRowStyle) rather than tview's default white inverse, so list and
+// table selections look the same. tview Lists default their secondary text to
+// Styles.TertiaryTextColor (green), which would otherwise leak green into every
+// theme; this pins it to ListSecondary. Re-call after a theme change.
+func styleList(l *tview.List) {
+	l.SetSecondaryTextColor(activeTheme.ListSecondary)
+	l.SetSelectedStyle(selectedRowStyle(activeTheme.SelectionFg))
+}
+
 // attrTextColor colours attribute row text: neutral for healthy rows so the
 // table is easy to scan, reserving yellow/red for rows that need attention.
 func attrTextColor(s smart.Severity) tcell.Color {

@@ -91,29 +91,34 @@ func visibleBarText(bar string) string {
 }
 
 func TestProgressBar(t *testing.T) {
-	// 0%: nothing filled (no green segments) but the label is present.
-	if got := progressBar(0); strings.Count(got, "[black:green]") != 0 {
+	// Filled cells carry the theme's OK colour token (█), remaining cells the
+	// muted token (░); under the dark test theme these are distinct, so counting
+	// the OK token gives the filled-cell count. The centered percent label sits
+	// among the glyphs rather than on blank cells.
+	fill := okTag()
+	// 0%: nothing filled but the label is present.
+	if got := progressBar(0); strings.Count(got, fill) != 0 {
 		t.Errorf("0%% bar should have no filled cells: %q", got)
 	}
-	if got := visibleBarText(progressBar(0)); got != "0%" {
-		t.Errorf("0%% bar label = %q, want \"0%%\"", got)
+	if got := visibleBarText(progressBar(0)); !strings.Contains(got, "0%") {
+		t.Errorf("0%% bar should contain label, got %q", got)
 	}
 	// 50%: half (12 of 24) cells filled, label centered inside.
-	if got := progressBar(50); strings.Count(got, "[black:green]") != 12 {
-		t.Errorf("50%% bar filled cells = %d, want 12", strings.Count(got, "[black:green]"))
+	if got := progressBar(50); strings.Count(got, fill) != 12 {
+		t.Errorf("50%% bar filled cells = %d, want 12", strings.Count(got, fill))
 	}
-	if got := visibleBarText(progressBar(50)); got != "50%" {
-		t.Errorf("50%% bar label = %q, want \"50%%\"", got)
+	if got := visibleBarText(progressBar(50)); !strings.Contains(got, "50%") {
+		t.Errorf("50%% bar should contain label, got %q", got)
 	}
 	// 100% (and clamped 150%): all 24 cells filled.
-	if got := progressBar(100); strings.Count(got, "[black:green]") != barWidth {
-		t.Errorf("100%% bar filled cells = %d, want %d", strings.Count(got, "[black:green]"), barWidth)
+	if got := progressBar(100); strings.Count(got, fill) != barWidth {
+		t.Errorf("100%% bar filled cells = %d, want %d", strings.Count(got, fill), barWidth)
 	}
-	if got := visibleBarText(progressBar(100)); got != "100%" {
-		t.Errorf("100%% bar label = %q, want \"100%%\"", got)
+	if got := visibleBarText(progressBar(100)); !strings.Contains(got, "100%") {
+		t.Errorf("100%% bar should contain label, got %q", got)
 	}
-	if got := progressBar(150); strings.Count(got, "[black:green]") != barWidth {
-		t.Errorf("clamped 150%% bar filled cells = %d, want %d", strings.Count(got, "[black:green]"), barWidth)
+	if got := progressBar(150); strings.Count(got, fill) != barWidth {
+		t.Errorf("clamped 150%% bar filled cells = %d, want %d", strings.Count(got, fill), barWidth)
 	}
 }
 
