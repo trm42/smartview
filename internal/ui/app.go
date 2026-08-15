@@ -25,6 +25,12 @@ type App struct {
 	status *tview.TextView
 	banner *tview.TextView
 
+	// bodyPages swaps the main body between the per-drive view (list + detail)
+	// and the fleet comparison. It sits inside root, so the banner and status
+	// bar are shared by both and the modal push/pop machinery is unaffected.
+	bodyPages *tview.Pages
+	fleet     *fleetView
+
 	interval   time.Duration
 	themeName  string // active colour theme; cycled by the 'T' key
 	refreshCh  chan struct{}
@@ -43,10 +49,11 @@ type App struct {
 
 	// All fields below are touched only on the main (event-loop) goroutine,
 	// either directly or inside QueueUpdateDraw callbacks, so need no locking.
-	devices []smart.Device
-	reports map[string]*smart.Report
-	history map[string][]float64 // runtime temperature series per device
-	inModal bool                 // true while a modal overlay is shown
+	devices   []smart.Device
+	reports   map[string]*smart.Report
+	history   map[string][]float64 // runtime temperature series per device
+	inModal   bool                 // true while a modal overlay is shown
+	fleetMode bool                 // true while the fleet comparison is on screen
 
 	// bannerShown is true when the root-warning banner is part of the layout (we
 	// lack root). refreshBanner re-renders its theme-coloured text on a theme
@@ -139,6 +146,11 @@ func (a *App) build() {
 		AddItem(a.list, 38, 0, true).
 		AddItem(a.detail, 0, 1, false)
 
+	a.fleet = newFleetView(a.openDrive)
+	a.bodyPages = tview.NewPages().
+		AddPage(pageDrives, body, true, true).
+		AddPage(pageFleet, a.fleet, true, false)
+
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
 	// Full SMART access usually requires root; warn when we lack it.
 	if os.Geteuid() != 0 {
@@ -146,7 +158,7 @@ func (a *App) build() {
 		a.refreshBanner()
 		root.AddItem(a.banner, 1, 0, false)
 	}
-	root.AddItem(body, 0, 1, true).
+	root.AddItem(a.bodyPages, 0, 1, true).
 		AddItem(a.status, 1, 0, false)
 
 	a.detail.selfTest = selfTestActions{
@@ -166,14 +178,33 @@ func (a *App) build() {
 // are otherwise undiscoverable), then the refresh cadence.
 func (a *App) statusText() string {
 	aq := accentTag()
-	hint := aq + "↑/↓[-] drive   " + aq + "←/→[-] nav"
-	if n := a.detail.tabCount(); n >= 2 {
-		hint += fmt.Sprintf("   %s1-%d[-] tab", aq, n)
+	var hint string
+	if a.fleetMode {
+		hint = a.fleetHints()
+	} else {
+		hint = aq + "↑/↓[-] drive   " + aq + "←/→[-] nav"
+		if n := a.detail.tabCount(); n >= 2 {
+			hint += fmt.Sprintf("   %s1-%d[-] tab", aq, n)
+		}
+		hint += "   " + aq + "Tab[-] focus   " + aq + "c[-] compare   " +
+			aq + "r[-] refresh   " + aq + "q[-] quit"
+		hint += a.contextHints()
 	}
-	hint += "   " + aq + "Tab[-] focus   " + aq + "r[-] refresh   " + aq + "q[-] quit"
-	hint += a.contextHints()
 	hint += "   " + aq + "+/-[-] rate   " + aq + "T[-] theme"
 	return hint + fmt.Sprintf("      %s · refresh every %s", a.themeName, a.interval)
+}
+
+// fleetHints is the key-hint segment for the fleet comparison. Its keys differ
+// enough from the per-drive view (sections rather than tabs, Enter to open a
+// drive) that the bar swaps wholesale rather than appending a context segment.
+func (a *App) fleetHints() string {
+	aq := accentTag()
+	hint := aq + "↑/↓[-] drive"
+	if n := a.fleet.sectionCount(); n >= 2 {
+		hint += fmt.Sprintf("   %s←/→ 1-%d[-] section", aq, n)
+	}
+	return hint + "   " + aq + "s[-] sort   " + aq + "Enter[-] open drive   " +
+		aq + "c/Esc[-] back   " + aq + "r[-] refresh   " + aq + "q[-] quit"
 }
 
 // contextHints returns the key hints specific to the focused detail tab. They
@@ -208,6 +239,14 @@ func (a *App) refreshChrome() {
 // content) holds keyboard focus and dims the other, so the focused container is
 // always obvious. Must be called after focus has actually moved.
 func (a *App) refreshFocusChrome() {
+	// In fleet mode the comparison table is the only thing on screen, so it
+	// holds focus unconditionally and the hidden panes are dimmed.
+	a.fleet.setFocused(a.fleetMode)
+	if a.fleetMode {
+		a.list.SetBorderColor(borderColor(false))
+		a.detail.setContentFocus(false)
+		return
+	}
 	listFocused := a.list.HasFocus()
 	a.list.SetBorderColor(borderColor(listFocused))
 	a.detail.setContentFocus(!listFocused)
@@ -244,7 +283,10 @@ func (a *App) repaintAll() {
 	a.detail.device = "" // invalidate cache → next update() takes the rebuild branch
 	a.showSelected()     // rebuild + re-render all tabs (preserves active tab index)
 	styleList(a.list)
-	a.populateList()  // re-render list rows (scanning + severity glyphs)
+	a.populateList() // re-render list rows (scanning + severity glyphs)
+	// The fleet table bakes a colour into every cell at build time, so it is a
+	// repaint miss of the same kind as the banner; re-render it from the cache.
+	a.fleet.refresh(a.devices, a.reports, a.history)
 	a.refreshChrome() // status hints + focus borders
 	a.refreshBanner() // re-set the root-warning banner text if shown
 }
@@ -253,6 +295,12 @@ func (a *App) repaintAll() {
 func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 	if a.inModal {
 		return ev // let the modal handle all input
+	}
+	// The fleet view rebinds a handful of keys (sections rather than tabs) and
+	// swallows the ones that address the hidden per-drive panes; everything it
+	// does not claim falls through to the shared bindings below.
+	if a.fleetMode && a.onFleetKey(ev) {
+		return nil
 	}
 	switch ev.Key() {
 	case tcell.KeyEscape:
@@ -284,6 +332,9 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 				a.refreshChrome()
 			}
 			return nil
+		case 'c':
+			a.toggleFleet()
+			return nil
 		case 'T':
 			// Uppercase T cycles the colour theme; lowercase t (above) jumps to the
 			// Tests tab. ev.Rune() distinguishes the case.
@@ -297,6 +348,100 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 		}
 	}
 	return ev
+}
+
+// Page names for bodyPages.
+const (
+	pageDrives = "drives"
+	pageFleet  = "fleet"
+)
+
+// onFleetKey handles the keys the fleet view claims, reporting whether it
+// consumed the event. Keys it declines (q, r, +/-, T) fall through to the
+// shared bindings, so the global chrome keeps working in both modes.
+//
+// Up/Down and Enter are deliberately absent: they reach the focused table
+// directly, which scrolls and fires its selected-func. 's' likewise belongs to
+// the table's own input capture, next to the sort state it toggles.
+func (a *App) onFleetKey(ev *tcell.EventKey) bool {
+	switch ev.Key() {
+	case tcell.KeyEscape:
+		// Esc is "back" here rather than "quit": leaving a full-screen view is
+		// what it means everywhere else, and q still quits.
+		a.exitFleet(false)
+		return true
+	case tcell.KeyTab:
+		return true // nothing to move focus between; swallow rather than orphan it
+	case tcell.KeyLeft:
+		a.stepFleetSection(-1)
+		return true
+	case tcell.KeyRight:
+		a.stepFleetSection(1)
+		return true
+	case tcell.KeyRune:
+		switch r := ev.Rune(); {
+		case r == 't':
+			return true // the Tests tab belongs to a drive, and none is on screen
+		case r >= '1' && r <= '9':
+			a.fleet.selectSection(int(r - '1'))
+			a.refreshChrome()
+			return true
+		}
+	}
+	return false
+}
+
+// stepFleetSection moves the focus metric and resyncs the hint bar.
+func (a *App) stepFleetSection(delta int) {
+	if a.fleet.stepSection(delta) {
+		a.refreshChrome()
+	}
+}
+
+// toggleFleet switches between the per-drive view and the fleet comparison.
+func (a *App) toggleFleet() {
+	if a.fleetMode {
+		a.exitFleet(false)
+		return
+	}
+	a.fleetMode = true
+	// Render from the cache on entry so the comparison is current even if the
+	// next poll is half a minute away.
+	a.fleet.refresh(a.devices, a.reports, a.history)
+	a.bodyPages.SwitchToPage(pageFleet)
+	a.app.SetFocus(a.fleet.table)
+	a.refreshChrome()
+}
+
+// exitFleet returns to the per-drive view. focusDetail puts focus on the detail
+// pane rather than the drive list, which is what opening a drive from the fleet
+// table should do; plain "back" restores the list.
+func (a *App) exitFleet(focusDetail bool) {
+	a.fleetMode = false
+	a.bodyPages.SwitchToPage(pageDrives)
+	if focusDetail {
+		a.app.SetFocus(a.detail.content())
+	} else {
+		a.app.SetFocus(a.list)
+	}
+	a.refreshChrome()
+}
+
+// openDrive selects a drive by device name and leaves the fleet view for its
+// detail. Setting the list item fires its changed-func, which renders the
+// drive — the same path an arrow-key selection takes.
+func (a *App) openDrive(name string) {
+	for i, d := range a.devices {
+		if d.Name == name {
+			a.list.SetCurrentItem(i)
+			break
+		}
+	}
+	// SetCurrentItem fires the list's changed-func *before* it stores the new
+	// index, so the showSelected it triggers still reads the previous drive and
+	// renders that one. Render again here, once the index is actually current.
+	a.showSelected()
+	a.exitFleet(true)
 }
 
 // toggleFocus moves focus between the drive list and the detail content.
@@ -509,7 +654,11 @@ func (a *App) pushModal(m tview.Primitive) {
 func (a *App) popModal() {
 	a.inModal = false
 	a.app.SetRoot(a.root, true)
-	a.app.SetFocus(a.detail.content())
+	if a.fleetMode {
+		a.app.SetFocus(a.fleet.table)
+	} else {
+		a.app.SetFocus(a.detail.content())
+	}
 	a.refreshChrome()
 }
 

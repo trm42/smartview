@@ -9,25 +9,7 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-func TestLeadingInt(t *testing.T) {
-	cases := []struct {
-		in   string
-		want int64
-		ok   bool
-	}{
-		{"9201 (189 58 0)", 9201, true},
-		{"37 (0 21 0 0 0)", 37, true},
-		{"  42", 42, true},
-		{"", 0, false},
-		{"n/a", 0, false},
-	}
-	for _, c := range cases {
-		got, ok := leadingInt(c.in)
-		if got != c.want || ok != c.ok {
-			t.Errorf("leadingInt(%q) = (%d,%v), want (%d,%v)", c.in, got, ok, c.want, c.ok)
-		}
-	}
-}
+// TestLeadingInt lives in internal/smart alongside the function it covers.
 
 func TestDecodeReading(t *testing.T) {
 	mk := func(id int, raw string) smart.ATAAttribute {
