@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
 
+# Least privilege: nothing here writes back to the repo. Set explicitly rather
+# than inheriting the repo/org default, which is read/write in some setups.
+permissions:
+  contents: read
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -40,5 +45,7 @@ jobs:
         run: go test -race -cover ./...
       - name: govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          # Pinned, like the golangci-lint version in lint.yml: an unpinned
+          # @latest silently changes what CI installs. Bump deliberately.
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
           "$(go env GOPATH)/bin/govulncheck" ./...
