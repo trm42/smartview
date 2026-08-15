@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
 
+# Least privilege: nothing here writes back to the repo. Set explicitly rather
+# than inheriting the repo/org default, which is read/write in some setups.
+permissions:
+  contents: read
+
 jobs:
   golangci:
     runs-on: ubuntu-latest
