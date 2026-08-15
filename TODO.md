@@ -23,6 +23,13 @@ for drive health via smartmontools.
 - [x] **Capacity fallback** to `nvme_total_capacity` when `user_capacity` is absent.
 - [x] **Unit-test sweep** of pure logic (health/severity, formatting, parsing, capability
       helpers) across `internal/smart` and `internal/ui`.
+- [x] **Fleet view** (`c`): a full-screen comparison of every drive at once, with a
+      switchable focus metric (Temperature / Health & errors / Endurance & wear /
+      Age & usage) that the rows sort by. Backed by cross-protocol accessors in
+      `internal/smart/metrics.go` (power-on/cycles, life used, spare, temperature range,
+      data written with its provenance, error counters), each fixture-tested. Absent
+      readings render as `—` rather than a misleading zero, and an attribute-241 write
+      total is marked `~` as a vendor-defined estimate.
 
 ## Next up
 

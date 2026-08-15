@@ -71,6 +71,22 @@ cancels it. Results land in the **Logs** tab when the test completes.
 
 ![smartview Tests tab — start a short or extended self-test](docs/images/tests.png)
 
+### Fleet comparison
+
+Press `c` for a full-screen comparison of every drive at once. One metric is in
+focus at a time and the rows sort by it, so the drive you care about is at the
+top: **Temperature** (current, min/max, trend sparkline), **Health & errors**
+(verdict plus reallocated / pending / uncorrectable / CRC / media-error
+counters), **Endurance & wear** (life used, spare, total written and writes per
+day) and **Age & usage** (capacity, power-on time, power cycles, hours per
+cycle). `←`/`→` or `1`–`4` switch sections, `s` flips between metric and device
+order, and `Enter` opens the highlighted drive's detail view.
+
+ATA and NVMe expose different counters, so a `—` means *this drive does not
+report that reading* — never a zero. A write total shown as `~1.5 TB` was
+derived from vendor attribute 241, whose unit is vendor-defined; the legend
+under each section spells out that section's caveats.
+
 ## Requirements
 
 - **Go 1.26+** (to build)
@@ -118,10 +134,14 @@ below) — `--interval` only sets the starting cadence.
 | `Tab`                     | Toggle focus between the drive list and the detail pane       |
 | `1`–`9`                   | Switch detail tab by number                                   |
 | `t`                       | Jump straight to the **Tests** tab                            |
+| `c`                       | Toggle the **Fleet** comparison (all drives side by side)     |
 | `r`                       | Refresh now                                                   |
 | `+` / `-`                 | Slower / faster refresh (2s → 5s → 10s → 30s → 1m → 5m ladder)|
 | `s` / `f` (Attributes)    | Cycle the attribute sort / filter                             |
 | `Enter` / `x` (Tests)     | Start the selected self-test / cancel the running test        |
+| `1`–`4`, `←` / `→` (Fleet)| Switch the comparison section                                 |
+| `s` / `Enter` (Fleet)     | Toggle metric/name sort · open the highlighted drive          |
+| `Esc` (Fleet)             | Back to the per-drive view                                    |
 | `q` or `Esc`              | Quit                                                          |
 
 Mouse is also supported (click drives and tabs, scroll with the wheel).

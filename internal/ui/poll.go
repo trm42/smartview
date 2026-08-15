@@ -64,6 +64,9 @@ func (a *App) fetchAndApply(ctx context.Context) {
 			a.recordTemp(name, rep)
 		}
 		a.populateList()
+		// The fleet comparison is refreshed whether or not it is on screen, so
+		// it is already current the moment the user switches to it.
+		a.fleet.refresh(a.devices, a.reports, a.history)
 		// detail.update refreshes each tab's data in place (preserving table
 		// selection, scroll and sort/filter) for the common same-drive,
 		// same-tabs case. When the set of tabs changes (e.g. the Logs tab

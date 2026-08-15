@@ -290,15 +290,15 @@ func humanAttrName(s string) string {
 func decodeReading(a smart.ATAAttribute) string {
 	switch a.ID {
 	case 9, 240: // power-on hours, head flying hours
-		if n, ok := leadingInt(a.Raw.String); ok {
+		if n, ok := smart.LeadingInt(a.Raw.String); ok {
 			return humanDuration(int(n))
 		}
 	case 241, 242: // total LBAs written / read (512-byte LBAs)
-		if n, ok := leadingInt(a.Raw.String); ok {
+		if n, ok := smart.LeadingInt(a.Raw.String); ok {
 			return humanBytes(n * 512)
 		}
 	case 190, 194: // airflow / drive temperature
-		if n, ok := leadingInt(a.Raw.String); ok {
+		if n, ok := smart.LeadingInt(a.Raw.String); ok {
 			return fmt.Sprintf("%d°C", n)
 		}
 	}

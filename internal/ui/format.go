@@ -38,24 +38,6 @@ const uiGutter = 1
 // (e.g. self-test entries under "Self-test history").
 const nestIndent = "  "
 
-// leadingInt parses the leading integer of s (smartctl raw strings often read
-// like "9201 (189 58 0)" or "37 (0 21 0 0 0)"), ignoring any trailing detail.
-func leadingInt(s string) (int64, bool) {
-	s = strings.TrimSpace(s)
-	end := 0
-	for end < len(s) && s[end] >= '0' && s[end] <= '9' {
-		end++
-	}
-	if end == 0 {
-		return 0, false
-	}
-	var n int64
-	for _, c := range s[:end] {
-		n = n*10 + int64(c-'0')
-	}
-	return n, true
-}
-
 // marginBar renders a severity-coloured headroom bar for a normalized SMART
 // value above its threshold: a fuller bar means more margin before the
 // attribute is considered failing. base is the smallest standard top value
@@ -82,6 +64,21 @@ func marginBar(value, worst, thresh int, sev smart.Severity) string {
 	filled := int(frac*float64(width) + 0.5)
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
 	return fmt.Sprintf("[%s]%s[-] %d", severityTag(sev), bar, value-thresh)
+}
+
+// pctBarWidth is the cell width of pctBar. Narrower than marginBar's ten: the
+// fleet table shows two of these side by side and still needs room for the
+// numbers.
+const pctBarWidth = 8
+
+// pctBar renders a plain percentage as a severity-coloured bar followed by the
+// value — the fleet view's compact form for life-used and spare. marginBar is
+// the sibling for normalized SMART values, which need a threshold-relative
+// scale rather than a straight 0-100 one.
+func pctBar(pct int, sev smart.Severity) string {
+	filled := (clampPct(pct)*pctBarWidth + 50) / 100
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", pctBarWidth-filled)
+	return fmt.Sprintf("[%s]%s[-] %d%%", severityTag(sev), bar, pct)
 }
 
 // borderColor returns the accent border colour for a pane that holds keyboard

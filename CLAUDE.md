@@ -51,7 +51,9 @@ hint (`rebuild with: go build -tags dev`).
 
 Two packages with a hard one-way boundary: **`internal/smart` is the data layer
 and has no tview dependency**; **`internal/ui` is the presentation layer**.
-`main.go` wires flags + a smartctl preflight and starts the UI.
+`main.go` wires flags + a smartctl preflight and starts the UI. The UI has two
+top-level screens — the per-drive view (drive list + tabbed detail) and the
+fleet comparison — swapped by `App.bodyPages`.
 
 ### Data flow
 
@@ -81,6 +83,31 @@ need no mutex.
 
 ### UI specifics
 
+- **The fleet view is the one alternate top-level screen** (`fleet.go`,
+  `fleetsections.go`; `c` toggles it, `Esc` backs out). `App.bodyPages` is a
+  `tview.Pages` swapping the body between `pageDrives` (list + detail) and
+  `pageFleet`; `a.root` still wraps it with the banner and status bar, so
+  `pushModal`/`popModal` are untouched. Adding a comparison means adding a
+  `fleetSection` (columns + `cells`/`rank`/`available`/`legend`), not editing the
+  widget. Three things must be kept in sync when touching it: `repaintAll` has to
+  call `fleet.refresh` (the table bakes a colour into every cell, so it is a
+  theme-repaint miss of the same kind as the banner), `poll.go` refreshes it
+  inside `QueueUpdateDraw` whether or not it is visible, and `onFleetKey` owns the
+  keys it rebinds while letting the rest fall through to the shared bindings.
+  Selection is tracked by **device name**, not row index — the focus-metric sort
+  reorders rows on every poll. Note `tview.List.SetCurrentItem` fires its
+  changed-func *before* storing the new index, so `openDrive` must call
+  `showSelected` itself.
+- **Cross-protocol readings live in `internal/smart/metrics.go`**, not in
+  rendering code: `PowerOnHours`, `PowerCycles`, `LifeUsedPercent`, `SparePercent`,
+  `TempRange`, `DataWritten`, `ErrorCounts`. Each resolves a fallback chain across
+  the sparse schema and **reports presence rather than substituting a zero** — on
+  this schema "not reported" and "reported as zero" are different answers, so
+  `ErrorCounts` fields are pointers and a comparison that shows 0 for an absent
+  counter is a bug. `DataWritten` also returns its `WriteSource`: only ATA
+  attribute 241 has vendor-defined units, so it is flagged `Approximate()` and the
+  UI marks it `~` with a legend caveat. Put new shared readings here — they get
+  fixture-backed tests, which UI code cannot.
 - **Capability-driven tabs** (detail.go `visibleTabs`): a tab only appears when
   its source data exists (the Logs tab hides for drives with no error/self-test
   log; the Tests tab hides unless `Report.SupportsSelfTest()`). When adding a
@@ -168,7 +195,11 @@ need no mutex.
 `internal/smart/smart_test.go` parses real captured fixtures in
 `internal/smart/testdata/` (WD NVMe, Seagate HDD, Samsung SSD, sparse Apple
 NVMe) plus two hand-crafted error-log variants (`smart-{sda,nvme}-errors.json`)
-that populate the otherwise-empty error tables. Capture new ones with
+that populate the otherwise-empty error tables. `metrics_test.go` covers the
+cross-protocol accessors against the same fixtures, pinning which source each
+drive falls through to (the Seagate reads writes from Device Statistics, the
+Samsung from attribute 241 and is therefore approximate) and that absent
+readings stay absent. Capture new ones with
 `smartctl -j -x <dev> > internal/smart/testdata/<name>.json`. There are no UI
 tests; verify the UI by running it.
 
