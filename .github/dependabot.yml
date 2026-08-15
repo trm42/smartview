@@ -1,0 +1,37 @@
+# Dependabot keeps the two things we actually pin up to date: the Go modules in
+# go.mod and the action versions in .github/workflows. Both CI workflows run on
+# pull_request, so every bump here is gated by gofmt/vet/build/test/govulncheck
+# and golangci-lint before it can land.
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+    # Minor and patch bumps land as one PR so a quiet week costs one review
+    # instead of six. Majors are deliberately left out of the group: tcell and
+    # tview carry the whole TUI, and a major there wants to be read on its own.
+    groups:
+      go-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # "ci" matches the prefix already used for workflow changes in this repo.
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns:
+          - "*"
