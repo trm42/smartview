@@ -149,26 +149,27 @@ func identityText(r *smart.Report) string {
 	// Wear & usage.
 	gap()
 	row("Temp", tempString(r))
-	if r.PowerOnTime != nil {
-		row("Power-on", humanDuration(r.PowerOnTime.Hours))
+	if hours, ok := r.PowerOnHours(); ok {
+		row("Power-on", humanDuration(hours))
 	} else {
 		row("Power-on", dash)
 	}
-	if r.PowerCycleCount != nil {
-		row("Power cycles", fmt.Sprintf("%d", *r.PowerCycleCount))
+	if n, ok := r.PowerCycles(); ok {
+		row("Power cycles", fmt.Sprintf("%d", n))
 	}
 	if r.NVMeHealth != nil {
 		h := r.NVMeHealth
-		switch {
-		case h.PercentageUsed != nil:
-			row("Life used", fmt.Sprintf("%d%%", *h.PercentageUsed))
-		case r.EnduranceUsed != nil:
-			// Apple internal SSDs can omit the standard percentage_used field and
-			// report endurance_used instead; surface it as the same metric.
-			row("Life used", fmt.Sprintf("%d%%", r.EnduranceUsed.CurrentPercent))
+		// LifeUsedPercent resolves the standard percentage_used field and the
+		// endurance_used fallback that Apple internal SSDs report instead.
+		if pct, ok := r.LifeUsedPercent(); ok {
+			row("Life used", fmt.Sprintf("%d%%", pct))
 		}
-		if h.AvailableSpare == nil && r.SpareAvailable != nil {
-			row("Spare avail", fmt.Sprintf("%d%%", r.SpareAvailable.CurrentPercent))
+		// The gauge already carries spare when the standard field is present, so
+		// only the fallback source needs a row of its own.
+		if h.AvailableSpare == nil {
+			if pct, _, ok := r.SparePercent(); ok {
+				row("Spare avail", fmt.Sprintf("%d%%", pct))
+			}
 		}
 		row("Media errors", fmt.Sprintf("%d", h.MediaErrors))
 		row("Unsafe shutdn", fmt.Sprintf("%d", h.UnsafeShutdowns))
