@@ -32,6 +32,15 @@ type App struct {
 	bodyPages *tview.Pages
 	fleet     *fleetView
 
+	// rail is the narrow-terminal stand-in for the drive list: a single row of
+	// severity glyphs and short names. narrow tracks which layout is installed
+	// and lastWidth the width it was chosen for, so the swap happens only when
+	// the terminal actually crosses the breakpoint rather than on every draw.
+	rail      *tview.TextView
+	body      *tview.Flex
+	narrow    bool
+	lastWidth int
+
 	interval   time.Duration
 	themeName  string // active colour theme; cycled by the 'T' key
 	refreshCh  chan struct{}
@@ -121,6 +130,8 @@ func New(interval time.Duration, themeName string) *App {
 		detail:     newDetail(),
 		status:     tview.NewTextView().SetDynamicColors(true),
 		banner:     tview.NewTextView().SetDynamicColors(true),
+		rail:       tview.NewTextView().SetDynamicColors(true),
+		lastWidth:  -1,
 		interval:   interval,
 		themeName:  themeName,
 		refreshCh:  make(chan struct{}, 1),
@@ -143,13 +154,13 @@ func (a *App) build() {
 	a.status.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	a.status.SetText(a.statusText())
 
-	body := tview.NewFlex().
-		AddItem(a.list, 38, 0, true).
-		AddItem(a.detail, 0, 1, false)
+	a.rail.SetBorderPadding(0, 0, uiGutter, uiGutter)
+	a.body = tview.NewFlex()
+	a.applyLayout(false)
 
 	a.fleet = newFleetView(a.openDrive)
 	a.bodyPages = tview.NewPages().
-		AddPage(pageDrives, body, true, true).
+		AddPage(pageDrives, a.body, true, true).
 		AddPage(pageFleet, a.fleet, true, false)
 
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
@@ -170,15 +181,134 @@ func (a *App) build() {
 	a.root = root
 	a.app.SetRoot(root, true).EnableMouse(true)
 	a.app.SetInputCapture(a.onKey)
+	// The terminal width is only known at draw time, so the layout choice lives
+	// here rather than in build.
+	a.app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
+		w, _ := screen.Size()
+		if w != a.lastWidth {
+			a.lastWidth = w
+			a.setNarrow(w < narrowBreakpoint)
+		}
+		return false
+	})
 	// The drive list is the initial focus; accent its border from the start.
 	a.refreshFocusChrome()
 }
+
+// narrowBreakpoint is the width below which the drive list and the detail pane
+// cannot both be useful. At 80 columns the old layout gave the list its fixed 38
+// and left the detail 42, in which key/value rows split across lines, box titles
+// clipped at both ends and eight identity fields fell below the fold.
+const narrowBreakpoint = 100
+
+// setNarrow switches between the two-pane layout and the narrow one, if the
+// choice actually changed. Runs on the event-loop goroutine (from the draw hook)
+// like every other widget mutation.
+func (a *App) setNarrow(narrow bool) {
+	if narrow == a.narrow && a.body.GetItemCount() > 0 {
+		return
+	}
+	a.applyLayout(narrow)
+	a.refreshBanner()
+	a.refreshChrome()
+	// The list is not in the narrow layout, so focus cannot rest on it there.
+	if narrow && a.list.HasFocus() {
+		a.app.SetFocus(a.detail.content())
+	}
+}
+
+// applyLayout installs the widget arrangement for the current width. Wide: the
+// drive list beside the detail. Narrow: the list collapses to a one-row rail and
+// the detail takes the full width, which is the difference between a readable
+// 80-column screen and a clipped one.
+func (a *App) applyLayout(narrow bool) {
+	a.narrow = narrow
+	a.body.Clear().SetDirection(tview.FlexColumn)
+	if narrow {
+		a.body.SetDirection(tview.FlexRow).
+			AddItem(a.rail, 1, 0, false).
+			AddItem(a.detail, 0, 1, true)
+		a.renderRail()
+		return
+	}
+	a.body.AddItem(a.list, driveListWidth, 0, true).
+		AddItem(a.detail, 0, 1, false)
+}
+
+// driveListWidth is the drive list's fixed column width in the wide layout.
+const driveListWidth = 38
+
+// renderRail draws the narrow layout's drive selector: one row of severity
+// glyphs and short names, with the selected drive highlighted and a count of
+// whatever needs attention. It carries the same information the sidebar's first
+// line does — which drives exist and how they are — in a thirty-eighth of the
+// space.
+func (a *App) renderRail() {
+	if !a.narrow {
+		return
+	}
+	cur := a.list.GetCurrentItem()
+	var b strings.Builder
+	fmt.Fprintf(&b, "%sDrives[-] ", mutedTag())
+	alerts := 0
+	for i, d := range a.devices {
+		name := railName(d)
+		rep, ok := a.reports[d.Name]
+		if !ok {
+			fmt.Fprintf(&b, " %s●[-] %s%s[-]", mutedTag(), mutedTag(), esc(name))
+			continue
+		}
+		sev := rep.Overall()
+		if sev != smart.SeverityOK {
+			alerts++
+		}
+		if i == cur {
+			// A leading marker as well as the highlight, so the selection is still
+			// visible under mono where every colour resolves to the default.
+			fmt.Fprintf(&b, " %s▸%s %s[-:-:-]",
+				fgbgTag(severityColor(sev), activeTheme.SelectionBg), healthGlyph(sev), esc(name))
+			continue
+		}
+		fmt.Fprintf(&b, "  %s %s", healthGlyph(sev), esc(name))
+	}
+	if alerts > 0 {
+		// Kept to three cells: the rail is one row and the drive names have to
+		// fit first. The severity is on each glyph; this is the count.
+		fmt.Fprintf(&b, "  %s▲ %d[-]", cautionTag(), alerts)
+	}
+	a.rail.SetText(b.String())
+}
+
+// railName is the shortest identifying form of a device name: the rail has room
+// for a handful of drives, so it drops the /dev/ prefix every Linux name shares.
+func railName(d smart.Device) string {
+	n := shortDevice(d.Name, railDeviceWidth)
+	return strings.TrimPrefix(n, "/dev/")
+}
+
+// railDeviceWidth bounds a name on the rail.
+const railDeviceWidth = 10
 
 // statusText renders the bottom key-hint bar. A stable global prefix is followed
 // by a context segment for the focused tab (the sort/filter and self-test keys
 // are otherwise undiscoverable), then the refresh cadence.
 func (a *App) statusText() string {
 	aq := accentTag()
+	// Narrow terminals get a deliberately shorter bar rather than the full one
+	// truncated: the old bar simply ran off the edge at 80 columns, losing the
+	// theme key and the cadence readout with no indication anything was cut.
+	if a.narrow {
+		hint := aq + "↑/↓[-] drive   " + aq + "←/→[-] nav"
+		if n := a.detail.tabCount(); n >= 2 {
+			hint += fmt.Sprintf("   %s1-%d[-] tab", aq, n)
+		}
+		if a.fleetMode {
+			hint = aq + "↑/↓[-] drive   " + aq + "←/→[-] section"
+		}
+		hint += "   " + aq + "c[-] compare   " + aq + "q[-] quit   " + aq + "?[-] keys"
+		return hint + fmt.Sprintf("   %s%s[-]", mutedTag(), a.interval)
+	}
+
 	var hint string
 	if a.fleetMode {
 		hint = a.fleetHints()
@@ -248,7 +378,7 @@ func (a *App) refreshFocusChrome() {
 		a.detail.setContentFocus(false)
 		return
 	}
-	listFocused := a.list.HasFocus()
+	listFocused := !a.narrow && a.list.HasFocus()
 	a.list.SetBorderColor(borderColor(listFocused))
 	a.detail.setContentFocus(!listFocused)
 }
@@ -260,9 +390,11 @@ func (a *App) refreshBanner() {
 	if !a.bannerShown {
 		return
 	}
+	// Short enough to survive an 80-column terminal. The old wording ran to 94
+	// characters and was cut at "re-run with" — losing the sudo hint, which is
+	// the only reason the banner exists.
 	a.banner.SetText(fgbgTag(activeTheme.Inverse, activeTheme.BannerBg) +
-		" ⚠ Running without root — some drives may report limited data; " +
-		"re-run with sudo for full access. [-:-]")
+		" ⚠ Without root some drives report limited data — re-run with sudo. [-:-]")
 }
 
 // cycleTheme advances to the next built-in theme and repaints everything. Runs
@@ -335,6 +467,9 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case 'c':
 			a.toggleFleet()
+			return nil
+		case '?':
+			a.showKeys()
 			return nil
 		case 'T':
 			// Uppercase T cycles the colour theme; lowercase t (above) jumps to the
@@ -788,6 +923,26 @@ func (a *App) confirm(text, yesLabel string, onYes func()) {
 				onYes()
 			}
 		})
+	a.pushModal(modal)
+}
+
+// showKeys lists every binding in a dismissable modal. The narrow hint bar drops
+// to essentials and points here, so nothing is merely hidden.
+func (a *App) showKeys() {
+	modal := tview.NewModal().
+		SetText("Keys\n\n" +
+			"↑/↓      select drive\n" +
+			"←/→      previous / next tab\n" +
+			"1-9      jump to tab\n" +
+			"Tab      move focus between panes\n" +
+			"t        Tests tab      s/f  sort / filter attributes\n" +
+			"c        fleet comparison       Esc  back\n" +
+			"Enter    open drive (in the fleet)\n" +
+			"r        refresh now    +/-  refresh interval\n" +
+			"T        cycle colour theme\n" +
+			"q        quit").
+		AddButtons([]string{"Close"}).
+		SetDoneFunc(func(int, string) { a.popModal() })
 	a.pushModal(modal)
 }
 
