@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/navidys/tvxwidgets"
 	"github.com/rivo/tview"
 
 	"github.com/trm42/smartview/internal/smart"
@@ -174,8 +173,12 @@ func (v *farmView) relayout(width int) {
 	outer.AddItem(grid, gridHeight, 0, false)
 	total := gridHeight
 	for _, c := range v.charts {
-		outer.AddItem(c, farmChartHeight, 0, false)
-		total += farmChartHeight
+		h := farmChartHeight
+		if _, isSummary := c.(*tview.TextView); isSummary {
+			h = farmSummaryHeight // one line of prose, not a plot
+		}
+		outer.AddItem(c, h, 0, false)
+		total += h
 	}
 
 	v.setContent(outer, total)
@@ -184,6 +187,10 @@ func (v *farmView) relayout(width int) {
 // farmChartHeight is the fixed cell height of each per-head bar chart (border +
 // labelled bars); they stack below the 2×2 stat grid inside the scroll viewport.
 const farmChartHeight = 9
+
+// farmSummaryHeight is the collapsed form of an all-zero per-head fault chart:
+// a bordered line, not a plot.
+const farmSummaryHeight = 3
 
 // wrapBoxes pre-wraps each stat box's text for its column's inner width so long
 // values hang-indent under the value column rather than wrapping to the left
@@ -314,33 +321,81 @@ func millivolts(mv int) string {
 	return fmt.Sprintf("%.2fV", float64(mv)/1000)
 }
 
-// farmHeadChart builds a per-head bar chart, or nil when the series is empty.
-// When health is true, non-zero bars are tinted red (a bad head stands out).
+// farmHeadChart builds a per-head chart, or nil when the series is empty. When
+// health is true the series is a fault counter, where the answer is almost
+// always "none on any head" — that case gets a single line instead of nine rows
+// of empty axis (farmHeadSummary), and the chart appears only if a head has
+// something to report.
+//
+// It uses rangeChart rather than tvxwidgets.BarChart, which anchors its axis to
+// zero: MR head resistances of 350–495 drew as bars of identical height, hiding
+// the outlier head that is the only reason to plot per-head data at all.
 func farmHeadChart(title string, data []int, health bool) tview.Primitive {
 	if len(data) == 0 {
 		return nil
 	}
-	chart := tvxwidgets.NewBarChart()
-	chart.SetBorder(true)
-	chart.SetTitle(title)
-
-	max := 0
-	for _, v := range data {
-		if v > max {
-			max = v
-		}
-	}
-	if max == 0 {
-		max = 1 // keep a flat baseline instead of a zero-height axis
-	}
-	chart.SetMaxValue(max)
-
+	vals := make([]float64, len(data))
+	worst := 0
 	for i, v := range data {
-		color := activeTheme.BarHealthy
-		if health && v > 0 {
-			color = activeTheme.Failing
-		}
-		chart.AddBar(fmt.Sprintf("%d", i), v, color)
+		vals[i] = float64(v)
+		worst = max(worst, v)
 	}
-	return chart
+
+	color := activeTheme.BarHealthy
+	if health {
+		if worst == 0 {
+			return farmHeadSummary(title, len(data))
+		}
+		color = activeTheme.Failing
+	}
+
+	c := newRangeChart().
+		setBars(vals, farmHeadPitch, "", farmHeadAxis(len(data))).
+		setColor(color)
+	c.SetBorder(true)
+	c.SetBorderPadding(0, 0, uiGutter, uiGutter)
+	c.SetTitle(fmt.Sprintf("%s— %d–%d ", title, minInts(data), worst))
+	return c
+}
+
+// farmHeadPitch is the per-head bar pitch: one cell of bar and one of gap, so
+// twenty heads read as twenty values rather than a wall, and all of them fit
+// where the old chart showed fifteen and silently dropped the rest.
+const farmHeadPitch = 2
+
+// farmHeadSummary is the all-zero form of a per-head fault chart: the healthy
+// answer stated in one line rather than drawn as an empty axis.
+func farmHeadSummary(title string, heads int) tview.Primitive {
+	tv := tview.NewTextView().SetDynamicColors(true)
+	tv.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(title)
+	tv.SetText(fmt.Sprintf("%snone on any of %d heads[-]", okTag(), heads))
+	return tv
+}
+
+// farmHeadAxis labels the head indices under the bars at the bar pitch. Once the
+// indices reach two digits they no longer fit that pitch (0 1 2 ... 10111213),
+// so past ten heads only every other index is labelled — the tick spacing still
+// lines the label up with the bar it names.
+func farmHeadAxis(heads int) string {
+	step := 1
+	if heads > 10 {
+		step = 2
+	}
+	var b strings.Builder
+	for i := 0; i < heads; i += step {
+		fmt.Fprintf(&b, "%-*d", farmHeadPitch*step, i)
+	}
+	return strings.TrimRight(b.String(), " ")
+}
+
+// minInts is the smallest value in data, or 0 for an empty series.
+func minInts(data []int) int {
+	if len(data) == 0 {
+		return 0
+	}
+	lo := data[0]
+	for _, v := range data[1:] {
+		lo = min(lo, v)
+	}
+	return lo
 }

@@ -139,6 +139,11 @@ func barRows(values []float64, barWidth, rows int, lo, hi float64) []string {
 				g = '█'
 			case cell > 0:
 				g = blockRamp[int(cell)]
+			case r == rows-1:
+				// The smallest value sits exactly on the baseline and would
+				// otherwise draw nothing, reading as a missing category rather
+				// than the lowest one. Give the baseline row a minimum mark.
+				g = blockRamp[0]
 			}
 			cols[r] = append(cols[r], g)
 			for range barWidth - 1 {
@@ -261,10 +266,14 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 		lbl := fmt.Sprintf("%*s ", gutter-2, labels[r])
 		tview.Print(screen, esc(lbl), x, y+r, gutter, tview.AlignLeft, muted)
 		tview.Print(screen, "┤", x+gutter-1, y+r, 1, tview.AlignLeft, activeTheme.Accent)
-		if len(line) > plotW {
-			line = string([]rune(line)[:plotW])
+		// Clip by RUNES, not bytes: the block glyphs are three bytes each, so a
+		// byte-length comparison both over-counts the width and slices a rune
+		// slice past its end.
+		cells := []rune(line)
+		if len(cells) > plotW {
+			cells = cells[:plotW]
 		}
-		tview.Print(screen, esc(line), x+gutter, y+r, plotW, tview.AlignLeft, c.color)
+		tview.Print(screen, esc(string(cells)), x+gutter, y+r, plotW, tview.AlignLeft, c.color)
 	}
 
 	// The axis line carries the baseline value, so it is always obvious that the
