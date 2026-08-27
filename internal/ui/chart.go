@@ -243,6 +243,14 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 	}
 
 	plotRows := h - 2 // one axis line, one caption line
+	// Do not resolve finer than the data: temperatures are whole degrees, so a
+	// 35-40°C series over nine rows would repeat its labels and leave rows that
+	// no value can ever land in. Cap to the integer span and anchor the plot to
+	// the axis, leaving any surplus as headroom at the top of the box.
+	if span := int(hi-lo) + 1; span > 0 && span < plotRows {
+		plotRows = span
+	}
+	top := y + (h - 2 - plotRows)
 	labels := axisLabels(plotRows, lo, hi)
 	gutter := len(fmt.Sprintf("%.0f", lo))
 	for _, l := range labels {
@@ -264,8 +272,8 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 	muted := activeTheme.Muted
 	for r, line := range rows {
 		lbl := fmt.Sprintf("%*s ", gutter-2, labels[r])
-		tview.Print(screen, esc(lbl), x, y+r, gutter, tview.AlignLeft, muted)
-		tview.Print(screen, "┤", x+gutter-1, y+r, 1, tview.AlignLeft, activeTheme.Accent)
+		tview.Print(screen, esc(lbl), x, top+r, gutter, tview.AlignLeft, muted)
+		tview.Print(screen, "┤", x+gutter-1, top+r, 1, tview.AlignLeft, activeTheme.Accent)
 		// Clip by RUNES, not bytes: the block glyphs are three bytes each, so a
 		// byte-length comparison both over-counts the width and slices a rune
 		// slice past its end.
@@ -273,15 +281,15 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 		if len(cells) > plotW {
 			cells = cells[:plotW]
 		}
-		tview.Print(screen, esc(string(cells)), x+gutter, y+r, plotW, tview.AlignLeft, c.color)
+		tview.Print(screen, esc(string(cells)), x+gutter, top+r, plotW, tview.AlignLeft, c.color)
 	}
 
 	// The axis line carries the baseline value, so it is always obvious that the
 	// plot does not start at zero.
 	base := fmt.Sprintf("%*s ", gutter-2, fmt.Sprintf("%.0f", lo))
-	tview.Print(screen, esc(base), x, y+plotRows, gutter, tview.AlignLeft, muted)
-	tview.Print(screen, "└"+strings.Repeat("─", plotW-1), x+gutter-1, y+plotRows, plotW, tview.AlignLeft, muted)
+	tview.Print(screen, esc(base), x, top+plotRows, gutter, tview.AlignLeft, muted)
+	tview.Print(screen, "└"+strings.Repeat("─", plotW-1), x+gutter-1, top+plotRows, plotW, tview.AlignLeft, muted)
 	if c.caption != "" {
-		tview.Print(screen, esc(c.caption), x+gutter, y+plotRows+1, plotW, tview.AlignLeft, muted)
+		tview.Print(screen, esc(c.caption), x+gutter, top+plotRows+1, plotW, tview.AlignLeft, muted)
 	}
 }
