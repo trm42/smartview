@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
+
 	"github.com/trm42/smartview/internal/smart"
 )
 
@@ -16,11 +19,19 @@ import (
 // scroll offset across polls.
 type statisticsView struct {
 	*scrollTextView
+
+	// Latest text and the width it was wrapped for. Values are laid out against
+	// the live column width — the same lazy relayout farm.go and overview.go use
+	// — because tview's own wrapping breaks a value back to column 0, splitting
+	// "15.4 TB  (30003609491 sectors)" across two lines and the two-column grid
+	// with it. -1 forces a rebuild.
+	raw       string
+	lastWidth int
 }
 
 func newStatisticsView(r *smart.Report) *statisticsView {
-	v := &statisticsView{newScrollTextView()}
-	v.SetDynamicColors(true).SetScrollable(true)
+	v := &statisticsView{scrollTextView: newScrollTextView(), lastWidth: -1}
+	v.SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 	v.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Device statistics ")
 	v.refresh(r, nil)
 	return v
@@ -34,9 +45,62 @@ func (v *statisticsView) setFocused(focused bool) {
 // refresh re-renders the statistics text, restoring the prior scroll offset so a
 // poll does not jump the view back to the top.
 func (v *statisticsView) refresh(r *smart.Report, _ []float64) {
-	row, col := v.GetScrollOffset()
-	v.SetText(buildStatisticsText(r))
-	v.ScrollTo(row, col)
+	v.raw = buildStatisticsText(r)
+	v.lastWidth = -1 // data changed: re-wrap against the current width
+}
+
+// Draw re-wraps the body when the width changed (or a refresh invalidated it),
+// then defers to the scrolling TextView.
+func (v *statisticsView) Draw(screen tcell.Screen) {
+	if _, _, w, _ := v.GetInnerRect(); w != v.lastWidth {
+		row, col := v.GetScrollOffset()
+		v.SetText(hangingIndentStats(v.raw, w))
+		v.ScrollTo(row, col)
+		v.lastWidth = w
+	}
+	v.scrollTextView.Draw(screen)
+}
+
+// statValueCol is the column the values start in: nestIndent plus the
+// statLabelWidth label plus a space.
+const statValueCol = len(nestIndent) + statLabelWidth + 1
+
+// hangingIndentStats re-wraps any line too long for innerW so the overflow hangs
+// under the value column instead of returning to the left margin. tview's own
+// wrapping is left enabled for the odd line this cannot split.
+func hangingIndentStats(text string, innerW int) string {
+	valueW := innerW - statValueCol
+	if valueW <= 8 || text == "" {
+		return text
+	}
+	indent := strings.Repeat(" ", statValueCol)
+	var out strings.Builder
+	for i, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		if i > 0 {
+			out.WriteByte('\n')
+		}
+		if tview.TaggedStringWidth(line) <= innerW || len(line) <= statValueCol {
+			out.WriteString(line)
+			continue
+		}
+		out.WriteString(line[:statValueCol])
+		col := 0
+		for w, word := range strings.Fields(line[statValueCol:]) {
+			width := tview.TaggedStringWidth(word)
+			switch {
+			case w == 0:
+			case col+1+width <= valueW:
+				out.WriteString(" ")
+				col++
+			default:
+				out.WriteString("\n" + indent)
+				col = 0
+			}
+			out.WriteString(word)
+			col += width
+		}
+	}
+	return out.String()
 }
 
 // buildStatisticsText assembles the Statistics tab body: one bold-headed section
@@ -66,11 +130,16 @@ func buildStatisticsText(r *smart.Report) string {
 		first = false
 		fmt.Fprintf(&b, "[::b]%s[-:-:-]\n", orDash(esc(p.Name)))
 		for _, e := range valid {
-			fmt.Fprintf(&b, nestIndent+"%-46s %s\n", esc(e.Name), statValue(p, e, sectorBytes))
+			fmt.Fprintf(&b, nestIndent+"%-*s %s\n", statLabelWidth, esc(e.Name), statValue(p, e, sectorBytes))
 		}
 	}
 	return b.String()
 }
+
+// statLabelWidth is the counter-name column. smartctl's names are long
+// ("Number of Realloc. Candidate Logical Sectors" is 44), and this is the width
+// that keeps their values aligned down the page.
+const statLabelWidth = 46
 
 // validStatEntries returns the entries whose value is meaningful (smartctl marks
 // placeholder rows such as timestamps with valid=false).
