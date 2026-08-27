@@ -57,18 +57,24 @@ func TestHumanMinutes(t *testing.T) {
 }
 
 func TestMarginBar(t *testing.T) {
-	// Full headroom (value at base, far above threshold) → full bar, margin shown.
+	// Full headroom (value at base, far above threshold) → full bar. The bar
+	// carries no number: value-minus-threshold read as a contradiction on a full
+	// bar and went negative on a failing row, so those numbers moved to the
+	// table's own now/thr column.
 	full := marginBar(100, 100, 10, smart.SeverityOK)
-	if !strings.Contains(full, "["+severityTag(smart.SeverityOK)+"]") || !strings.HasSuffix(full, " 90") {
+	if !strings.Contains(full, "["+severityTag(smart.SeverityOK)+"]") {
 		t.Errorf("full bar = %q", full)
 	}
-	if strings.Count(full, "█") != 10 {
-		t.Errorf("full bar should be 10 blocks: %q", full)
+	if strings.ContainsAny(stripTags(full), "0123456789") {
+		t.Errorf("margin bar should carry no unlabelled number: %q", full)
+	}
+	if strings.Count(full, "█") != pctBarWidth {
+		t.Errorf("full bar should be %d blocks: %q", pctBarWidth, full)
 	}
 	// 200-base attribute (e.g. CRC) keeps the bar within range (no overflow).
 	b200 := marginBar(200, 200, 0, smart.SeverityOK)
-	if strings.Count(b200, "█") != 10 {
-		t.Errorf("200-base full bar should be 10 blocks: %q", b200)
+	if strings.Count(b200, "█") != pctBarWidth {
+		t.Errorf("200-base full bar should be a full bar: %q", b200)
 	}
 	// Value below threshold clamps to an empty bar.
 	empty := marginBar(5, 5, 10, smart.SeverityFailing)
@@ -134,5 +140,93 @@ func TestAttrTextColor(t *testing.T) {
 	}
 	if attrTextColor(smart.SeverityFailing) != tcell.ColorRed {
 		t.Error("failing should be red")
+	}
+}
+
+// TestTempMarkupOnlyTintsOutOfBand pins the "colour marks exceptions" rule: an
+// in-band reading keeps the caller's colour so a healthy fleet is not a wall of
+// green, and only a caution/failing reading is tinted.
+func TestTempMarkupOnlyTintsOutOfBand(t *testing.T) {
+	if got := tempMarkup(37); got != "37°C" {
+		t.Errorf("in-band temp should carry no markup, got %q", got)
+	}
+	for _, c := range []int{55, 67} {
+		got := tempMarkup(c)
+		if !strings.Contains(got, "[") || !strings.Contains(got, "°C") {
+			t.Errorf("out-of-band temp %d should be tinted, got %q", c, got)
+		}
+	}
+}
+
+// TestPctBarsShareOnePolarity pins the rule that a fuller bar always means
+// healthier. The fleet shows endurance beside spare, and rendering "life used"
+// directly gave adjacent columns opposite polarity in the same colour.
+func TestPctBarsShareOnePolarity(t *testing.T) {
+	// A nearly-new drive: 3% used, 100% spare. Both bars should be nearly full.
+	life := pctBarUsed(3, smart.SeverityOK)
+	spare := pctBar(100, smart.SeverityOK)
+	if strings.Count(life, "█") < pctBarWidth-1 {
+		t.Errorf("3%% used should render a nearly full bar, got %q", life)
+	}
+	if strings.Count(spare, "█") != pctBarWidth {
+		t.Errorf("100%% spare should render a full bar, got %q", spare)
+	}
+	// A worn drive drains.
+	if worn := pctBarUsed(95, smart.SeverityCaution); strings.Count(worn, "█") > 1 {
+		t.Errorf("95%% used should render a nearly empty bar, got %q", worn)
+	}
+	// The number reported is still the "used" figure, not the remainder.
+	if !strings.Contains(pctBarUsed(3, smart.SeverityOK), "3%") {
+		t.Errorf("pctBarUsed should print the used percentage, got %q", life)
+	}
+}
+
+// TestShortDeviceKeepsDistinguishingPart guards a display choice: a macOS
+// IOService path is long and what tells two of them apart is a trailing path
+// component, not a character offset. Keeping the last N characters cut
+// mid-word and made every Apple drive render alike.
+func TestShortDeviceKeepsDistinguishingPart(t *testing.T) {
+	const apple = "IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@9600000/" +
+		"AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1"
+	got := shortDevice(apple, 30)
+	if !strings.HasSuffix(got, "NS_01@1") {
+		t.Errorf("shortDevice = %q, want it to end at a whole path component", got)
+	}
+	if len([]rune(got)) > 30 {
+		t.Errorf("shortDevice = %q, %d runes, want <= 30", got, len([]rune(got)))
+	}
+	// A short name is returned untouched.
+	if got := shortDevice("/dev/sda", 30); got != "/dev/sda" {
+		t.Errorf("short name should pass through, got %q", got)
+	}
+	// A narrow budget still yields something identifying rather than an ellipsis.
+	if got := shortDevice(apple, 11); !strings.Contains(got, "NS_01@1") {
+		t.Errorf("narrow shortDevice = %q, want the namespace component", got)
+	}
+	// A name with no separators falls back to a tail trim.
+	if got := shortDevice(strings.Repeat("x", 50), 10); len([]rune(got)) != 10 {
+		t.Errorf("separator-less name = %q, want 10 runes", got)
+	}
+}
+
+// TestHangingIndentBreaksLongTokens: a macOS IOService path is 150+ characters
+// with no spaces, and callers disable tview's wrapping, so an unbreakable token
+// has to be split here or it is simply cut at the border.
+func TestHangingIndentBreaksLongTokens(t *testing.T) {
+	const path = "IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@9600000/" +
+		"AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1"
+	line := "Device         " + path
+	got := hangingIndent(line, 15, 40)
+	lines := strings.Split(got, "\n")
+	if len(lines) < 4 {
+		t.Fatalf("a 150-character token should break across lines, got %d:\n%s", len(lines), got)
+	}
+	for _, l := range lines {
+		if n := len([]rune(l)); n > 40 {
+			t.Errorf("line is %d runes, wider than the pane: %q", n, l)
+		}
+	}
+	if strings.Join(strings.Fields(strings.Join(lines, "")), "") != "Device"+path {
+		t.Error("breaking the token lost or reordered part of it")
 	}
 }

@@ -8,9 +8,11 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-// TestDarkThemeUnchanged pins every role of the default (dark) theme to the
-// colour the UI hard-coded before theming existed, so the default behaviour
-// can't silently drift.
+// TestDarkThemeUnchanged pins every role of the default (dark) theme so it
+// can't silently drift. Every role is the colour the UI hard-coded before
+// theming existed, with one deliberate exception: ListSecondary was ColorGreen,
+// the same value as OK, which painted the metadata line of a failing drive the
+// healthy colour. It is muted grey now.
 func TestDarkThemeUnchanged(t *testing.T) {
 	want := map[string]tcell.Color{
 		"Accent":        tcell.ColorAqua,
@@ -25,7 +27,7 @@ func TestDarkThemeUnchanged(t *testing.T) {
 		"BannerBg":      tcell.ColorYellow,
 		"BarHealthy":    tcell.ColorTeal,
 		"ScrollArrow":   tcell.ColorWhite,
-		"ListSecondary": tcell.ColorGreen,
+		"ListSecondary": tcell.ColorGray,
 	}
 	got := map[string]tcell.Color{
 		"Accent":        dark.Accent,
@@ -166,5 +168,57 @@ func TestSetThemeUpdatesDash(t *testing.T) {
 	setTheme(mono)
 	if want := "[-]—[-]"; dash != want { // mono muted is ColorDefault → "-"
 		t.Errorf("mono dash = %q, want %q", dash, want)
+	}
+}
+
+// TestListSecondaryIsNotOK guards the reason ListSecondary moved off green: the
+// drive-list metadata line renders on every drive regardless of health, so it
+// must not carry the colour that means "healthy" in any theme.
+func TestListSecondaryIsNotOK(t *testing.T) {
+	for name, th := range themes {
+		if th.ListSecondary == tcell.ColorDefault {
+			continue // mono drops all colour by design
+		}
+		if th.ListSecondary == th.OK {
+			t.Errorf("theme %q: ListSecondary equals OK (%v); a failing drive's "+
+				"metadata line would render in the healthy colour", name, th.OK)
+		}
+	}
+}
+
+// TestSeverityRampEscalates guards the direction of every theme's severity ramp:
+// worse must look hotter, never fainter. phosphor got this backwards — Failing
+// was #99ff99, the palest colour on screen, beside a solid #33c633 OK — so the
+// worst state read as washed out rather than alarming.
+func TestSeverityRampEscalates(t *testing.T) {
+	lum := func(c tcell.Color) float64 {
+		h := c.TrueColor().Hex()
+		r, g, b := float64((h>>16)&0xff), float64((h>>8)&0xff), float64(h&0xff)
+		return 0.2126*r + 0.7152*g + 0.0722*b
+	}
+	for name, th := range themes {
+		if th.OK == tcell.ColorDefault {
+			continue // mono drops all colour by design
+		}
+		if name != "phosphor" {
+			// Only a monochrome palette has to encode severity by intensity; the
+			// others carry it in hue, where luminance ordering means nothing.
+			continue
+		}
+		ok, caution, failing := lum(th.OK), lum(th.Caution), lum(th.Failing)
+		if !(ok < caution && caution < failing) {
+			t.Errorf("theme %q severity does not escalate: OK %.0f, Caution %.0f, Failing %.0f",
+				name, ok, caution, failing)
+		}
+		// And it must escalate by intensity, not by fading toward white: the
+		// green channel leads and red/blue stay low.
+		for _, c := range []tcell.Color{th.OK, th.Caution, th.Failing} {
+			h := c.TrueColor().Hex()
+			r, g, b := (h>>16)&0xff, (h>>8)&0xff, h&0xff
+			if r > g/2 || b > g/2 {
+				t.Errorf("theme %q colour #%06x is washing out: r=%d b=%d against g=%d",
+					name, h, r, b, g)
+			}
+		}
 	}
 }

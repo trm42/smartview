@@ -40,10 +40,13 @@ const nestIndent = "  "
 
 // marginBar renders a severity-coloured headroom bar for a normalized SMART
 // value above its threshold: a fuller bar means more margin before the
-// attribute is considered failing. base is the smallest standard top value
-// (100/200/253) at least as large as the observed value/worst.
+// attribute is considered failing — the same polarity as every other bar in the
+// UI. base is the smallest standard top value (100/200/253) at least as large
+// as the observed value/worst.
 func marginBar(value, worst, thresh int, sev smart.Severity) string {
-	const width = 10
+	// Same width as pctBar: one bar vocabulary across the UI, and it buys the two
+	// columns the Attributes table needs to show its reading without clipping.
+	const width = pctBarWidth
 	base := 100
 	for _, b := range []int{200, 253} {
 		if max(value, worst) > base {
@@ -63,22 +66,43 @@ func marginBar(value, worst, thresh int, sev smart.Severity) string {
 	}
 	filled := int(frac*float64(width) + 0.5)
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
-	return fmt.Sprintf("[%s]%s[-] %d", severityTag(sev), bar, value-thresh)
+	// The bar alone: it used to be followed by value-thresh, an unlabelled
+	// number that read as a contradiction on a full bar (10/10 filled, "3") and
+	// went negative on a failing row ("░░░░░░░░░░ -24"). The two numbers it was
+	// derived from now have their own column.
+	return fmt.Sprintf("[%s]%s[-]", severityTag(sev), bar)
 }
 
-// pctBarWidth is the cell width of pctBar. Narrower than marginBar's ten: the
-// fleet table shows two of these side by side and still needs room for the
-// numbers.
+// pctBarWidth is the cell width of every bar in the UI — the fleet's endurance
+// and spare pair, and the Attributes margin bar. One width, one polarity, one
+// meaning: see pctBar.
 const pctBarWidth = 8
 
-// pctBar renders a plain percentage as a severity-coloured bar followed by the
-// value — the fleet view's compact form for life-used and spare. marginBar is
-// the sibling for normalized SMART values, which need a threshold-relative
-// scale rather than a straight 0-100 one.
+// pctBar renders a percentage as a severity-coloured bar followed by the value —
+// the fleet view's compact form for endurance and spare. marginBar is the
+// sibling for normalized SMART values, which need a threshold-relative scale
+// rather than a straight 0-100 one.
+//
+// A FULLER BAR ALWAYS MEANS HEALTHIER. The fleet shows endurance and spare side
+// by side, and rendering "life used" directly gave the two columns opposite
+// polarity in the same colour: an empty bar (3% used, good) beside a full one
+// (100% spare, good) reads as a contradiction until you go back to the headers.
+// Callers with a "consumed" percentage pass the remaining share instead — see
+// pctBarUsed.
 func pctBar(pct int, sev smart.Severity) string {
 	filled := (clampPct(pct)*pctBarWidth + 50) / 100
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", pctBarWidth-filled)
 	return fmt.Sprintf("[%s]%s[-] %d%%", severityTag(sev), bar, pct)
+}
+
+// pctBarUsed renders a CONSUMED percentage: the bar shows what is left, so it
+// drains as the drive wears and matches the polarity of every other bar, while
+// the number stays the "used" figure the SMART field actually reports.
+func pctBarUsed(pct int, sev smart.Severity) string {
+	used := clampPct(pct)
+	filled := ((100-used)*pctBarWidth + 50) / 100
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", pctBarWidth-filled)
+	return fmt.Sprintf("[%s]%s[-] %d%%", severityTag(sev), bar, used)
 }
 
 // borderColor returns the accent border colour for a pane that holds keyboard
@@ -244,6 +268,30 @@ func tempString(r *smart.Report) string {
 	return dash
 }
 
+// tempMarkup formats a temperature and tints it once it leaves the OK band.
+// Colour marks exceptions rather than membership: an in-band reading keeps the
+// surrounding text colour, so a healthy fleet is not a wall of green and a hot
+// drive is the only thing tinted. Callers must place it where a trailing style
+// reset is harmless — the closing tag returns to the widget default, not to the
+// caller's colour.
+func tempMarkup(celsius int) string {
+	s := fmt.Sprintf("%d°C", celsius)
+	sev := tempSeverity(celsius)
+	if sev == smart.SeverityOK {
+		return s
+	}
+	return fmt.Sprintf("[%s::b]%s[-:-:-]", severityTag(sev), s)
+}
+
+// tempCell is tempMarkup for a whole report, falling back to the dash when the
+// drive reports no temperature.
+func tempCell(r *smart.Report) string {
+	if t, ok := r.CurrentTemp(); ok {
+		return tempMarkup(t)
+	}
+	return dash
+}
+
 // driveKind classifies the drive for the identity line (SSD vs HDD vs NVMe).
 func driveKind(r *smart.Report) string {
 	switch {
@@ -256,4 +304,68 @@ func driveKind(r *smart.Report) string {
 	default:
 		return r.Device.Protocol
 	}
+}
+
+// hangingIndent re-wraps any line too long for innerW so the overflow hangs
+// under the value column instead of returning to the left margin. tview's own
+// wrapping breaks a value back to column 0, which splits a two-column key/value
+// grid mid-value: "15.4 TB  (30003609491" in the value column and "sectors)"
+// against the left border. Callers disable tview's wrapping and pre-wrap here.
+func hangingIndent(text string, valueCol, innerW int) string {
+	valueW := innerW - valueCol
+	if valueW <= 8 || text == "" {
+		return text
+	}
+	indent := strings.Repeat(" ", valueCol)
+	var out strings.Builder
+	for i, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		if i > 0 {
+			out.WriteByte('\n')
+		}
+		if tview.TaggedStringWidth(line) <= innerW || len(line) <= valueCol {
+			out.WriteString(line)
+			continue
+		}
+		out.WriteString(line[:valueCol])
+		col := 0
+		for w, word := range strings.Fields(line[valueCol:]) {
+			width := tview.TaggedStringWidth(word)
+			switch {
+			case w == 0:
+			case col+1+width <= valueW:
+				out.WriteString(" ")
+				col++
+			default:
+				out.WriteString("\n" + indent)
+				col = 0
+			}
+			// A single token can be longer than the column — a macOS IOService
+			// path is 150+ characters with no spaces in it — so break it rather
+			// than emit a line the caller's SetWrap(false) will simply cut.
+			for _, chunk := range splitEvery(word, valueW) {
+				if col > 0 && col+len(chunk) > valueW {
+					out.WriteString("\n" + indent)
+					col = 0
+				}
+				out.WriteString(chunk)
+				col += tview.TaggedStringWidth(chunk)
+			}
+		}
+	}
+	return out.String()
+}
+
+// splitEvery breaks s into runs of at most n runes, returning it whole when it
+// already fits.
+func splitEvery(s string, n int) []string {
+	r := []rune(s)
+	if n <= 0 || len(r) <= n {
+		return []string{s}
+	}
+	var out []string
+	for len(r) > n {
+		out = append(out, string(r[:n]))
+		r = r[n:]
+	}
+	return append(out, string(r))
 }

@@ -34,7 +34,10 @@ type Theme struct {
 	BarHealthy  tcell.Color // FARM per-head healthy bar
 	ScrollArrow tcell.Color // scroll ▲/▼ arrows
 
-	ListSecondary tcell.Color // drive-list secondary line (device · capacity · temp)
+	// ListSecondary is the drive-list secondary line (device · capacity · temp).
+	// It must never equal OK: that line renders on every drive whatever its
+	// state, so painting it the healthy colour puts green on a failing drive.
+	ListSecondary tcell.Color
 }
 
 // tag renders a colour as a tview markup token (without the surrounding
@@ -95,20 +98,24 @@ func init() { setTheme(dark) }
 // default behaviour is unchanged. theme_test.go pins each role to its legacy
 // colour to guard against silent drift.
 var dark = Theme{
-	Name:          "dark",
-	Accent:        tcell.ColorAqua,
-	Muted:         tcell.ColorGray,
-	OK:            tcell.ColorGreen,
-	Caution:       tcell.ColorYellow,
-	Failing:       tcell.ColorRed,
-	Neutral:       tcell.ColorDefault,
-	Inverse:       tcell.ColorBlack,
-	SelectionBg:   tcell.ColorDarkSlateGray,
-	SelectionFg:   tcell.ColorWhite,
-	BannerBg:      tcell.ColorYellow,
-	BarHealthy:    tcell.ColorTeal,
-	ScrollArrow:   tcell.ColorWhite,
-	ListSecondary: tcell.ColorGreen,
+	Name:        "dark",
+	Accent:      tcell.ColorAqua,
+	Muted:       tcell.ColorGray,
+	OK:          tcell.ColorGreen,
+	Caution:     tcell.ColorYellow,
+	Failing:     tcell.ColorRed,
+	Neutral:     tcell.ColorDefault,
+	Inverse:     tcell.ColorBlack,
+	SelectionBg: tcell.ColorDarkSlateGray,
+	SelectionFg: tcell.ColorWhite,
+	BannerBg:    tcell.ColorYellow,
+	BarHealthy:  tcell.ColorTeal,
+	ScrollArrow: tcell.ColorWhite,
+	// Was ColorGreen, i.e. the same value as OK, which meant a failing drive's
+	// row read as a red dot beside a green device/capacity/temperature line.
+	// Muted grey instead: the health glyph carries severity, the metadata does
+	// not claim any.
+	ListSecondary: tcell.ColorGray,
 }
 
 // mono is a no-colour degrade for high-contrast or colour-averse terminals:
@@ -161,12 +168,17 @@ var electric = Theme{
 // an authentic green CRT would. All-hex so it renders identically across
 // terminals.
 var phosphor = Theme{
-	Name:          "phosphor",
-	Accent:        tcell.NewHexColor(0x33ff33), // pure neon CRT green: borders, headers, active tab, key hints
-	Muted:         tcell.NewHexColor(0x1f8f1f), // dim green: dashes, unfocused border, raw values
-	OK:            tcell.NewHexColor(0x33c633), // dim healthy green (low end of the severity ramp)
-	Caution:       tcell.NewHexColor(0x66ff66), // brighter green (was amber) — severity by brightness + ● + bold
-	Failing:       tcell.NewHexColor(0x99ff99), // pale/near-white bright green (was red) — visually "hottest"
+	Name:   "phosphor",
+	Accent: tcell.NewHexColor(0x33ff33), // pure neon CRT green: borders, headers, active tab, key hints
+	Muted:  tcell.NewHexColor(0x1f8f1f), // dim green: dashes, unfocused border, raw values
+	// The severity ramp escalates by getting HOTTER, not by washing out. It read
+	// the wrong way round: Failing was #99ff99, the palest and least saturated
+	// colour on screen, while OK was a solid #33c633 — so the worst state looked
+	// faded. A green CRT can only vary the intensity of one phosphor, so each
+	// step now raises the green channel and keeps red/blue low.
+	OK:            tcell.NewHexColor(0x2a9d2a), // steady green
+	Caution:       tcell.NewHexColor(0x38d938), // brighter
+	Failing:       tcell.NewHexColor(0x6bff6b), // brightest — severity by intensity + ● + bold
 	Neutral:       tcell.NewHexColor(0x2ad42a), // standard green body text
 	Inverse:       tcell.NewHexColor(0x001a00), // near-black green: text drawn on Accent / BannerBg
 	SelectionBg:   tcell.NewHexColor(0x0f4f0f), // dark green selected-row bg

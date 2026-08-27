@@ -61,6 +61,31 @@ func TestOverall(t *testing.T) {
 		{"healthy nvme", Report{
 			Device: Device{Protocol: "NVMe"}, SmartStatus: SmartStatus{Passed: true}, NVMeHealth: &NVMeHealth{},
 		}, SeverityOK},
+		// A logged error is a fault the drive reports about itself; the attribute
+		// table can stay entirely in range while the error log is populated.
+		{"ata logged error", Report{
+			Device: Device{Protocol: "ATA"}, SmartStatus: SmartStatus{Passed: true},
+			ATAErrorLog: &ATAErrorLog{Extended: &struct {
+				Count int                `json:"count"`
+				Table []ATAErrorLogEntry `json:"table"`
+			}{Count: 2}},
+		}, SeverityCaution},
+		{"ata empty error log", Report{
+			Device: Device{Protocol: "ATA"}, SmartStatus: SmartStatus{Passed: true},
+			ATAErrorLog: &ATAErrorLog{Extended: &struct {
+				Count int                `json:"count"`
+				Table []ATAErrorLogEntry `json:"table"`
+			}{Count: 0}},
+		}, SeverityOK},
+		{"ata pending defects", Report{
+			Device: Device{Protocol: "ATA"}, SmartStatus: SmartStatus{Passed: true},
+			ATAPendingDefects: &ATAPendingDefects{Count: 1},
+		}, SeverityCaution},
+		// NVMe error-log entries accumulate benignly and must not grade the drive.
+		{"nvme error log entries do not alarm", Report{
+			Device: Device{Protocol: "NVMe"}, SmartStatus: SmartStatus{Passed: true},
+			NVMeHealth: &NVMeHealth{NumErrLogEntries: 3},
+		}, SeverityOK},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -136,5 +161,76 @@ func TestFatalMessage(t *testing.T) {
 	}}}
 	if msg, ok := apple.FatalMessage(); ok {
 		t.Errorf("benign GetLogPage message should be filtered, got %q", msg)
+	}
+}
+
+// TestFailingFixture exercises the severity path against captured-shaped data
+// rather than hand-built structs. Until smart-sdc-failing.json was added, every
+// fixture in testdata was a healthy drive, so nothing verified the caution and
+// failing paths end to end — the design review had to synthesise a bad drive to
+// look at one.
+func TestFailingFixture(t *testing.T) {
+	r := parseFixture(t, "smart-sdc-failing.json")
+
+	if got := r.Overall(); got != SeverityFailing {
+		t.Errorf("Overall = %v, want Failing", got)
+	}
+	if r.SmartStatus.Passed {
+		t.Error("fixture should carry a failed SMART self-assessment")
+	}
+
+	byID := map[int]*ATAAttribute{}
+	for i := range r.ATAAttributes.Table {
+		a := &r.ATAAttributes.Table[i]
+		byID[a.ID] = a
+	}
+	// A pre-fail attribute below its threshold is the failing case.
+	if got := byID[5].Severity(); got != SeverityFailing {
+		t.Errorf("attribute 5 severity = %v, want Failing", got)
+	}
+	// An attribute that dipped below threshold in the past is a caution: the
+	// drive recovered, but it is worth watching.
+	if got := byID[197].Severity(); got != SeverityCaution {
+		t.Errorf("attribute 197 severity = %v, want Caution", got)
+	}
+	// And a healthy attribute on the same drive stays OK, so severity is
+	// per-attribute rather than smeared across the table.
+	if got := byID[12].Severity(); got != SeverityOK {
+		t.Errorf("attribute 12 severity = %v, want OK", got)
+	}
+
+	e := r.ErrorCounts()
+	for name, got := range map[string]*int64{
+		"Reallocated": e.Reallocated, "Pending": e.Pending,
+		"Uncorrectable": e.Uncorrectable, "CRCErrors": e.CRCErrors,
+	} {
+		if got == nil {
+			t.Errorf("%s should be reported by this drive", name)
+			continue
+		}
+		if *got == 0 {
+			t.Errorf("%s = 0, want a nonzero counter", name)
+		}
+	}
+	if e.Worst() != SeverityCaution {
+		t.Errorf("ErrorCounts.Worst = %v, want Caution", e.Worst())
+	}
+}
+
+// TestFailingFixtureLogsAlone checks the error log escalates a drive on its own,
+// independent of the attribute table — the case /dev/sdf represents, where every
+// attribute is in range and only the log knows something happened.
+func TestFailingFixtureLogsAlone(t *testing.T) {
+	r := parseFixture(t, "smart-sda-errors.json")
+	if !r.SmartStatus.Passed {
+		t.Fatal("this fixture is meant to pass its self-assessment")
+	}
+	for i := range r.ATAAttributes.Table {
+		if a := &r.ATAAttributes.Table[i]; a.Severity() != SeverityOK {
+			t.Fatalf("attribute %d is not OK; this fixture should isolate the log", a.ID)
+		}
+	}
+	if got := r.Overall(); got != SeverityCaution {
+		t.Errorf("Overall = %v, want Caution from the error log alone", got)
 	}
 }

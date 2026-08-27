@@ -24,12 +24,18 @@ type NVMeHealth struct {
 	CriticalCompTime        int   `json:"critical_comp_time"`   // minutes
 }
 
-// NVMeErrorLog reports the NVMe error information log occupancy and, when
-// errors are present, the decoded entries (Table is empty on a healthy drive).
+// NVMeErrorLog reports the NVMe error information log and, when errors are
+// present, the decoded entries (Table is empty on a healthy drive).
+//
+// Size is the log's SLOT CAPACITY, not an error count — smartctl reports 256 on
+// a drive with three logged errors. Read is how many slots it read back and
+// Unread how many it did not; the number of errors the drive actually recorded
+// is len(Table). Rendering Size as a count is a real bug this type once caused.
 type NVMeErrorLog struct {
-	Size  int                 `json:"size"`
-	Read  int                 `json:"read"`
-	Table []NVMeErrorLogEntry `json:"table"`
+	Size   int                 `json:"size"`
+	Read   int                 `json:"read"`
+	Unread int                 `json:"unread"`
+	Table  []NVMeErrorLogEntry `json:"table"`
 }
 
 // NVMeErrorLogEntry is one entry of the NVMe error information log. ErrorCount

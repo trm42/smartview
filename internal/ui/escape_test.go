@@ -38,7 +38,8 @@ func TestIdentityTextEscapesDriveFields(t *testing.T) {
 	}
 	r.SmartStatus.Passed = true // a genuinely healthy drive
 
-	out := identityText(r)
+	// Both column layouts, so neither formatting path can leak a live tag.
+	out := identityText(r, 40) + identityText(r, 120)
 	// The escaped form must appear...
 	if !strings.Contains(out, tview.Escape(hostile)) {
 		t.Fatalf("identityText did not escape the hostile field; got:\n%s", out)

@@ -84,7 +84,7 @@ func (v *testsView) setFocused(focused bool) {
 // self-test is currently executing on the drive.
 func (v *testsView) refresh(r *smart.Report, _ []float64) {
 	if label, pct, running := r.SelfTestProgress(); running {
-		v.showRunning(label, pct)
+		v.showRunning(r, label, pct)
 		return
 	}
 	v.showIdle(r)
@@ -93,18 +93,28 @@ func (v *testsView) refresh(r *smart.Report, _ []float64) {
 // showRunning renders the live progress of an executing self-test. It rebuilds
 // the text every poll (progress advances) but only rewires the layout on the
 // transition into running mode.
-func (v *testsView) showRunning(label string, pct int) {
+func (v *testsView) showRunning(r *smart.Report, label string, pct int) {
 	var b strings.Builder
-	b.WriteString("[::b]Self-test in progress[-:-:-]\n\n")
+	// The heading names the test where the drive gives us a name, rather than
+	// stating "Self-test in progress" above smartctl's own "Self-test routine in
+	// progress" — the same sentence twice, in two voices.
+	//
 	// The bar carries its own percent; ATA's raw status string duplicates it as
-	// "in progress, N% remaining", so suppress any "remaining" label to avoid
-	// showing the same fact twice in contradictory forms. NVMe operation names
-	// and plain ATA strings (no "remaining") are kept.
+	// "in progress, N% remaining", so a "remaining" label is suppressed to avoid
+	// showing one fact twice in contradictory forms. NVMe operation names and
+	// plain ATA strings are kept. label is drive-controlled: escape it (see esc).
+	heading := "Self-test in progress"
 	if label != "" && !strings.Contains(strings.ToLower(label), "remaining") {
-		// label is smartctl's drive-controlled status string; escape markup (see esc).
-		fmt.Fprintf(&b, "%s\n\n", esc(label))
+		heading = esc(label)
 	}
-	fmt.Fprintf(&b, "%s\n\n", progressBar(pct))
+	fmt.Fprintf(&b, "[::b]%s[-:-:-]\n\n", heading)
+	fmt.Fprintf(&b, "%s", progressBar(pct))
+	// "60%" of a thirty-hour extended test is arithmetic the reader should not
+	// have to do; state it where the drive advertises a duration.
+	if left, ok := remainingTime(r, pct); ok {
+		fmt.Fprintf(&b, "%s   about %s left[-]", mutedTag(), formatTestDuration(left))
+	}
+	b.WriteString("\n\n")
 	fmt.Fprintf(&b, "Press %sx[-] to cancel the running test.\n", accentTag())
 	fmt.Fprintf(&b, "Results appear in the %sLogs[-] tab when complete.\n", accentTag())
 	v.info.SetText(b.String())
@@ -157,41 +167,34 @@ func (v *testsView) showIdle(r *smart.Report) {
 // barWidth is the fixed cell count of the self-test progress bar.
 const barWidth = 24
 
-// progressBar renders a fixed-width bar for a 0..100 percentage with the
-// percent label centered inside it. Done cells are █ in the theme's OK colour,
-// remaining cells ░ in the muted colour — the same glyph/role vocabulary as
-// marginBar, so the bar stays visible even under the mono theme (where colour
-// drops out and only the glyph distinction remains). The result is tview markup
-// (dynamic colors are enabled on the running view).
+// progressBar renders a fixed-width bar for a 0..100 percentage, with the
+// percent label AFTER the bar rather than inside it. Writing the digits into
+// the bar replaced fill cells, so a run at 60% rendered as
+// "██████████60%█░░░░░░░░░░" — the bar appeared broken at exactly the point the
+// eye goes to read it. Done cells are █ in the theme's OK colour, remaining
+// cells ░ in the muted colour: the same glyph/role vocabulary as marginBar, so
+// the bar survives the mono theme where colour drops out and only the glyph
+// distinction remains. The result is tview markup (dynamic colors are enabled
+// on the running view).
 func progressBar(pct int) string {
-	if pct < 0 {
-		pct = 0
-	}
-	if pct > 100 {
-		pct = 100
-	}
+	pct = clampPct(pct)
 	filled := pct * barWidth / 100
-	label := fmt.Sprintf("%d%%", pct) // ASCII, so byte len == rune count
-	start := (barWidth - len(label)) / 2
+	return fmt.Sprintf("%s%s[-]%s%s[-]  %d%%",
+		okTag(), strings.Repeat("█", filled),
+		mutedTag(), strings.Repeat("░", barWidth-filled),
+		pct)
+}
 
-	var b strings.Builder
-	for i := range barWidth {
-		if i < filled {
-			b.WriteString(okTag())
-		} else {
-			b.WriteString(mutedTag())
-		}
-		switch {
-		case i >= start && i < start+len(label):
-			b.WriteByte(label[i-start]) // percent digit, in the cell's region colour
-		case i < filled:
-			b.WriteString("█")
-		default:
-			b.WriteString("░")
-		}
-		b.WriteString("[-]")
+// remainingTime estimates how long a self-test has left from its completion
+// percentage and the drive's own estimate of the whole run. A long test can be
+// thirty hours, so "60%" alone leaves the reader to do the arithmetic; ok is
+// false when the drive advertises no estimate (NVMe never does).
+func remainingTime(r *smart.Report, pct int) (time.Duration, bool) {
+	total, ok := r.SelfTestDuration(smart.SelfTestLong)
+	if !ok || pct >= 100 {
+		return 0, false
 	}
-	return b.String()
+	return time.Duration(float64(total) * float64(100-pct) / 100), true
 }
 
 // formatTestDuration renders an estimated self-test runtime compactly.

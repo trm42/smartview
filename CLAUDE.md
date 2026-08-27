@@ -148,6 +148,11 @@ need no mutex.
   enumerated/formatted values don't need it.
 - **Health/severity** lives in `smart/health.go`. ATA pre-fail vs old-age comes
   from the authoritative `flags.prefailure` bit, not attribute-name heuristics.
+  `Overall()` also reads the drive's own error logs (`logSeverity`): an
+  uncorrectable read is logged without necessarily moving any normalized value,
+  so a drive could otherwise present every attribute in range and still have a
+  populated error log. NVMe `num_err_log_entries` is deliberately excluded — it
+  increments for benign reasons, so it is surfaced as a count, not a verdict.
 - **Colour theming** (`theme.go`). All colour flows through a package-level
   `var activeTheme Theme` of semantic roles (`Accent`, `Muted`, `OK`/`Caution`/
   `Failing`, `Inverse`, `SelectionBg/Fg`, `BannerBg`, `BarHealthy`,
@@ -157,11 +162,15 @@ need no mutex.
   `[gray]`/`tcell.ColorRed` literal: use the tag helpers (`accentTag()`,
   `mutedTag()`, `okTag()`, `severityTag()`, `fgbgTag(fg,bg)`) for markup or read
   `activeTheme.X` for a `tcell.Color`. The `dark` theme reproduces the original
-  palette byte-for-byte (pinned by `theme_test.go`) so the default is unchanged;
+  palette (pinned by `theme_test.go`) apart from `ListSecondary`, which moved off
+  green because it equalled `OK` and painted a failing drive's metadata line the
+  healthy colour;
   `electric` (an "elite BBS" palette in blue/cyan/white/gray — bright azure-cyan
   borders, white body text, amber caution + red failing for legibility),
   `phosphor` (the classic monochrome green-CRT palette — *pure green only*, no
-  amber/red; severity reads via green brightness + the `●` glyph + bold),
+  amber/red; severity reads via green intensity + the `●` glyph + bold, and the
+  ramp must escalate — `theme_test.go` pins that Failing is hotter than OK, not
+  paler),
   `amber` (a Hercules monochrome amber-monitor palette — warm amber accent/text
   with a warm amber→orange→red severity ramp), and `mono` are the alternates.
   `--theme NAME` selects at startup, the `T` key cycles live
@@ -174,6 +183,36 @@ need no mutex.
   routes selection through `selectedRowStyle` so list and table selections match.
   Known limit: `mono` drops all our colour (severity and the selected row survive
   via the `●` glyph + bold).
+- **Colour marks exceptions, not membership.** A value renders in the
+  surrounding colour while it is in band and takes caution/failing only when it
+  leaves it (`tempMarkup` in format.go is the model). Green is reserved for the
+  health glyph and for bars, so a healthy fleet is not a wall of green and
+  anything tinted is worth looking at. Corollary pinned by `theme_test.go`: no
+  theme's `ListSecondary` may equal its `OK`, since that line renders on every
+  drive whatever its state.
+- **Charts scale to their data, never to zero** (`chart.go`). `tvxwidgets`'
+  Sparkline divides by the maximum and BarChart offers only `SetMaxValue` while
+  drawing its own axis labels, so neither can take a baseline — a 35–40 °C
+  history rendered as a solid block and 20 per-head resistances of 350–495 as
+  identical bars. `seriesRows` traces a line, `barRows` fills categorical bars,
+  `downsample` reduces by bucket *maximum* so a spike is never averaged away,
+  and the axis line always prints its baseline. The scaling is pure and unit
+  tested; the NVMe percentage gauges still use `tvxwidgets`, where 0–100 is real.
+- **One bar vocabulary**: `pctBarWidth` cells wide, always filling toward
+  healthy. A "consumed" percentage passes through `pctBarUsed` so it drains
+  rather than filling (the fleet shows endurance beside spare, and opposite
+  polarities in one colour read as a contradiction).
+- **One breakpoint at `narrowBreakpoint` (100 columns).** Below it the drive
+  list collapses to a one-row rail (`renderRail`) and the detail takes the full
+  width; `Application.SetBeforeDrawFunc` picks the layout, since width is only
+  known at draw time. Nothing may truncate silently: the hint bar shortens
+  deliberately and offers `?`, and the fleet drops whole columns (measuring the
+  cells it actually renders) and says how many in the legend.
+- **Width-aware panels relayout in `Draw`**, not in `refresh`: farm.go,
+  overview.go and statistics.go each cache `lastWidth` and rebuild when it
+  changes. Long values are pre-wrapped with `hangingIndent` (format.go) so they
+  hang under the value column instead of returning to the left margin, and the
+  widget's own `SetWrap` is disabled so it cannot re-break the result.
 - Protocol branching is via `Report.IsNVMe()` / `IsATA()`; NVMe and ATA render
   different attribute tables and gauges.
 - **Temperature sparkline**: ATA seeds it instantly from
@@ -194,8 +233,13 @@ need no mutex.
 
 `internal/smart/smart_test.go` parses real captured fixtures in
 `internal/smart/testdata/` (WD NVMe, Seagate HDD, Samsung SSD, sparse Apple
-NVMe) plus two hand-crafted error-log variants (`smart-{sda,nvme}-errors.json`)
-that populate the otherwise-empty error tables. `metrics_test.go` covers the
+NVMe) plus three hand-crafted variants: `smart-{sda,nvme}-errors.json` populate
+the otherwise-empty error tables, and `smart-sdc-failing.json` is the only
+unhealthy drive in the set — a pre-fail attribute below threshold (Failing), a
+past threshold dip (Caution), nonzero error counters and a failed SMART
+self-assessment. Every other fixture is healthy, so without it nothing exercises
+the severity path and the yellow/red rendering can only be eyeballed by editing
+data by hand. `metrics_test.go` covers the
 cross-protocol accessors against the same fixtures, pinning which source each
 drive falls through to (the Seagate reads writes from Device Statistics, the
 Samsung from attribute 241 and is therefore approximate) and that absent
