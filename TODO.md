@@ -73,7 +73,7 @@ for drive health via smartmontools.
       implemented — drive selection stays per-session — and is not planned.
 - [x] **Packaging.** Tag-driven GoReleaser pipeline (`.goreleaser.yaml` +
       `.github/workflows/release.yml`): GitHub Release archives + checksums, a
-      Homebrew formula (`trm42/homebrew-tap`), and Linux `.deb`/`.rpm`
+      Homebrew cask (`trm42/homebrew-tap`), and Linux `.deb`/`.rpm`
       (Depends: smartmontools). Build matrix is **darwin/arm64 + linux/amd64
       only** — darwin/amd64 and linux/arm64 are intentionally excluded.
 
