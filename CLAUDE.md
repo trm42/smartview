@@ -157,7 +157,9 @@ need no mutex.
   `[gray]`/`tcell.ColorRed` literal: use the tag helpers (`accentTag()`,
   `mutedTag()`, `okTag()`, `severityTag()`, `fgbgTag(fg,bg)`) for markup or read
   `activeTheme.X` for a `tcell.Color`. The `dark` theme reproduces the original
-  palette byte-for-byte (pinned by `theme_test.go`) so the default is unchanged;
+  palette (pinned by `theme_test.go`) apart from `ListSecondary`, which moved off
+  green because it equalled `OK` and painted a failing drive's metadata line the
+  healthy colour;
   `electric` (an "elite BBS" palette in blue/cyan/white/gray — bright azure-cyan
   borders, white body text, amber caution + red failing for legibility),
   `phosphor` (the classic monochrome green-CRT palette — *pure green only*, no

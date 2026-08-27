@@ -34,7 +34,10 @@ type Theme struct {
 	BarHealthy  tcell.Color // FARM per-head healthy bar
 	ScrollArrow tcell.Color // scroll ▲/▼ arrows
 
-	ListSecondary tcell.Color // drive-list secondary line (device · capacity · temp)
+	// ListSecondary is the drive-list secondary line (device · capacity · temp).
+	// It must never equal OK: that line renders on every drive whatever its
+	// state, so painting it the healthy colour puts green on a failing drive.
+	ListSecondary tcell.Color
 }
 
 // tag renders a colour as a tview markup token (without the surrounding
@@ -95,20 +98,24 @@ func init() { setTheme(dark) }
 // default behaviour is unchanged. theme_test.go pins each role to its legacy
 // colour to guard against silent drift.
 var dark = Theme{
-	Name:          "dark",
-	Accent:        tcell.ColorAqua,
-	Muted:         tcell.ColorGray,
-	OK:            tcell.ColorGreen,
-	Caution:       tcell.ColorYellow,
-	Failing:       tcell.ColorRed,
-	Neutral:       tcell.ColorDefault,
-	Inverse:       tcell.ColorBlack,
-	SelectionBg:   tcell.ColorDarkSlateGray,
-	SelectionFg:   tcell.ColorWhite,
-	BannerBg:      tcell.ColorYellow,
-	BarHealthy:    tcell.ColorTeal,
-	ScrollArrow:   tcell.ColorWhite,
-	ListSecondary: tcell.ColorGreen,
+	Name:        "dark",
+	Accent:      tcell.ColorAqua,
+	Muted:       tcell.ColorGray,
+	OK:          tcell.ColorGreen,
+	Caution:     tcell.ColorYellow,
+	Failing:     tcell.ColorRed,
+	Neutral:     tcell.ColorDefault,
+	Inverse:     tcell.ColorBlack,
+	SelectionBg: tcell.ColorDarkSlateGray,
+	SelectionFg: tcell.ColorWhite,
+	BannerBg:    tcell.ColorYellow,
+	BarHealthy:  tcell.ColorTeal,
+	ScrollArrow: tcell.ColorWhite,
+	// Was ColorGreen, i.e. the same value as OK, which meant a failing drive's
+	// row read as a red dot beside a green device/capacity/temperature line.
+	// Muted grey instead: the health glyph carries severity, the metadata does
+	// not claim any.
+	ListSecondary: tcell.ColorGray,
 }
 
 // mono is a no-colour degrade for high-contrast or colour-averse terminals:
