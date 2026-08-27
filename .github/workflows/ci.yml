@@ -49,3 +49,13 @@ jobs:
           # @latest silently changes what CI installs. Bump deliberately.
           go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
           "$(go env GOPATH)/bin/govulncheck" ./...
+
+  goreleaser-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          # Keep in sync with the version pinned in release.yml.
+          version: '~> v2'
+          args: check

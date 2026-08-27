@@ -101,10 +101,50 @@ run smartview with `sudo`.
 
 ## Install
 
+Pre-built binaries are published for **macOS (Apple Silicon)** and
+**Linux (x86-64)** on every release. smartmontools is a runtime dependency —
+the Homebrew formula and the `.deb`/`.rpm` packages pull it in for you.
+
+### Homebrew (macOS)
+
 ```sh
-git clone <repo-url> smartview
+brew install trm42/tap/smartview
+```
+
+### Linux packages
+
+Download the `.deb` or `.rpm` for your distro from the
+[Releases page](https://github.com/trm42/smartview/releases) and install it:
+
+```sh
+sudo apt install ./smartview_*_linux_amd64.deb   # Debian/Ubuntu
+sudo dnf install ./smartview-*_linux_amd64.rpm    # Fedora/RHEL
+```
+
+### Direct binary download
+
+Grab the matching `tar.gz` from the
+[Releases page](https://github.com/trm42/smartview/releases), extract it, and put
+`smartview` on your `PATH`. Verify it against `checksums.txt`:
+
+```sh
+sha256sum -c checksums.txt --ignore-missing
+```
+
+Make sure smartmontools is installed (see [Requirements](#requirements)).
+
+### From source (developers)
+
+```sh
+git clone https://github.com/trm42/smartview.git
 cd smartview
 go build -o smartview .
+```
+
+Or via the Go toolchain:
+
+```sh
+go install github.com/trm42/smartview@latest
 ```
 
 Or run directly:
