@@ -180,3 +180,31 @@ func TestPctBarsShareOnePolarity(t *testing.T) {
 		t.Errorf("pctBarUsed should print the used percentage, got %q", life)
 	}
 }
+
+// TestShortDeviceKeepsDistinguishingPart guards a display choice: a macOS
+// IOService path is long and what tells two of them apart is a trailing path
+// component, not a character offset. Keeping the last N characters cut
+// mid-word and made every Apple drive render alike.
+func TestShortDeviceKeepsDistinguishingPart(t *testing.T) {
+	const apple = "IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@9600000/" +
+		"AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1"
+	got := shortDevice(apple, 30)
+	if !strings.HasSuffix(got, "NS_01@1") {
+		t.Errorf("shortDevice = %q, want it to end at a whole path component", got)
+	}
+	if len([]rune(got)) > 30 {
+		t.Errorf("shortDevice = %q, %d runes, want <= 30", got, len([]rune(got)))
+	}
+	// A short name is returned untouched.
+	if got := shortDevice("/dev/sda", 30); got != "/dev/sda" {
+		t.Errorf("short name should pass through, got %q", got)
+	}
+	// A narrow budget still yields something identifying rather than an ellipsis.
+	if got := shortDevice(apple, 11); !strings.Contains(got, "NS_01@1") {
+		t.Errorf("narrow shortDevice = %q, want the namespace component", got)
+	}
+	// A name with no separators falls back to a tail trim.
+	if got := shortDevice(strings.Repeat("x", 50), 10); len([]rune(got)) != 10 {
+		t.Errorf("separator-less name = %q, want 10 runes", got)
+	}
+}

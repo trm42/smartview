@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -638,11 +639,42 @@ func (a *App) animateSpinner(ctx context.Context) {
 
 // shortName trims an over-long device name for display.
 func shortName(d smart.Device) string {
-	n := d.Name
-	if len(n) > 30 {
-		return "…" + n[len(n)-29:]
+	return shortDevice(d.Name, listDeviceWidth)
+}
+
+// listDeviceWidth is the display budget for a device name in the drive list.
+const listDeviceWidth = 30
+
+// shortDevice trims a device name to at most n runes for display. Device names
+// are round-tripped verbatim everywhere else (see CLAUDE.md); this is display
+// only, and the full name is shown on the Overview.
+//
+// A macOS IOService path is long and its distinguishing part is a path
+// component, not a character offset, so keeping the last n characters
+// ("…pleANS3CGv2Controller/NS_01@1") cut mid-word and made every Apple drive
+// look alike. Prefer whole trailing components, adding as many as fit.
+func shortDevice(name string, n int) string {
+	if len([]rune(name)) <= n {
+		return name
 	}
-	return n
+	if parts := strings.Split(name, "/"); len(parts) > 1 {
+		out := ""
+		for i := len(parts) - 1; i >= 0; i-- {
+			cand := parts[i]
+			if out != "" {
+				cand += "/" + out
+			}
+			if len([]rune(cand))+2 > n { // +2 for the leading "…/"
+				break
+			}
+			out = cand
+		}
+		if out != "" {
+			return "…/" + out
+		}
+	}
+	r := []rune(name)
+	return "…" + string(r[len(r)-(n-1):])
 }
 
 // pushModal shows a modal overlay, suspending the normal key-handler logic.

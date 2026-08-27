@@ -551,9 +551,21 @@ func nvmeRows(h *smart.NVMeHealth) []attrKV {
 
 // headerCell builds a non-selectable bold header cell.
 func headerCell(s string) *tview.TableCell {
-	return tview.NewTableCell(" " + s + " ").
+	return headerCellAligned(s, tview.AlignLeft)
+}
+
+// headerCellAligned is headerCell with an explicit alignment. A right-aligned
+// header takes a leading pad only, matching the numeric cells beneath it — see
+// the note in fleetView.setRow about what padding both sides costs.
+func headerCellAligned(s string, align int) *tview.TableCell {
+	text := " " + s + " "
+	if align == tview.AlignRight {
+		text = " " + s
+	}
+	return tview.NewTableCell(text).
 		SetTextColor(activeTheme.Accent).
 		SetAttributes(tcell.AttrBold).
+		SetAlign(align).
 		SetSelectable(false)
 }
 

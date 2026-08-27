@@ -129,7 +129,7 @@ func healthSection() fleetSection {
 	return fleetSection{
 		id:      "health",
 		title:   "Health & errors",
-		columns: []string{"Verdict", "Realloc", "Pending", "Uncorr", "CRC", "Media", "Err log", "Unsafe"},
+		columns: []string{"State", "Realloc", "Pending", "Uncorr", "CRC", "Media", "Err log", "Unsafe"},
 		available: func(rows []fleetRow) bool {
 			return anyRow(rows, func(*smart.Report) bool { return true })
 		},

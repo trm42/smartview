@@ -106,6 +106,9 @@ func identityText(r *smart.Report) string {
 
 	// Identity. Free-text fields are drive-controlled, so escape markup (see esc).
 	gap()
+	// The full device name, verbatim. Every other surface trims it for display
+	// (see shortDevice), so this is where the untrimmed name lives.
+	row("Device", esc(r.Device.Name))
 	row("Model", orDash(esc(r.ModelName)))
 	if r.ModelFamily != "" {
 		row("Family", esc(r.ModelFamily))

@@ -215,9 +215,26 @@ func (v *fleetView) renderTable(sec fleetSection) {
 	v.table.SetTitle(fmt.Sprintf(" Fleet — %d %s · sorted by %s  %s[s][-] ",
 		len(v.ordered), drives, sortLabel, accentTag()))
 
-	headers := append([]string{"Drive", "Model"}, sec.columns...)
+	headers := append(append([]string{}, fleetIdentityColumns...), sec.columns...)
+	// Headers adopt the alignment of the cells below them, so a right-aligned
+	// counter column and its header agree on padding and neither is clipped.
+	// Alignment is a property of the section's cells, so read it off the first
+	// row that has a report; a fleet still scanning gets the left-aligned default.
+	var aligns []int
+	for _, row := range v.ordered {
+		if row.rep != nil {
+			for _, cl := range sec.cells(row) {
+				aligns = append(aligns, cl.align)
+			}
+			break
+		}
+	}
 	for c, h := range headers {
-		v.table.SetCell(0, c, headerCell(h))
+		align := tview.AlignLeft
+		if i := c - len(fleetIdentityColumns); i >= 0 && i < len(aligns) {
+			align = aligns[i]
+		}
+		v.table.SetCell(0, c, headerCellAligned(h, align))
 	}
 
 	for i, row := range v.ordered {
@@ -232,8 +249,9 @@ func (v *fleetView) setRow(rowIdx int, row fleetRow, sec fleetSection, n int) {
 	var cells []fleetCell
 	if row.rep == nil {
 		cells = []fleetCell{
-			{text: mutedTag() + "●[-] " + esc(shortName(row.dev)), color: activeTheme.Muted},
+			{text: mutedTag() + "●[-] " + esc(fleetDevice(row.dev)), color: activeTheme.Muted},
 			{text: "scanning…", color: activeTheme.Muted},
+			{text: dash, color: activeTheme.Muted},
 		}
 		for range n {
 			cells = append(cells, numCell(dash))
@@ -247,9 +265,14 @@ func (v *fleetView) setRow(rowIdx int, row fleetRow, sec fleetSection, n int) {
 			model = shortName(row.dev)
 		}
 		cells = append([]fleetCell{
-			{text: healthGlyph(row.rep.Overall()) + " " + esc(shortName(row.dev)),
+			{text: healthGlyph(row.rep.Overall()) + " " + esc(fleetDevice(row.dev)),
 				color: activeTheme.Neutral},
 			{text: esc(model), color: activeTheme.Neutral},
+			// Serial disambiguates: a fleet routinely holds two of the same model
+			// (this one has two WD_BLACK SN770 2TB and two ST22000NT001), and
+			// telling drives apart is the whole job of a comparison view.
+			{text: esc(truncateRunes(orDash(row.rep.SerialNumber), fleetSerialWidth)),
+				color: activeTheme.Muted},
 		}, sec.cells(row)...)
 	}
 
@@ -257,7 +280,15 @@ func (v *fleetView) setRow(rowIdx int, row fleetRow, sec fleetSection, n int) {
 	// metric columns adjacent rather than pushed to the far edge by a wide
 	// identity column.
 	for c, cl := range cells {
-		v.table.SetCell(rowIdx, c, tview.NewTableCell(" "+cl.text+" ").
+		// Right-aligned (numeric) cells take a leading pad only. tview already
+		// puts a space between columns, so padding both sides cost three spaces
+		// per gutter — across eight counter columns that is most of the width
+		// that used to push "Errors" and "Unsafe" off a 120-column terminal.
+		text := " " + cl.text + " "
+		if cl.align == tview.AlignRight {
+			text = " " + cl.text
+		}
+		v.table.SetCell(rowIdx, c, tview.NewTableCell(text).
 			SetTextColor(cl.color).
 			SetAlign(cl.align).
 			SetSelectedStyle(selectedRowStyle(cl.color)))
@@ -322,9 +353,32 @@ func (v *fleetView) stepSection(delta int) bool {
 // sectionCount is the number of selectable sections, for the "1-N section" hint.
 func (v *fleetView) sectionCount() int { return len(v.shown) }
 
+// fleetIdentityColumns are the columns every section carries: which drive it is,
+// what it is, and — since a fleet routinely holds two of the same model — which
+// one of them this row is.
+var fleetIdentityColumns = []string{"Drive", "Model", "Serial"}
+
 // fleetModelWidth bounds the model column so a long model name cannot squeeze
 // the comparison columns off a narrow terminal.
-const fleetModelWidth = 22
+const fleetModelWidth = 20
+
+// fleetDeviceWidth bounds the device column for the same reason, and it is the
+// one that actually bit: a single macOS IOService path is 150+ characters, and
+// shortName's 30-character budget set the Drive column width for the whole
+// table. That alone pushed the Health section's last two counters off a
+// 120-column terminal — "Err log" truncated to "E…" and "Unsafe" dropped with no
+// cue at all. Eleven characters covers every /dev/... name in practice; the full
+// name is on the drive's own Overview.
+const fleetDeviceWidth = 11
+
+// fleetSerialWidth bounds the serial column, which is long on some drives and
+// only needs to be long enough to tell two of the same model apart.
+const fleetSerialWidth = 10
+
+// fleetDevice renders a device name for the comparison table's Drive column.
+func fleetDevice(d smart.Device) string {
+	return shortDevice(d.Name, fleetDeviceWidth)
+}
 
 // truncateRunes shortens s to at most n runes, marking the cut with an ellipsis.
 // Applied before esc, since truncating already-escaped text could sever a tag.
