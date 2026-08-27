@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 )
 
 // This file is the dev-only fixture data source. Built with `-tags dev`, it
@@ -60,7 +60,7 @@ func UseFixtures(dir string) error {
 	if err != nil {
 		return fmt.Errorf("scan fixture dir %q: %w", dir, err)
 	}
-	sort.Strings(files)
+	slices.Sort(files)
 
 	byName := make(map[string]*Report)
 	var reports []*Report
