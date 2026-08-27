@@ -52,7 +52,9 @@ func (v *overviewView) refresh(r *smart.Report, tempHistory []float64) {
 	v.AddItem(mid, 0, 1, true)
 
 	if sl := buildTempSparkline(r, tempHistory); sl != nil {
-		v.AddItem(sl, 8, 0, false)
+		// One more row than the old sparkline: the axis line and its caption are
+		// part of the chart now, so the plot itself keeps its height.
+		v.AddItem(sl, 10, 0, false)
 	}
 }
 
@@ -283,33 +285,27 @@ func spareSeverity(h *smart.NVMeHealth) smart.Severity {
 
 // buildTempSparkline returns a temperature trend widget. ATA drives seed it from
 // the on-device SCT history (instant); NVMe drives use the runtime series.
+//
+// It uses our own rangeChart rather than tvxwidgets.Sparkline: that widget
+// scales against zero, so this drive's real 35-40°C history drew as a solid
+// block of █ carrying no information at all (see chart.go).
 func buildTempSparkline(r *smart.Report, runtime []float64) tview.Primitive {
 	data := temperatureSeries(r, runtime)
 	if len(data) < 2 {
 		return nil
 	}
 	now := int(data[len(data)-1])
-	lo, hi := now, now
-	for _, v := range data {
-		iv := int(v)
-		if iv < lo {
-			lo = iv
-		}
-		if iv > hi {
-			hi = iv
-		}
-	}
+	lo, hi, _ := dataRange(data)
 
-	sl := tvxwidgets.NewSparkline()
-	sl.SetBorder(true)
-	// Title with live values so the trend is readable, and colour by the current
-	// temperature rather than the drive-wide verdict — a hot-but-otherwise-OK
-	// drive should not show a calm green line.
-	sl.SetTitle(fmt.Sprintf(" Temperature trend — now %d°C · min %d · max %d ", now, lo, hi))
-	sl.SetDataTitle("°C")
-	sl.SetData(data)
-	sl.SetLineColor(severityColor(tempSeverity(now)))
-	return sl
+	c := newRangeChart().
+		setSeries(data, "°C", fmt.Sprintf("%d samples · oldest left, now right", len(data))).
+		// Colour by the current temperature rather than the drive-wide verdict:
+		// a hot-but-otherwise-OK drive should not show a calm green line.
+		setColor(severityColor(tempSeverity(now)))
+	c.SetBorder(true)
+	c.SetBorderPadding(0, 0, uiGutter, uiGutter)
+	c.SetTitle(fmt.Sprintf(" Temperature — now %d°C · range %.0f–%.0f°C ", now, lo, hi))
+	return c
 }
 
 // temperatureSeries picks the best available temperature history for the drive.

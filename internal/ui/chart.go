@@ -156,12 +156,24 @@ func barRows(values []float64, barWidth, rows int, lo, hi float64) []string {
 // axisLabels returns the label for each chart row, top first: the value at the
 // TOP of that row's band, so a mark in a row means "at most this". The baseline
 // (lo) is labelled separately, on the axis line beneath the plot.
+//
+// Labels are integers, so a narrow range over many rows rounds neighbouring
+// bands to the same number (35-40 over six rows yields 40 39 38 38 37 36). A
+// repeated label reads as a mistake, so only the first row of each value is
+// labelled and the rest are blank — the axis stays honest and less noisy.
 func axisLabels(rows int, lo, hi float64) []string {
 	lo, hi = padRange(lo, hi)
 	out := make([]string, rows)
 	step := (hi - lo) / float64(rows)
+	prev := ""
 	for r := range rows {
-		out[r] = fmt.Sprintf("%.0f", hi-step*float64(r))
+		lbl := fmt.Sprintf("%.0f", hi-step*float64(r))
+		if lbl == prev {
+			lbl = ""
+		} else {
+			prev = lbl
+		}
+		out[r] = lbl
 	}
 	return out
 }
@@ -231,7 +243,7 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 	for _, l := range labels {
 		gutter = max(gutter, len(l))
 	}
-	gutter += 2 // a space and the axis glyph
+	gutter += 3 // a space either side of the label, then the axis glyph
 	plotW := w - gutter
 	if plotW <= 0 {
 		return
@@ -246,7 +258,7 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 
 	muted := activeTheme.Muted
 	for r, line := range rows {
-		lbl := fmt.Sprintf("%*s ", gutter-1, labels[r])
+		lbl := fmt.Sprintf("%*s ", gutter-2, labels[r])
 		tview.Print(screen, esc(lbl), x, y+r, gutter, tview.AlignLeft, muted)
 		tview.Print(screen, "┤", x+gutter-1, y+r, 1, tview.AlignLeft, activeTheme.Accent)
 		if len(line) > plotW {
@@ -257,7 +269,7 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 
 	// The axis line carries the baseline value, so it is always obvious that the
 	// plot does not start at zero.
-	base := fmt.Sprintf("%*s ", gutter-1, fmt.Sprintf("%.0f", lo))
+	base := fmt.Sprintf("%*s ", gutter-2, fmt.Sprintf("%.0f", lo))
 	tview.Print(screen, esc(base), x, y+plotRows, gutter, tview.AlignLeft, muted)
 	tview.Print(screen, "└"+strings.Repeat("─", plotW-1), x+gutter-1, y+plotRows, plotW, tview.AlignLeft, muted)
 	if c.caption != "" {

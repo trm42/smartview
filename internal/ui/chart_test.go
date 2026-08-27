@@ -135,10 +135,31 @@ func TestDataRange(t *testing.T) {
 func TestAxisLabelsDescendFromMax(t *testing.T) {
 	got := axisLabels(4, 35, 40)
 	want := []string{"40", "39", "38", "36"}
+
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("axisLabels = %v, want %v", got, want)
 			break
 		}
+	}
+}
+
+// TestAxisLabelsDeduplicate: integer labels repeat when the range is narrow
+// relative to the row count, and a repeated number reads as a rendering fault.
+// Only the first row of each value is labelled.
+func TestAxisLabelsDeduplicate(t *testing.T) {
+	got := axisLabels(6, 35, 40)
+	seen := map[string]bool{}
+	for _, l := range got {
+		if l == "" {
+			continue
+		}
+		if seen[l] {
+			t.Errorf("label %q repeats in %v", l, got)
+		}
+		seen[l] = true
+	}
+	if got[0] != "40" {
+		t.Errorf("top label = %q, want the maximum 40", got[0])
 	}
 }
