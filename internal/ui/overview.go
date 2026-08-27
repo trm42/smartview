@@ -258,8 +258,8 @@ func verdictEvidence(r *smart.Report) string {
 		if bad == 0 {
 			parts = append(parts, fmt.Sprintf("%d attributes in range", len(r.ATAAttributes.Table)))
 		} else {
-			parts = append(parts, fmt.Sprintf("%s of %d attributes need attention",
-				plural(bad, "attribute", ""), len(r.ATAAttributes.Table)))
+			parts = append(parts, fmt.Sprintf("%d of %d attributes need attention",
+				bad, len(r.ATAAttributes.Table)))
 		}
 	}
 	if e := r.ErrorCounts(); e.ErrorLogEntries != nil {
