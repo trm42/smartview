@@ -305,3 +305,67 @@ func driveKind(r *smart.Report) string {
 		return r.Device.Protocol
 	}
 }
+
+// hangingIndent re-wraps any line too long for innerW so the overflow hangs
+// under the value column instead of returning to the left margin. tview's own
+// wrapping breaks a value back to column 0, which splits a two-column key/value
+// grid mid-value: "15.4 TB  (30003609491" in the value column and "sectors)"
+// against the left border. Callers disable tview's wrapping and pre-wrap here.
+func hangingIndent(text string, valueCol, innerW int) string {
+	valueW := innerW - valueCol
+	if valueW <= 8 || text == "" {
+		return text
+	}
+	indent := strings.Repeat(" ", valueCol)
+	var out strings.Builder
+	for i, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		if i > 0 {
+			out.WriteByte('\n')
+		}
+		if tview.TaggedStringWidth(line) <= innerW || len(line) <= valueCol {
+			out.WriteString(line)
+			continue
+		}
+		out.WriteString(line[:valueCol])
+		col := 0
+		for w, word := range strings.Fields(line[valueCol:]) {
+			width := tview.TaggedStringWidth(word)
+			switch {
+			case w == 0:
+			case col+1+width <= valueW:
+				out.WriteString(" ")
+				col++
+			default:
+				out.WriteString("\n" + indent)
+				col = 0
+			}
+			// A single token can be longer than the column — a macOS IOService
+			// path is 150+ characters with no spaces in it — so break it rather
+			// than emit a line the caller's SetWrap(false) will simply cut.
+			for _, chunk := range splitEvery(word, valueW) {
+				if col > 0 && col+len(chunk) > valueW {
+					out.WriteString("\n" + indent)
+					col = 0
+				}
+				out.WriteString(chunk)
+				col += tview.TaggedStringWidth(chunk)
+			}
+		}
+	}
+	return out.String()
+}
+
+// splitEvery breaks s into runs of at most n runes, returning it whole when it
+// already fits.
+func splitEvery(s string, n int) []string {
+	r := []rune(s)
+	if n <= 0 || len(r) <= n {
+		return []string{s}
+	}
+	var out []string
+	for len(r) > n {
+		out = append(out, string(r[:n]))
+		r = r[n:]
+	}
+	return append(out, string(r))
+}

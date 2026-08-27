@@ -35,7 +35,7 @@ type overviewView struct {
 // series used for NVMe drives, which lack an on-device temperature log.
 func newOverviewView(r *smart.Report, tempHistory []float64) *overviewView {
 	id := newScrollTextView()
-	id.SetDynamicColors(true).SetScrollable(true)
+	id.SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 	id.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Drive ")
 	v := &overviewView{
 		Flex:      tview.NewFlex().SetDirection(tview.FlexRow),
@@ -64,7 +64,7 @@ func (v *overviewView) refresh(r *smart.Report, tempHistory []float64) {
 // fixed ten-row chart.
 func (v *overviewView) relayout(w, h int) {
 	row, col := v.identity.GetScrollOffset()
-	text := identityText(v.rep, w)
+	text := hangingIndent(identityText(v.rep, w), identityValueCol, w)
 	v.identity.SetText(text)
 	v.identity.ScrollTo(row, col)
 
@@ -174,6 +174,9 @@ func identityText(r *smart.Report, cols int) string {
 // identityColumnWidth is the width one key/value column needs: a 14-cell key
 // plus room for a value. Below two of these the panel runs a single column.
 const identityColumnWidth = 40
+
+// identityValueCol is the column values start in: a 14-cell key plus a space.
+const identityValueCol = 15
 
 // writeFields lays out one section's fields in as many columns as fit. A field
 // whose value is too long for a column (a sector-size line runs to 45 cells)
@@ -286,9 +289,6 @@ func identitySections(r *smart.Report) []identitySection {
 	add := func(sec *identitySection, k, v string) {
 		sec.fields = append(sec.fields, identityField{k, v})
 	}
-	// The full device name, verbatim: every other surface trims it for display
-	// (see shortDevice), so this is where the untrimmed name lives.
-	add(&id, "Device", esc(r.Device.Name))
 	add(&id, "Model", orDash(esc(r.ModelName)))
 	if r.ModelFamily != "" {
 		add(&id, "Family", esc(r.ModelFamily))
@@ -311,6 +311,11 @@ func identitySections(r *smart.Report) []identitySection {
 	if r.NVMePCIVendor != nil {
 		add(&id, "PCI vendor", fmt.Sprintf("0x%04x", r.NVMePCIVendor.ID))
 	}
+	// The full device name, verbatim: every other surface trims it for display
+	// (see shortDevice), so this is where the untrimmed name lives. It goes last
+	// because a macOS IOService path is 150+ characters and wraps to several
+	// lines, which would otherwise push the whole section down.
+	add(&id, "Device", esc(r.Device.Name))
 
 	geom := identitySection{title: "Capacity & geometry"}
 	add(&geom, "Capacity", capacityString(r))

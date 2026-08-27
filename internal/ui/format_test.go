@@ -208,3 +208,25 @@ func TestShortDeviceKeepsDistinguishingPart(t *testing.T) {
 		t.Errorf("separator-less name = %q, want 10 runes", got)
 	}
 }
+
+// TestHangingIndentBreaksLongTokens: a macOS IOService path is 150+ characters
+// with no spaces, and callers disable tview's wrapping, so an unbreakable token
+// has to be split here or it is simply cut at the border.
+func TestHangingIndentBreaksLongTokens(t *testing.T) {
+	const path = "IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@9600000/" +
+		"AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1"
+	line := "Device         " + path
+	got := hangingIndent(line, 15, 40)
+	lines := strings.Split(got, "\n")
+	if len(lines) < 4 {
+		t.Fatalf("a 150-character token should break across lines, got %d:\n%s", len(lines), got)
+	}
+	for _, l := range lines {
+		if n := len([]rune(l)); n > 40 {
+			t.Errorf("line is %d runes, wider than the pane: %q", n, l)
+		}
+	}
+	if strings.Join(strings.Fields(strings.Join(lines, "")), "") != "Device"+path {
+		t.Error("breaking the token lost or reordered part of it")
+	}
+}

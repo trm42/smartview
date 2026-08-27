@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/rivo/tview"
 
 	"github.com/trm42/smartview/internal/smart"
 )
@@ -54,53 +53,11 @@ func (v *statisticsView) refresh(r *smart.Report, _ []float64) {
 func (v *statisticsView) Draw(screen tcell.Screen) {
 	if _, _, w, _ := v.GetInnerRect(); w != v.lastWidth {
 		row, col := v.GetScrollOffset()
-		v.SetText(hangingIndentStats(v.raw, w))
+		v.SetText(hangingIndent(v.raw, statValueCol, w))
 		v.ScrollTo(row, col)
 		v.lastWidth = w
 	}
 	v.scrollTextView.Draw(screen)
-}
-
-// statValueCol is the column the values start in: nestIndent plus the
-// statLabelWidth label plus a space.
-const statValueCol = len(nestIndent) + statLabelWidth + 1
-
-// hangingIndentStats re-wraps any line too long for innerW so the overflow hangs
-// under the value column instead of returning to the left margin. tview's own
-// wrapping is left enabled for the odd line this cannot split.
-func hangingIndentStats(text string, innerW int) string {
-	valueW := innerW - statValueCol
-	if valueW <= 8 || text == "" {
-		return text
-	}
-	indent := strings.Repeat(" ", statValueCol)
-	var out strings.Builder
-	for i, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
-		if i > 0 {
-			out.WriteByte('\n')
-		}
-		if tview.TaggedStringWidth(line) <= innerW || len(line) <= statValueCol {
-			out.WriteString(line)
-			continue
-		}
-		out.WriteString(line[:statValueCol])
-		col := 0
-		for w, word := range strings.Fields(line[statValueCol:]) {
-			width := tview.TaggedStringWidth(word)
-			switch {
-			case w == 0:
-			case col+1+width <= valueW:
-				out.WriteString(" ")
-				col++
-			default:
-				out.WriteString("\n" + indent)
-				col = 0
-			}
-			out.WriteString(word)
-			col += width
-		}
-	}
-	return out.String()
 }
 
 // buildStatisticsText assembles the Statistics tab body: one bold-headed section
@@ -135,6 +92,10 @@ func buildStatisticsText(r *smart.Report) string {
 	}
 	return b.String()
 }
+
+// statValueCol is the column the values start in: nestIndent plus the
+// statLabelWidth label plus a space.
+const statValueCol = len(nestIndent) + statLabelWidth + 1
 
 // statLabelWidth is the counter-name column. smartctl's names are long
 // ("Number of Realloc. Candidate Logical Sectors" is 44), and this is the width

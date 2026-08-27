@@ -930,17 +930,22 @@ func (a *App) confirm(text, yesLabel string, onYes func()) {
 // to essentials and points here, so nothing is merely hidden.
 func (a *App) showKeys() {
 	modal := tview.NewModal().
+		// One binding per line: tview.Modal sizes itself to the text and wraps,
+		// and a two-column line splits across the wrap into nonsense.
 		SetText("Keys\n\n" +
-			"↑/↓      select drive\n" +
-			"←/→      previous / next tab\n" +
-			"1-9      jump to tab\n" +
-			"Tab      move focus between panes\n" +
-			"t        Tests tab      s/f  sort / filter attributes\n" +
-			"c        fleet comparison       Esc  back\n" +
-			"Enter    open drive (in the fleet)\n" +
-			"r        refresh now    +/-  refresh interval\n" +
-			"T        cycle colour theme\n" +
-			"q        quit").
+			"↑/↓    select drive\n" +
+			"←/→    previous / next tab\n" +
+			"1-9    jump to tab\n" +
+			"Tab    move focus\n" +
+			"t      Tests tab\n" +
+			"s / f  sort / filter attributes\n" +
+			"c      fleet comparison\n" +
+			"Enter  open drive from the fleet\n" +
+			"Esc    back\n" +
+			"r      refresh now\n" +
+			"+ / -  refresh interval\n" +
+			"T      cycle colour theme\n" +
+			"q      quit").
 		AddButtons([]string{"Close"}).
 		SetDoneFunc(func(int, string) { a.popModal() })
 	a.pushModal(modal)
