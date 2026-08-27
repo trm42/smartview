@@ -175,7 +175,7 @@ func progressBar(pct int) string {
 	start := (barWidth - len(label)) / 2
 
 	var b strings.Builder
-	for i := 0; i < barWidth; i++ {
+	for i := range barWidth {
 		if i < filled {
 			b.WriteString(okTag())
 		} else {

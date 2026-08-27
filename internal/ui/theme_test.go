@@ -138,7 +138,7 @@ func TestNextThemeNameWraps(t *testing.T) {
 	// Walk the whole cycle and confirm it returns to the start.
 	start := themeCycle[0]
 	cur := start
-	for i := 0; i < len(themeCycle); i++ {
+	for range themeCycle {
 		cur = nextThemeName(cur)
 	}
 	if cur != start {
