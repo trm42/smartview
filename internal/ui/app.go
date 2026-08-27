@@ -568,8 +568,10 @@ func (a *App) listRow(d smart.Device) (string, string) {
 		model = esc(shortName(d))
 	}
 	main := fmt.Sprintf("%s %s", healthGlyph(rep.Overall()), model)
+	// Temperature is last on the line because tempCell's tint ends with a style
+	// reset, which would otherwise drop the secondary colour for what follows.
 	sec := fmt.Sprintf("%s · %s · %s",
-		esc(shortName(d)), capacityString(rep), tempString(rep))
+		esc(shortName(d)), capacityString(rep), tempCell(rep))
 	return main, sec
 }
 

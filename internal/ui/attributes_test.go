@@ -177,3 +177,27 @@ func eqInts(a, b []int) bool {
 	}
 	return true
 }
+
+// TestNVMeSensorsCarrySeverity guards a real blind spot: the WD fixture reports
+// sensors at 67°C and 43°C while its composite temperature reads a comfortable
+// 46°C, and the Sensors row used to render as plain text — hiding the only
+// place the hot sensor appears.
+func TestNVMeSensorsCarrySeverity(t *testing.T) {
+	h := &smart.NVMeHealth{TemperatureSensors: []int{67, 43}}
+	var row attrKV
+	found := false
+	for _, r := range nvmeRows(h) {
+		if r.k == "Sensors" {
+			row, found = r, true
+		}
+	}
+	if !found {
+		t.Fatal("no Sensors row")
+	}
+	if row.sev != smart.SeverityFailing {
+		t.Errorf("row severity = %v, want Failing (hottest sensor is 67°C)", row.sev)
+	}
+	if !strings.Contains(row.v, "67°C") || !strings.Contains(row.v, "43°C") {
+		t.Errorf("both sensors should still be listed, got %q", row.v)
+	}
+}

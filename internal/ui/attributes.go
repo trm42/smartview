@@ -448,11 +448,17 @@ func nvmeRows(h *smart.NVMeHealth) []attrKV {
 	}
 	add("Crit temp time", humanMinutes(h.CriticalCompTime), critSevTemp)
 	if len(h.TemperatureSensors) > 0 {
+		// Grade each sensor on its own reading and the row on the hottest of
+		// them. The composite temperature on the Overview can sit comfortably in
+		// range while one sensor is well past the failing threshold, so printing
+		// these as plain text hid the only place that shows up.
 		parts := make([]string, len(h.TemperatureSensors))
+		rowSev := smart.SeverityOK
 		for i, t := range h.TemperatureSensors {
-			parts[i] = fmt.Sprintf("%d°C", t)
+			parts[i] = tempMarkup(t)
+			rowSev = max(rowSev, tempSeverity(t))
 		}
-		add("Sensors", strings.Join(parts, ", "), smart.SeverityOK)
+		add("Sensors", strings.Join(parts, ", "), rowSev)
 	}
 	return rows
 }

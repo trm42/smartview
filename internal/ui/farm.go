@@ -266,8 +266,10 @@ func writeFarmErrors(b *strings.Builder, f *smart.FARM) {
 // writeFarmEnvironment renders temperatures and power-rail telemetry.
 func writeFarmEnvironment(b *strings.Builder, f *smart.FARM) {
 	e := f.Environment
-	farmRow(b, "Temp now", fmt.Sprintf("%d°C", e.CurrentTemp))
-	farmRow(b, "Temp avg", fmt.Sprintf("%d°C", e.AverageTemp))
+	// FARM is the one tab where an out-of-spec environment would first show, so
+	// the readings carry severity rather than rendering as plain telemetry.
+	farmRow(b, "Temp now", tempMarkup(e.CurrentTemp))
+	farmRow(b, "Temp avg", tempMarkup(e.AverageTemp))
 	farmRow(b, "Temp range", fmt.Sprintf("%d–%d°C (life), spec %d–%d°C",
 		e.LowestTemp, e.HighestTemp, e.MinTemp, e.MaxTemp))
 	farmRow(b, "12V rail", fmt.Sprintf("%s now  (%s–%s)",

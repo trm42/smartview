@@ -136,3 +136,18 @@ func TestAttrTextColor(t *testing.T) {
 		t.Error("failing should be red")
 	}
 }
+
+// TestTempMarkupOnlyTintsOutOfBand pins the "colour marks exceptions" rule: an
+// in-band reading keeps the caller's colour so a healthy fleet is not a wall of
+// green, and only a caution/failing reading is tinted.
+func TestTempMarkupOnlyTintsOutOfBand(t *testing.T) {
+	if got := tempMarkup(37); got != "37°C" {
+		t.Errorf("in-band temp should carry no markup, got %q", got)
+	}
+	for _, c := range []int{55, 67} {
+		got := tempMarkup(c)
+		if !strings.Contains(got, "[") || !strings.Contains(got, "°C") {
+			t.Errorf("out-of-band temp %d should be tinted, got %q", c, got)
+		}
+	}
+}

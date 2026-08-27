@@ -244,6 +244,30 @@ func tempString(r *smart.Report) string {
 	return dash
 }
 
+// tempMarkup formats a temperature and tints it once it leaves the OK band.
+// Colour marks exceptions rather than membership: an in-band reading keeps the
+// surrounding text colour, so a healthy fleet is not a wall of green and a hot
+// drive is the only thing tinted. Callers must place it where a trailing style
+// reset is harmless — the closing tag returns to the widget default, not to the
+// caller's colour.
+func tempMarkup(celsius int) string {
+	s := fmt.Sprintf("%d°C", celsius)
+	sev := tempSeverity(celsius)
+	if sev == smart.SeverityOK {
+		return s
+	}
+	return fmt.Sprintf("[%s::b]%s[-:-:-]", severityTag(sev), s)
+}
+
+// tempCell is tempMarkup for a whole report, falling back to the dash when the
+// drive reports no temperature.
+func tempCell(r *smart.Report) string {
+	if t, ok := r.CurrentTemp(); ok {
+		return tempMarkup(t)
+	}
+	return dash
+}
+
 // driveKind classifies the drive for the identity line (SSD vs HDD vs NVMe).
 func driveKind(r *smart.Report) string {
 	switch {
