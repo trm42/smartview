@@ -71,14 +71,31 @@ func marginBar(value, worst, thresh int, sev smart.Severity) string {
 // numbers.
 const pctBarWidth = 8
 
-// pctBar renders a plain percentage as a severity-coloured bar followed by the
-// value — the fleet view's compact form for life-used and spare. marginBar is
-// the sibling for normalized SMART values, which need a threshold-relative
-// scale rather than a straight 0-100 one.
+// pctBar renders a percentage as a severity-coloured bar followed by the value —
+// the fleet view's compact form for endurance and spare. marginBar is the
+// sibling for normalized SMART values, which need a threshold-relative scale
+// rather than a straight 0-100 one.
+//
+// A FULLER BAR ALWAYS MEANS HEALTHIER. The fleet shows endurance and spare side
+// by side, and rendering "life used" directly gave the two columns opposite
+// polarity in the same colour: an empty bar (3% used, good) beside a full one
+// (100% spare, good) reads as a contradiction until you go back to the headers.
+// Callers with a "consumed" percentage pass the remaining share instead — see
+// pctBarUsed.
 func pctBar(pct int, sev smart.Severity) string {
 	filled := (clampPct(pct)*pctBarWidth + 50) / 100
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", pctBarWidth-filled)
 	return fmt.Sprintf("[%s]%s[-] %d%%", severityTag(sev), bar, pct)
+}
+
+// pctBarUsed renders a CONSUMED percentage: the bar shows what is left, so it
+// drains as the drive wears and matches the polarity of every other bar, while
+// the number stays the "used" figure the SMART field actually reports.
+func pctBarUsed(pct int, sev smart.Severity) string {
+	used := clampPct(pct)
+	filled := ((100-used)*pctBarWidth + 50) / 100
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", pctBarWidth-filled)
+	return fmt.Sprintf("[%s]%s[-] %d%%", severityTag(sev), bar, used)
 }
 
 // borderColor returns the accent border colour for a pane that holds keyboard

@@ -202,7 +202,7 @@ func enduranceSection() fleetSection {
 	return fleetSection{
 		id:      "endurance",
 		title:   "Endurance & wear",
-		columns: []string{"Kind", "Life used", "Spare", "Written", "Per day"},
+		columns: []string{"Kind", "Life left", "Spare", "Written", "Per day"},
 		available: func(rows []fleetRow) bool {
 			return anyRow(rows, func(r *smart.Report) bool {
 				if _, ok := r.LifeUsedPercent(); ok {
@@ -226,7 +226,10 @@ func enduranceSection() fleetSection {
 			r := row.rep
 			life := fleetCell{text: dash, color: activeTheme.Neutral}
 			if pct, ok := r.LifeUsedPercent(); ok {
-				life = fleetCell{text: pctBar(pct, lifeUsedSeverity(pct)), color: activeTheme.Neutral}
+				// pctBarUsed drains as the drive wears, so this bar and the spare
+				// bar beside it fill in the same direction; the number stays the
+				// "percentage used" figure the drive reports.
+				life = fleetCell{text: pctBarUsed(pct, lifeUsedSeverity(pct)), color: activeTheme.Neutral}
 			}
 			spare := fleetCell{text: dash, color: activeTheme.Neutral}
 			if pct, _, ok := r.SparePercent(); ok {
@@ -244,7 +247,8 @@ func enduranceSection() fleetSection {
 			return []fleetCell{cell(shortKind(r)), life, spare, written, perDay}
 		},
 		legend: func(rows []fleetRow) string {
-			s := dash + " means the drive reports no endurance indicator (normal for spinning disks)"
+			s := "bars fill toward healthy · " + dash +
+				" means the drive reports no endurance indicator (normal for spinning disks)"
 			if anyRow(rows, func(r *smart.Report) bool {
 				w, ok := r.DataWritten()
 				return ok && w.Approximate()

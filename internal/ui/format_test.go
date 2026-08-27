@@ -151,3 +151,26 @@ func TestTempMarkupOnlyTintsOutOfBand(t *testing.T) {
 		}
 	}
 }
+
+// TestPctBarsShareOnePolarity pins the rule that a fuller bar always means
+// healthier. The fleet shows endurance beside spare, and rendering "life used"
+// directly gave adjacent columns opposite polarity in the same colour.
+func TestPctBarsShareOnePolarity(t *testing.T) {
+	// A nearly-new drive: 3% used, 100% spare. Both bars should be nearly full.
+	life := pctBarUsed(3, smart.SeverityOK)
+	spare := pctBar(100, smart.SeverityOK)
+	if strings.Count(life, "█") < pctBarWidth-1 {
+		t.Errorf("3%% used should render a nearly full bar, got %q", life)
+	}
+	if strings.Count(spare, "█") != pctBarWidth {
+		t.Errorf("100%% spare should render a full bar, got %q", spare)
+	}
+	// A worn drive drains.
+	if worn := pctBarUsed(95, smart.SeverityCaution); strings.Count(worn, "█") > 1 {
+		t.Errorf("95%% used should render a nearly empty bar, got %q", worn)
+	}
+	// The number reported is still the "used" figure, not the remainder.
+	if !strings.Contains(pctBarUsed(3, smart.SeverityOK), "3%") {
+		t.Errorf("pctBarUsed should print the used percentage, got %q", life)
+	}
+}
