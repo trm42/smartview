@@ -61,6 +61,31 @@ func TestOverall(t *testing.T) {
 		{"healthy nvme", Report{
 			Device: Device{Protocol: "NVMe"}, SmartStatus: SmartStatus{Passed: true}, NVMeHealth: &NVMeHealth{},
 		}, SeverityOK},
+		// A logged error is a fault the drive reports about itself; the attribute
+		// table can stay entirely in range while the error log is populated.
+		{"ata logged error", Report{
+			Device: Device{Protocol: "ATA"}, SmartStatus: SmartStatus{Passed: true},
+			ATAErrorLog: &ATAErrorLog{Extended: &struct {
+				Count int                `json:"count"`
+				Table []ATAErrorLogEntry `json:"table"`
+			}{Count: 2}},
+		}, SeverityCaution},
+		{"ata empty error log", Report{
+			Device: Device{Protocol: "ATA"}, SmartStatus: SmartStatus{Passed: true},
+			ATAErrorLog: &ATAErrorLog{Extended: &struct {
+				Count int                `json:"count"`
+				Table []ATAErrorLogEntry `json:"table"`
+			}{Count: 0}},
+		}, SeverityOK},
+		{"ata pending defects", Report{
+			Device: Device{Protocol: "ATA"}, SmartStatus: SmartStatus{Passed: true},
+			ATAPendingDefects: &ATAPendingDefects{Count: 1},
+		}, SeverityCaution},
+		// NVMe error-log entries accumulate benignly and must not grade the drive.
+		{"nvme error log entries do not alarm", Report{
+			Device: Device{Protocol: "NVMe"}, SmartStatus: SmartStatus{Passed: true},
+			NVMeHealth: &NVMeHealth{NumErrLogEntries: 3},
+		}, SeverityOK},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

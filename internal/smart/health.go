@@ -44,7 +44,27 @@ func (r *Report) Overall() Severity {
 			worst = max(worst, r.ATAAttributes.Table[i].Severity())
 		}
 	}
-	return worst
+	return max(worst, r.logSeverity())
+}
+
+// logSeverity grades the drive's own error logs, which the attribute table can
+// miss entirely: an uncorrectable read is written to the ATA error log without
+// necessarily moving any normalized value, so a drive can log a UNC and still
+// present every attribute above its threshold. A populated log is the drive
+// reporting a fault about itself and is worth a Caution.
+//
+// NVMe is deliberately excluded. Its num_err_log_entries is a lifetime counter
+// that accumulates for entirely benign reasons (a rejected Identify field is an
+// "error"), so a non-zero value there is a count worth reading, not a verdict.
+// The Logs tab decodes the entries; grading on the bare number would cry wolf.
+func (r *Report) logSeverity() Severity {
+	if r.ATAErrorLog != nil && r.ATAErrorLog.Extended != nil && r.ATAErrorLog.Extended.Count > 0 {
+		return SeverityCaution
+	}
+	if r.ATAPendingDefects != nil && r.ATAPendingDefects.Count > 0 {
+		return SeverityCaution
+	}
+	return SeverityOK
 }
 
 // Severity classifies a single ATA attribute. The pre-fail vs old-age
