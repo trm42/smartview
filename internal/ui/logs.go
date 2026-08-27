@@ -98,14 +98,39 @@ func writePhyCounters(b *strings.Builder, e *smart.SATAPhyEvents) {
 	fmt.Fprintln(b, "[::b]SATA link health[-:-:-]")
 	nonzero := 0
 	for _, c := range e.Table {
-		if c.Value > 0 {
-			fmt.Fprintf(b, nestIndent+cautionTag()+"%-52s %d[-]\n", esc(c.Name), c.Value)
-			nonzero++
+		if c.Value == 0 {
+			continue
 		}
+		nonzero++
+		// Not every non-zero PHY counter is a fault. A couple of COMRESETs is
+		// what a normal power-up looks like, and tinting the count caution made
+		// an ordinary link read as a problem. Only the counters that actually
+		// indicate a bad cable or a marginal link are graded.
+		tag := mutedTag()
+		if phyCounterConcerning(c.Name) {
+			tag = cautionTag()
+		}
+		// smartctl's counter name is a sentence ("Device-to-host register FISes
+		// sent due to a COMRESET"), so it gets the line and the value leads,
+		// rather than the value trailing off the end of the prose.
+		fmt.Fprintf(b, nestIndent+"%s%6d[-] %s%s[-]\n", tag, c.Value, mutedTag(), esc(c.Name))
 	}
 	if nonzero == 0 {
-		fmt.Fprintf(b, nestIndent+okTag()+"No link errors logged[-] (%d counters)\n", len(e.Table))
+		fmt.Fprintf(b, nestIndent+okTag()+"No link events logged[-] (%d counters)\n", len(e.Table))
 	}
+}
+
+// phyCounterConcerning reports whether a SATA PHY counter indicates a link
+// fault rather than ordinary operation. CRC and decode errors point at a cable
+// or connector; resets and FIS counts accumulate on any healthy link.
+func phyCounterConcerning(name string) bool {
+	low := strings.ToLower(name)
+	for _, kw := range []string{"crc", "non-crc", "decode", "disparity", "handshake"} {
+		if strings.Contains(low, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 // writeErrorLog summarises the drive's logged command errors, listing the most
@@ -126,7 +151,7 @@ func writeErrorLog(b *strings.Builder, r *smart.Report) {
 		} else {
 			fmt.Fprintf(b, nestIndent+cautionTag()+"%s logged[-]\n", plural(n, "error", "errors"))
 		}
-		writeATAErrorEntries(b, r.ATAErrorLog.Extended.Table)
+		writeATAErrorEntries(b, r, r.ATAErrorLog.Extended.Table)
 	default:
 		fmt.Fprintln(b, nestIndent+strings.TrimPrefix(dash, ""))
 	}
@@ -170,19 +195,55 @@ func writeNVMeErrorEntries(b *strings.Builder, table []smart.NVMeErrorLogEntry) 
 
 // writeATAErrorEntries lists decoded ATA extended-error-log entries (newest
 // first), pairing each with the lifetime hour it occurred at.
-func writeATAErrorEntries(b *strings.Builder, table []smart.ATAErrorLogEntry) {
+func writeATAErrorEntries(b *strings.Builder, r *smart.Report, table []smart.ATAErrorLogEntry) {
 	for i, e := range table {
 		if i >= maxErrorEntries {
 			fmt.Fprintf(b, nestIndent+mutedTag()+"… %d more[-]\n", len(table)-maxErrorEntries)
 			break
 		}
-		desc := esc(e.ErrorDescription)
+		desc := esc(tidyErrorDescription(e.ErrorDescription))
 		if e.ErrorDescription == "" {
 			desc = fmt.Sprintf("error %d", e.ErrorNumber)
 		}
-		fmt.Fprintf(b, nestIndent+cautionTag()+"#%d[-] %s %s@ %s[-]\n",
-			e.ErrorNumber, desc, mutedTag(), humanDuration(e.LifetimeHours))
+		// "@ 1 y 27 d" is the drive's age when the error happened, which reads as
+		// neither a date nor "how long ago" — and how long ago is the question.
+		// Both, labelled: at <age>, <elapsed> ago.
+		fmt.Fprintf(b, nestIndent+cautionTag()+"#%d[-] %s %s%s[-]\n",
+			e.ErrorNumber, desc, mutedTag(), driveAge(r, e.LifetimeHours))
 	}
+}
+
+// driveAge renders when something happened: the drive's age at the time, and how
+// long ago that was in power-on terms. The elapsed figure is omitted when the
+// drive does not report its current hours, rather than being guessed.
+func driveAge(r *smart.Report, hours int) string {
+	now, ok := r.PowerOnHours()
+	if !ok || now < hours {
+		return fmt.Sprintf("at %s", humanDuration(hours))
+	}
+	if ago := now - hours; ago < 24 {
+		return fmt.Sprintf("at %s · %d h ago", humanDuration(hours), ago)
+	} else {
+		return fmt.Sprintf("at %s · %s ago", humanDuration(hours), humanDuration(ago))
+	}
+}
+
+// tidyErrorDescription trims smartctl's phrasing for a line that already sits
+// under an "Error log" heading: it prefixes every entry with "Error: ", and
+// gives the LBA twice, in hex and again in decimal. Decimal is the one a reader
+// can act on.
+func tidyErrorDescription(s string) string {
+	s = strings.TrimPrefix(s, "Error: ")
+	const marker = "LBA = "
+	if i := strings.Index(s, marker); i >= 0 {
+		// "LBA = 0x0011a034 = 1155124" -> "LBA 1155124". The decimal form is the
+		// last of the two, so take everything after the final " = ".
+		rest := s[i+len(marker):]
+		if k := strings.LastIndex(rest, " = "); k >= 0 {
+			s = s[:i] + "LBA " + rest[k+3:]
+		}
+	}
+	return s
 }
 
 // writePendingDefects renders the Pending Defects count: sectors awaiting
@@ -195,7 +256,27 @@ func writePendingDefects(b *strings.Builder, d *smart.ATAPendingDefects) {
 		fmt.Fprintln(b, nestIndent+okTag()+"No pending defects[-]")
 		return
 	}
-	fmt.Fprintf(b, nestIndent+cautionTag()+"%d sector(s) pending reallocation[-]\n", d.Count)
+	fmt.Fprintf(b, nestIndent+cautionTag()+"%s pending reallocation[-]\n",
+		plural(d.Count, "sector", "sectors"))
+}
+
+// writeSelfTestSummary states what the log adds up to: how many runs, whether
+// any failed, and when the most recent was. Without it the reader has to scan
+// nineteen near-identical rows to learn there is nothing to see.
+func writeSelfTestSummary(b *strings.Builder, r *smart.Report, tbl []smart.ATASelfTestEntry) {
+	failed := 0
+	for _, e := range tbl {
+		if !selfTestPassed(e.Status.String) {
+			failed++
+		}
+	}
+	verdict := okTag() + "all passed[-]"
+	if failed > 0 {
+		verdict = fmt.Sprintf("%s%s failed[-]", failingTag(), plural(failed, "run", "runs"))
+	}
+	fmt.Fprintf(b, nestIndent+"%s, %s %s· newest %s[-]\n",
+		plural(len(tbl), "run", "runs"), verdict,
+		mutedTag(), driveAge(r, tbl[0].LifetimeHours))
 }
 
 // writeSelfTestLog renders the self-test history for either protocol.
@@ -220,13 +301,39 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 			fmt.Fprintln(b, nestIndent+"no self-tests recorded")
 			return
 		}
+		// The shape first. This log is 19 identical "Completed without error"
+		// rows on a healthy drive, and a failure among them would be one line in
+		// a wall of the same sentence — so state the summary, then list.
+		writeSelfTestSummary(b, r, tbl)
 		for _, e := range tbl {
-			fmt.Fprintf(b, nestIndent+"%-16s %-28s @ %s\n",
-				esc(e.Type.String), colorResult(e.Status.String), humanDuration(e.LifetimeHours))
+			fmt.Fprintf(b, nestIndent+"%-16s %-28s %s\n",
+				esc(e.Type.String), colorResult(e.Status.String),
+				mutedTag()+driveAge(r, e.LifetimeHours)+"[-]")
 		}
 	default:
 		fmt.Fprintln(b, nestIndent+"no self-test log")
 	}
+}
+
+// selfTestPassed reports whether a drive-reported self-test outcome reads as a
+// pass. It is the single keyword test, shared with colorResult, so the summary
+// count and the row colours can never disagree about the same string.
+//
+// "Completed" alone is not a pass: smartctl reports failures as "Completed: read
+// failure", "Completed: electrical failure" and so on, which a bare "completed"
+// check painted green. The failure keywords are therefore tested first, with
+// "without error" recognised before them since it contains "error" itself.
+func selfTestPassed(s string) bool {
+	low := strings.ToLower(s)
+	if strings.Contains(low, "without error") {
+		return true
+	}
+	for _, kw := range []string{"fail", "error", "aborted", "interrupted", "fatal", "unknown"} {
+		if strings.Contains(low, kw) {
+			return false
+		}
+	}
+	return strings.Contains(low, "completed")
 }
 
 // colorResult tints a self-test outcome string green/red by keyword. The string
@@ -235,9 +342,10 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 func colorResult(s string) string {
 	low := strings.ToLower(s)
 	switch {
-	case strings.Contains(low, "without error"), strings.Contains(low, "completed"):
+	case selfTestPassed(s):
 		return okTag() + esc(s) + "[-]"
-	case strings.Contains(low, "fail"), strings.Contains(low, "error"), strings.Contains(low, "aborted"):
+	case strings.Contains(low, "fail"), strings.Contains(low, "error"),
+		strings.Contains(low, "aborted"), strings.Contains(low, "interrupted"):
 		return failingTag() + esc(s) + "[-]"
 	default:
 		return esc(s)
