@@ -114,20 +114,39 @@ func writeErrorLog(b *strings.Builder, r *smart.Report) {
 	fmt.Fprintln(b, "[::b]Error log[-:-:-]")
 	switch {
 	case r.NVMeErrorLog != nil:
-		fmt.Fprintf(b, nestIndent+"%d entries (%d unread)\n", r.NVMeErrorLog.Size, sub(r.NVMeErrorLog.Size, r.NVMeErrorLog.Read))
+		// Count the decoded entries, not the log's slot capacity: Size is 256 on a
+		// drive with three logged errors. Unread is smartctl's own figure — it must
+		// not be derived from Size, which yielded "256 entries (253 unread)".
+		writeNVMeErrorCount(b, r.NVMeErrorLog)
 		writeNVMeErrorEntries(b, r.NVMeErrorLog.Table)
 	case r.ATAErrorLog != nil && r.ATAErrorLog.Extended != nil:
 		n := r.ATAErrorLog.Extended.Count
 		if n == 0 {
 			fmt.Fprintln(b, nestIndent+okTag()+"No errors logged[-]")
 		} else {
-			fmt.Fprintf(b, nestIndent+cautionTag()+"%d error(s) logged[-]\n", n)
+			fmt.Fprintf(b, nestIndent+cautionTag()+"%s logged[-]\n", plural(n, "error", "errors"))
 		}
 		writeATAErrorEntries(b, r.ATAErrorLog.Extended.Table)
 	default:
 		fmt.Fprintln(b, nestIndent+strings.TrimPrefix(dash, ""))
 	}
 	writePendingDefects(b, r.ATAPendingDefects)
+}
+
+// writeNVMeErrorCount states how many errors the drive logged, using the decoded
+// entry count rather than the log's capacity, and notes any entries smartctl
+// could not read back.
+func writeNVMeErrorCount(b *strings.Builder, l *smart.NVMeErrorLog) {
+	n := len(l.Table)
+	if n == 0 {
+		fmt.Fprintln(b, nestIndent+okTag()+"No errors logged[-]")
+		return
+	}
+	fmt.Fprintf(b, nestIndent+cautionTag()+"%s logged[-]", plural(n, "error", "errors"))
+	if l.Unread > 0 {
+		fmt.Fprintf(b, mutedTag()+" (%d not read back)[-]", l.Unread)
+	}
+	b.WriteByte('\n')
 }
 
 // maxErrorEntries caps how many decoded log entries the Logs tab lists, newest
@@ -225,10 +244,11 @@ func colorResult(s string) string {
 	}
 }
 
-// sub returns a-b, floored at zero.
-func sub(a, b int) int {
-	if a < b {
-		return 0
+// plural renders a count with the right noun, so the UI never has to fall back
+// to an "error(s)" placeholder.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, one)
 	}
-	return a - b
+	return fmt.Sprintf("%d %s", n, many)
 }
