@@ -3,8 +3,9 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -226,17 +227,14 @@ func (v *attributesView) visibleRows() []smart.ATAAttribute {
 		}
 		out = append(out, a)
 	}
-	sort.SliceStable(out, func(i, j int) bool {
+	slices.SortStableFunc(out, func(x, y smart.ATAAttribute) int {
 		switch v.sortBy {
 		case sortID:
-			return out[i].ID < out[j].ID
+			return cmp.Compare(x.ID, y.ID)
 		case sortMargin:
-			return attrMargin(out[i]) < attrMargin(out[j])
+			return cmp.Compare(attrMargin(x), attrMargin(y))
 		default: // severity: worst first, then by ID
-			if si, sj := out[i].Severity(), out[j].Severity(); si != sj {
-				return si > sj
-			}
-			return out[i].ID < out[j].ID
+			return cmp.Or(cmp.Compare(y.Severity(), x.Severity()), cmp.Compare(x.ID, y.ID))
 		}
 	})
 	return out

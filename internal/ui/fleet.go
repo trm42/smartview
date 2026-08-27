@@ -3,8 +3,9 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -177,22 +178,25 @@ func (v *fleetView) activeIndex() int {
 // report the metric sort last rather than ranking as zero, and ties break on
 // device name so the order is stable between polls.
 func (v *fleetView) sortRows(sec fleetSection) []fleetRow {
-	out := make([]fleetRow, len(v.rows))
-	copy(out, v.rows)
+	out := slices.Clone(v.rows)
 	if v.sortByName {
-		sort.SliceStable(out, func(i, j int) bool { return out[i].dev.Name < out[j].dev.Name })
+		slices.SortStableFunc(out, func(x, y fleetRow) int { return cmp.Compare(x.dev.Name, y.dev.Name) })
 		return out
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		a, aok := sec.rank(out[i])
-		b, bok := sec.rank(out[j])
-		if aok != bok {
-			return aok
+	slices.SortStableFunc(out, func(x, y fleetRow) int {
+		a, aok := sec.rank(x)
+		b, bok := sec.rank(y)
+		switch {
+		case aok != bok: // a drive that cannot report the metric sorts last
+			if aok {
+				return -1
+			}
+			return 1
+		case !aok || a == b:
+			return cmp.Compare(x.dev.Name, y.dev.Name)
+		default:
+			return cmp.Compare(b, a) // focus metric, descending
 		}
-		if !aok || a == b {
-			return out[i].dev.Name < out[j].dev.Name
-		}
-		return a > b
 	})
 	return out
 }
