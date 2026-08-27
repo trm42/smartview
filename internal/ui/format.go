@@ -40,10 +40,13 @@ const nestIndent = "  "
 
 // marginBar renders a severity-coloured headroom bar for a normalized SMART
 // value above its threshold: a fuller bar means more margin before the
-// attribute is considered failing. base is the smallest standard top value
-// (100/200/253) at least as large as the observed value/worst.
+// attribute is considered failing — the same polarity as every other bar in the
+// UI. base is the smallest standard top value (100/200/253) at least as large
+// as the observed value/worst.
 func marginBar(value, worst, thresh int, sev smart.Severity) string {
-	const width = 10
+	// Same width as pctBar: one bar vocabulary across the UI, and it buys the two
+	// columns the Attributes table needs to show its reading without clipping.
+	const width = pctBarWidth
 	base := 100
 	for _, b := range []int{200, 253} {
 		if max(value, worst) > base {
@@ -63,12 +66,16 @@ func marginBar(value, worst, thresh int, sev smart.Severity) string {
 	}
 	filled := int(frac*float64(width) + 0.5)
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
-	return fmt.Sprintf("[%s]%s[-] %d", severityTag(sev), bar, value-thresh)
+	// The bar alone: it used to be followed by value-thresh, an unlabelled
+	// number that read as a contradiction on a full bar (10/10 filled, "3") and
+	// went negative on a failing row ("░░░░░░░░░░ -24"). The two numbers it was
+	// derived from now have their own column.
+	return fmt.Sprintf("[%s]%s[-]", severityTag(sev), bar)
 }
 
-// pctBarWidth is the cell width of pctBar. Narrower than marginBar's ten: the
-// fleet table shows two of these side by side and still needs room for the
-// numbers.
+// pctBarWidth is the cell width of every bar in the UI — the fleet's endurance
+// and spare pair, and the Attributes margin bar. One width, one polarity, one
+// meaning: see pctBar.
 const pctBarWidth = 8
 
 // pctBar renders a percentage as a severity-coloured bar followed by the value —

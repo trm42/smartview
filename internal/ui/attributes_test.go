@@ -61,16 +61,60 @@ func TestAttrMargin(t *testing.T) {
 	}
 }
 
-func TestHealthCell(t *testing.T) {
-	// No threshold -> a severity dot.
-	dot := healthCell(smart.ATAAttribute{Value: 100, Thresh: 0})
-	if !strings.Contains(dot, "●") {
-		t.Errorf("no-threshold health = %q, want a dot", dot)
+func TestMarginCell(t *testing.T) {
+	// One encoding per column: no threshold means the not-reported dash, not a
+	// dot standing in for a bar.
+	none := marginCell(smart.ATAAttribute{Value: 100, Thresh: 0})
+	if strings.Contains(none, "█") || strings.Contains(none, "●") {
+		t.Errorf("no-threshold margin = %q, want the dash placeholder", none)
 	}
-	// With a threshold -> a bar with the margin number.
-	bar := healthCell(smart.ATAAttribute{Value: 100, Worst: 100, Thresh: 10, Flags: smart.ATAFlags{Prefailure: true}})
+	// With a threshold -> a bar, and no trailing number: the raw value-minus-
+	// threshold read as a contradiction on a full bar and went negative on a
+	// failing row. Those numbers live in the now/thr column instead.
+	bar := marginCell(smart.ATAAttribute{Value: 100, Worst: 100, Thresh: 10, Flags: smart.ATAFlags{Prefailure: true}})
 	if !strings.Contains(bar, "█") {
-		t.Errorf("thresholded health = %q, want a bar", bar)
+		t.Errorf("thresholded margin = %q, want a bar", bar)
+	}
+	if strings.ContainsAny(stripTags(bar), "0123456789") {
+		t.Errorf("margin bar should carry no unlabelled number, got %q", bar)
+	}
+	// A failing attribute must not print a negative number anywhere.
+	failing := marginCell(smart.ATAAttribute{Value: 12, Worst: 12, Thresh: 36, Flags: smart.ATAFlags{Prefailure: true}})
+	if strings.Contains(stripTags(failing), "-") {
+		t.Errorf("failing margin = %q, want no negative number", failing)
+	}
+}
+
+// TestAttrStateIsAWord checks smartctl's raw enums are translated once, at the
+// sink: they used to reach the table verbatim and truncate to "FAILING_NO…".
+func TestAttrStateIsAWord(t *testing.T) {
+	cases := []struct {
+		a    smart.ATAAttribute
+		want string
+	}{
+		{smart.ATAAttribute{Value: 100, Thresh: 10}, "ok"},
+		{smart.ATAAttribute{WhenFailed: "FAILING_NOW"}, "FAILING"},
+		{smart.ATAAttribute{WhenFailed: "in_the_past"}, "failed once"},
+	}
+	for _, c := range cases {
+		if got := attrState(c.a); got != c.want {
+			t.Errorf("attrState(%+v) = %q, want %q", c.a, got, c.want)
+		}
+		if strings.Contains(attrState(c.a), "_") {
+			t.Errorf("attrState leaked a raw enum: %q", attrState(c.a))
+		}
+	}
+}
+
+// TestAttrLimitsShowsBothNumbers: the pair the state is derived from is stated
+// in the footer, which now leads with the numbers so they cannot be clipped.
+func TestAttrLimitsShowsBothNumbers(t *testing.T) {
+	if got := attrLimits(smart.ATAAttribute{Value: 12, Thresh: 36}); got != "12/36" {
+		t.Errorf("attrLimits = %q, want %q", got, "12/36")
+	}
+	got := attrLimits(smart.ATAAttribute{Value: 100, Thresh: 0})
+	if !strings.HasPrefix(got, "100/") || strings.HasSuffix(got, "/0") {
+		t.Errorf("no-threshold limits = %q, want the dash rather than a fake 0", got)
 	}
 }
 

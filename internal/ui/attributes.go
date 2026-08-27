@@ -60,6 +60,16 @@ func (m filterMode) String() string {
 	}
 }
 
+// attrFooterHeight is the footer's fixed height: two borders and three text
+// rows — the numbers, the description, and what the state means for the reader.
+// It was four (two text rows), and the description alone wraps to two at any
+// usual width, so the numbers fell out of the box with no scroll cue.
+const attrFooterHeight = 5
+
+// attrNameWidth bounds the attribute-name column. Names come from the drive, so
+// without a cap a single long one sets the width for the whole table.
+const attrNameWidth = 22
+
 // attributesView is the ATA attribute table plus a description footer, with
 // interactive sort (s) and filter (f). It rebuilds rows in place so selection
 // and focus survive a re-render.
@@ -104,7 +114,7 @@ func newAttributesView(attrs []smart.ATAAttribute) *attributesView {
 	})
 
 	v.AddItem(v.table, 0, 1, true)
-	v.AddItem(v.footer, 4, 0, false)
+	v.AddItem(v.footer, attrFooterHeight, 0, false)
 	v.renderRows()
 	v.selectByID(-1)
 	return v
@@ -163,8 +173,19 @@ func (v *attributesView) renderRows() {
 	v.table.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(fmt.Sprintf(
 		" SMART attributes — sort: %s · filter: %s  %s[s/f][-] ", v.sortBy, v.filter, accentTag()))
 
-	// No ID column: the numeric ID is shown in the footer for the selected row.
-	headers := []string{"Attribute", "Kind", "Health", "Reading", "When"}
+	// The ID earns its column: every SMART reference is indexed by it, and an
+	// unnamed vendor attribute ("Unknown Attribute") has no other handle. It used
+	// to live only in the footer, which clips (see updateFooter).
+	//
+	// "Health" is split into State and Margin because one column cannot carry two
+	// encodings: it held a headroom bar for thresholded attributes and a bare dot
+	// for the rest, with no key, and the bar's number was an unlabelled
+	// value-minus-threshold that printed negative on the one row that mattered.
+	//
+	// "When" is gone: it was 22 rows of "-" that truncated to "FAILING_NO…"
+	// exactly when it filled. State says the same thing in words, and the exact
+	// normalized/threshold/raw numbers are in the footer, which no longer clips.
+	headers := []string{"ID", "Attribute", "Kind", "State", "Margin", "Reading"}
 	for c, h := range headers {
 		v.table.SetCell(0, c, headerCell(h))
 	}
@@ -187,28 +208,62 @@ func (v *attributesView) renderRows() {
 // attributes that need attention.
 func (v *attributesView) setAttrRow(row int, a smart.ATAAttribute) {
 	color := attrTextColor(a.Severity())
-	kind := "old-age"
-	if a.Flags.Prefailure {
-		kind = "pre-fail"
-	}
-	when := a.WhenFailed
-	if when == "" {
-		when = "-"
-	}
-	// Name, reading and when-failed are drive-controlled; table cells interpret
-	// markup, so escape them (see esc) to keep a hostile drive from injecting tags.
 	sel := selectedRowStyle(color)
-	v.table.SetCell(row, 0, tview.NewTableCell(" "+esc(humanAttrName(a.Name))+" ").
-		SetTextColor(color).SetExpansion(1).SetSelectedStyle(sel))
-	v.table.SetCell(row, 1, tview.NewTableCell(" "+kind+" ").
+	put := func(col int, text string, align int) {
+		v.table.SetCell(row, col, tview.NewTableCell(" "+text+" ").
+			SetTextColor(color).SetAlign(align).SetSelectedStyle(sel))
+	}
+	// Name and reading are drive-controlled; table cells interpret markup, so
+	// escape them (see esc) to keep a hostile drive from injecting tags.
+	put(0, fmt.Sprintf("%3d", a.ID), tview.AlignLeft)
+	// Capped like fleet.go's model column: one long vendor name must not squeeze
+	// the reading off the right edge of a narrow detail pane.
+	v.table.SetCell(row, 1, tview.NewTableCell(" "+esc(truncateRunes(humanAttrName(a.Name), attrNameWidth))+" ").
 		SetTextColor(color).SetSelectedStyle(sel))
-	// Health uses inline colour tags (keeps a green bar on healthy rows).
-	v.table.SetCell(row, 2, tview.NewTableCell(" "+healthCell(a)+" ").
+	put(2, attrKind(a), tview.AlignLeft)
+	put(3, attrState(a), tview.AlignLeft)
+	// Margin carries its own colour tags, so it keeps a green bar on a healthy
+	// row rather than inheriting the neutral row colour.
+	v.table.SetCell(row, 4, tview.NewTableCell(" "+marginCell(a)+" ").
 		SetSelectedStyle(sel))
-	v.table.SetCell(row, 3, tview.NewTableCell(" "+esc(decodeReading(a))+" ").
-		SetTextColor(color).SetAlign(tview.AlignRight).SetSelectedStyle(sel))
-	v.table.SetCell(row, 4, tview.NewTableCell(" "+esc(when)+" ").
-		SetTextColor(color).SetSelectedStyle(sel))
+	put(5, esc(decodeReading(a)), tview.AlignRight)
+}
+
+// attrKind names the pre-fail/old-age distinction, taken from the authoritative
+// flags bit rather than the attribute name.
+func attrKind(a smart.ATAAttribute) string {
+	if a.Flags.Prefailure {
+		return "pre-fail"
+	}
+	return "old-age"
+}
+
+// attrState renders the attribute's condition as a word. smartctl's when_failed
+// enums (FAILING_NOW, in_the_past) were previously printed raw in a column
+// narrow enough to truncate them to "FAILING_NO…" and "in_the_pas…" — exactly
+// when they finally carried a value, after twenty rows of "-".
+func attrState(a smart.ATAAttribute) string {
+	switch a.Severity() {
+	case smart.SeverityFailing:
+		return "FAILING"
+	case smart.SeverityCaution:
+		if a.WhenFailed == "in_the_past" {
+			return "failed once"
+		}
+		return "watch"
+	default:
+		return "ok"
+	}
+}
+
+// attrLimits renders the pair of numbers a state is derived from — the current
+// normalized value against its threshold — for the footer. A drive that sets no
+// threshold gets the not-reported dash rather than a fabricated 0.
+func attrLimits(a smart.ATAAttribute) string {
+	if a.Thresh <= 0 {
+		return fmt.Sprintf("%d/%s", a.Value, dash)
+	}
+	return fmt.Sprintf("%d/%d", a.Value, a.Thresh)
 }
 
 // visibleRows applies the current filter then sort.
@@ -248,16 +303,45 @@ func (v *attributesView) updateFooter(row int) {
 		return
 	}
 	a := v.shown[i]
-	kind := "old-age"
-	if a.Flags.Prefailure {
-		kind = "pre-fail"
-	}
 	desc := ataDesc[a.ID]
 	if desc == "" {
 		desc = esc(humanAttrName(a.Name)) // drive-controlled fallback; escape markup
 	}
-	v.footer.SetText(fmt.Sprintf("%s\n%s(id %d, %s)  norm %d/%d · thresh %d · raw %s[-]",
-		desc, mutedTag(), a.ID, kind, a.Value, a.Worst, a.Thresh, esc(a.Raw.String)))
+	// Ordered by what is scarce: the numbers, then what the state means, then the
+	// description. The box is a fixed height and the description is what wraps,
+	// so a narrow terminal runs out of prose rather than out of data or advice.
+	// The numbers line used to be SECOND, and a two-line description pushed the
+	// id, threshold and raw value out of the box with no scroll cue — leaving the
+	// id with no home at all, since the table did not carry it either.
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s%d · %s[-]  %s%s · now/thr %s · worst %d · raw %s[-]\n",
+		accentTag(), a.ID, esc(humanAttrName(a.Name)),
+		mutedTag(), attrKind(a), attrLimits(a), a.Worst, esc(a.Raw.String))
+	if verdict := attrVerdict(a); verdict != "" {
+		fmt.Fprintf(&b, "[%s]%s[-]\n", severityTag(a.Severity()), verdict)
+	}
+	fmt.Fprintf(&b, "%s", desc)
+	v.footer.SetText(b.String())
+}
+
+// attrVerdict states what the attribute's condition means for the reader, so the
+// footer ends with a consequence rather than leaving one to be inferred from a
+// normalized number. Healthy attributes get nothing: silence is the message.
+func attrVerdict(a smart.ATAAttribute) string {
+	switch a.Severity() {
+	case smart.SeverityFailing:
+		return "▲ Below the drive's own threshold on a pre-fail attribute. " +
+			"Back up now; replacement is the expected outcome."
+	case smart.SeverityCaution:
+		if a.WhenFailed == "in_the_past" {
+			return "▲ This attribute failed at some point in the drive's life and has since " +
+				"recovered. Worth watching for a repeat."
+		}
+		return "▲ Below the drive's own threshold. Old-age attributes wear out by design, " +
+			"but a fresh drive reaching this is worth investigating."
+	default:
+		return ""
+	}
 }
 
 // attrMargin is the threshold headroom; attributes without a threshold sort last.
@@ -268,14 +352,16 @@ func attrMargin(a smart.ATAAttribute) int {
 	return a.Value - a.Thresh
 }
 
-// healthCell renders the per-attribute health indicator: a headroom bar for
-// attributes with a real threshold, or a status dot for those without one.
-func healthCell(a smart.ATAAttribute) string {
-	sev := a.Severity()
-	if a.Thresh > 0 {
-		return marginBar(a.Value, a.Worst, a.Thresh, sev)
+// marginCell renders the threshold headroom as a bar, or the not-reported dash
+// where the drive sets no threshold. One encoding per column: the bar always
+// means the same thing and always fills toward healthy, and an attribute without
+// a threshold says so with the same dash the fleet legend already teaches,
+// rather than borrowing a dot that also stood in for a bar elsewhere.
+func marginCell(a smart.ATAAttribute) string {
+	if a.Thresh <= 0 {
+		return dash
 	}
-	return fmt.Sprintf("[%s]●[-]", severityTag(sev))
+	return marginBar(a.Value, a.Worst, a.Thresh, a.Severity())
 }
 
 // humanAttrName turns smartctl's snake_case attribute name into spaced words.
@@ -335,7 +421,7 @@ func newNVMeAttributesView(h *smart.NVMeHealth) *nvmeAttributesView {
 	v.table.SetSelectionChangedFunc(func(row, _ int) { v.setFooter(row) })
 
 	v.AddItem(v.table, 0, 1, true)
-	v.AddItem(v.footer, 4, 0, false)
+	v.AddItem(v.footer, attrFooterHeight, 0, false)
 
 	v.setRows(h)
 	v.table.Select(1, 0)

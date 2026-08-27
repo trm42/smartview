@@ -57,18 +57,24 @@ func TestHumanMinutes(t *testing.T) {
 }
 
 func TestMarginBar(t *testing.T) {
-	// Full headroom (value at base, far above threshold) → full bar, margin shown.
+	// Full headroom (value at base, far above threshold) → full bar. The bar
+	// carries no number: value-minus-threshold read as a contradiction on a full
+	// bar and went negative on a failing row, so those numbers moved to the
+	// table's own now/thr column.
 	full := marginBar(100, 100, 10, smart.SeverityOK)
-	if !strings.Contains(full, "["+severityTag(smart.SeverityOK)+"]") || !strings.HasSuffix(full, " 90") {
+	if !strings.Contains(full, "["+severityTag(smart.SeverityOK)+"]") {
 		t.Errorf("full bar = %q", full)
 	}
-	if strings.Count(full, "█") != 10 {
-		t.Errorf("full bar should be 10 blocks: %q", full)
+	if strings.ContainsAny(stripTags(full), "0123456789") {
+		t.Errorf("margin bar should carry no unlabelled number: %q", full)
+	}
+	if strings.Count(full, "█") != pctBarWidth {
+		t.Errorf("full bar should be %d blocks: %q", pctBarWidth, full)
 	}
 	// 200-base attribute (e.g. CRC) keeps the bar within range (no overflow).
 	b200 := marginBar(200, 200, 0, smart.SeverityOK)
-	if strings.Count(b200, "█") != 10 {
-		t.Errorf("200-base full bar should be 10 blocks: %q", b200)
+	if strings.Count(b200, "█") != pctBarWidth {
+		t.Errorf("200-base full bar should be a full bar: %q", b200)
 	}
 	// Value below threshold clamps to an empty bar.
 	empty := marginBar(5, 5, 10, smart.SeverityFailing)
