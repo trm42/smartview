@@ -163,7 +163,9 @@ need no mutex.
   `electric` (an "elite BBS" palette in blue/cyan/white/gray — bright azure-cyan
   borders, white body text, amber caution + red failing for legibility),
   `phosphor` (the classic monochrome green-CRT palette — *pure green only*, no
-  amber/red; severity reads via green brightness + the `●` glyph + bold),
+  amber/red; severity reads via green intensity + the `●` glyph + bold, and the
+  ramp must escalate — `theme_test.go` pins that Failing is hotter than OK, not
+  paler),
   `amber` (a Hercules monochrome amber-monitor palette — warm amber accent/text
   with a warm amber→orange→red severity ramp), and `mono` are the alternates.
   `--theme NAME` selects at startup, the `T` key cycles live

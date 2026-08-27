@@ -185,3 +185,40 @@ func TestListSecondaryIsNotOK(t *testing.T) {
 		}
 	}
 }
+
+// TestSeverityRampEscalates guards the direction of every theme's severity ramp:
+// worse must look hotter, never fainter. phosphor got this backwards — Failing
+// was #99ff99, the palest colour on screen, beside a solid #33c633 OK — so the
+// worst state read as washed out rather than alarming.
+func TestSeverityRampEscalates(t *testing.T) {
+	lum := func(c tcell.Color) float64 {
+		h := c.TrueColor().Hex()
+		r, g, b := float64((h>>16)&0xff), float64((h>>8)&0xff), float64(h&0xff)
+		return 0.2126*r + 0.7152*g + 0.0722*b
+	}
+	for name, th := range themes {
+		if th.OK == tcell.ColorDefault {
+			continue // mono drops all colour by design
+		}
+		if name != "phosphor" {
+			// Only a monochrome palette has to encode severity by intensity; the
+			// others carry it in hue, where luminance ordering means nothing.
+			continue
+		}
+		ok, caution, failing := lum(th.OK), lum(th.Caution), lum(th.Failing)
+		if !(ok < caution && caution < failing) {
+			t.Errorf("theme %q severity does not escalate: OK %.0f, Caution %.0f, Failing %.0f",
+				name, ok, caution, failing)
+		}
+		// And it must escalate by intensity, not by fading toward white: the
+		// green channel leads and red/blue stay low.
+		for _, c := range []tcell.Color{th.OK, th.Caution, th.Failing} {
+			h := c.TrueColor().Hex()
+			r, g, b := (h>>16)&0xff, (h>>8)&0xff, h&0xff
+			if r > g/2 || b > g/2 {
+				t.Errorf("theme %q colour #%06x is washing out: r=%d b=%d against g=%d",
+					name, h, r, b, g)
+			}
+		}
+	}
+}

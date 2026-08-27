@@ -168,12 +168,17 @@ var electric = Theme{
 // an authentic green CRT would. All-hex so it renders identically across
 // terminals.
 var phosphor = Theme{
-	Name:          "phosphor",
-	Accent:        tcell.NewHexColor(0x33ff33), // pure neon CRT green: borders, headers, active tab, key hints
-	Muted:         tcell.NewHexColor(0x1f8f1f), // dim green: dashes, unfocused border, raw values
-	OK:            tcell.NewHexColor(0x33c633), // dim healthy green (low end of the severity ramp)
-	Caution:       tcell.NewHexColor(0x66ff66), // brighter green (was amber) — severity by brightness + ● + bold
-	Failing:       tcell.NewHexColor(0x99ff99), // pale/near-white bright green (was red) — visually "hottest"
+	Name:   "phosphor",
+	Accent: tcell.NewHexColor(0x33ff33), // pure neon CRT green: borders, headers, active tab, key hints
+	Muted:  tcell.NewHexColor(0x1f8f1f), // dim green: dashes, unfocused border, raw values
+	// The severity ramp escalates by getting HOTTER, not by washing out. It read
+	// the wrong way round: Failing was #99ff99, the palest and least saturated
+	// colour on screen, while OK was a solid #33c633 — so the worst state looked
+	// faded. A green CRT can only vary the intensity of one phosphor, so each
+	// step now raises the green channel and keeps red/blue low.
+	OK:            tcell.NewHexColor(0x2a9d2a), // steady green
+	Caution:       tcell.NewHexColor(0x38d938), // brighter
+	Failing:       tcell.NewHexColor(0x6bff6b), // brightest — severity by intensity + ● + bold
 	Neutral:       tcell.NewHexColor(0x2ad42a), // standard green body text
 	Inverse:       tcell.NewHexColor(0x001a00), // near-black green: text drawn on Accent / BannerBg
 	SelectionBg:   tcell.NewHexColor(0x0f4f0f), // dark green selected-row bg

@@ -393,8 +393,15 @@ func (a *App) refreshBanner() {
 	// Short enough to survive an 80-column terminal. The old wording ran to 94
 	// characters and was cut at "re-run with" — losing the sudo hint, which is
 	// the only reason the banner exists.
-	a.banner.SetText(fgbgTag(activeTheme.Inverse, activeTheme.BannerBg) +
-		" ⚠ Without root some drives report limited data — re-run with sudo. [-:-]")
+	const text = " ⚠ Without root some drives report limited data — re-run with sudo. "
+	if activeTheme.BannerBg == tcell.ColorDefault {
+		// Under a themeless palette (mono) the background disappears and the line
+		// renders exactly like body text — a warning that looks like data. A solid
+		// left bar and bold weight survive where colour does not.
+		a.banner.SetText("[::b]▌" + text + "[-:-:-]")
+		return
+	}
+	a.banner.SetText(fgbgTag(activeTheme.Inverse, activeTheme.BannerBg) + text + "[-:-]")
 }
 
 // cycleTheme advances to the next built-in theme and repaints everything. Runs
