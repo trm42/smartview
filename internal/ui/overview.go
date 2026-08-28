@@ -395,12 +395,15 @@ func buildGauges(r *smart.Report) tview.Primitive {
 		added = true
 	}
 	if h.AvailableSpare != nil {
+		// SparePercent resolves both the reading and the threshold it is graded
+		// against; re-deriving either here is how the two surfaces drift apart.
+		pct, thr, _ := r.SparePercent()
 		g := tvxwidgets.NewPercentageModeGauge()
 		g.SetTitle(" Spare avail ")
 		g.SetBorder(true)
 		g.SetMaxValue(100)
-		g.SetValue(clampPct(*h.AvailableSpare))
-		g.SetPgBgColor(severityColor(spareSeverity(h)))
+		g.SetValue(clampPct(pct))
+		g.SetPgBgColor(severityColor(spareSeverityPct(pct, thr)))
 		col.AddItem(g, 3, 0, false)
 		added = true
 	}
@@ -419,15 +422,15 @@ func lifeUsedSeverity(pct int) smart.Severity {
 	return smart.PctUsedSeverity(pct)
 }
 
-// spareSeverity grades the "Spare avail" gauge against the drive's threshold.
-func spareSeverity(h *smart.NVMeHealth) smart.Severity {
-	if h.AvailableSpare == nil || h.AvailableSpareThreshold == nil {
-		return smart.SeverityOK
-	}
-	switch thr := *h.AvailableSpareThreshold; {
-	case *h.AvailableSpare <= thr:
+// spareSeverityPct grades available spare against the drive's own depletion
+// threshold: failing once spare has fallen to it, caution as it approaches.
+// It takes the pair SparePercent resolved rather than re-reading NVMeHealth,
+// which may be nil even when spare is reported.
+func spareSeverityPct(pct, threshold int) smart.Severity {
+	switch {
+	case pct <= threshold:
 		return smart.SeverityFailing
-	case *h.AvailableSpare <= thr+10:
+	case pct <= threshold+10:
 		return smart.SeverityCaution
 	default:
 		return smart.SeverityOK

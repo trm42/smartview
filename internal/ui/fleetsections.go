@@ -223,8 +223,10 @@ func enduranceSection() fleetSection {
 				life = fleetCell{text: pctBarUsed(pct, lifeUsedSeverity(pct)), color: activeTheme.Neutral}
 			}
 			spare := fleetCell{text: dash, color: activeTheme.Neutral}
-			if pct, _, ok := r.SparePercent(); ok {
-				spare = fleetCell{text: pctBar(pct, spareSeverity(r.NVMeHealth)), color: activeTheme.Neutral}
+			if pct, thr, ok := r.SparePercent(); ok {
+				// Grade from the pair SparePercent resolved, not from NVMeHealth:
+				// the non-NVMe source reports spare with NVMeHealth nil.
+				spare = fleetCell{text: pctBar(pct, spareSeverityPct(pct, thr)), color: activeTheme.Neutral}
 			}
 
 			written, perDay := numCell(dash), numCell(dash)
