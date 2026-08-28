@@ -143,10 +143,9 @@ func (v *testsView) showIdle(r *smart.Report) {
 		if d, ok := r.SelfTestDuration(t.key); ok {
 			sec = "~" + formatTestDuration(d)
 		}
-		testType := t.key // capture per iteration
 		v.list.AddItem(t.title, sec, 0, func() {
 			if v.actions.run != nil {
-				v.actions.run(testType)
+				v.actions.run(t.key)
 			}
 		})
 	}

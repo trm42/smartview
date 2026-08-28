@@ -63,12 +63,7 @@ func marginBar(value, worst, thresh int, sev smart.Severity) string {
 	if span > 0 {
 		frac = float64(value-thresh) / float64(span)
 	}
-	if frac < 0 {
-		frac = 0
-	}
-	if frac > 1 {
-		frac = 1
-	}
+	frac = min(max(frac, 0), 1)
 	filled := int(frac*float64(width) + 0.5)
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
 	return fmt.Sprintf("[%s]%s[-]", severityTag(sev), bar)
@@ -274,7 +269,9 @@ func driveKind(r *smart.Report) string {
 	case r.IsATA():
 		return "SATA SSD"
 	default:
-		return r.Device.Protocol
+		// Device.Protocol is smartctl's own enum, not free text, but shortKind
+		// escapes it at the same kind of sink; keep the two consistent.
+		return esc(r.Device.Protocol)
 	}
 }
 

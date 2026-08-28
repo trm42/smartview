@@ -47,16 +47,7 @@ func (s *scrollView) setContent(p tview.Primitive, height int) {
 
 // clamp constrains the offset to [0, max(0, contentHeight-h)].
 func (s *scrollView) clamp(h int) {
-	maxOffset := s.contentHeight - h
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
-	if s.offset > maxOffset {
-		s.offset = maxOffset
-	}
-	if s.offset < 0 {
-		s.offset = 0
-	}
+	s.offset = min(max(s.offset, 0), max(s.contentHeight-h, 0))
 }
 
 // Draw paints the inner primitive at the current scroll offset, clipped to the
@@ -158,10 +149,7 @@ func (s *scrollList) Draw(screen tcell.Screen) {
 func (s *scrollView) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 	return s.WrapInputHandler(func(event *tcell.EventKey, _ func(tview.Primitive)) {
 		_, _, _, h := s.GetInnerRect()
-		page := h - 1
-		if page < 1 {
-			page = 1
-		}
+		page := max(h-1, 1)
 		switch event.Key() {
 		case tcell.KeyUp:
 			s.offset--
