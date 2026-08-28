@@ -52,9 +52,9 @@ func Version(ctx context.Context) ([]int, error) {
 	return res.Smartctl.Version, nil
 }
 
-// Preflight is the startup gate: it checks that smartctl is on PATH and new
-// enough to speak the JSON schema this package parses. It is a no-op when the
-// fixture source is active, since no smartctl is involved then.
+// Preflight checks that smartctl is on PATH and new enough to speak the JSON
+// schema this package parses; it is a no-op when the fixture source is active.
+// Not yet wired into startup — main.go still gates on Available() alone.
 func Preflight(ctx context.Context) error {
 	if fixtureActive() {
 		return nil
