@@ -366,7 +366,7 @@ func (v *fleetView) sectionCount() int { return len(v.shown) }
 // fittingColumns reports how many of a section's columns fit in width, and
 // how many are left over — measured from the cells actually rendered, so
 // whole columns drop (and are announced) instead of clipping silently.
-func fittingColumns(sec fleetSection, rows []fleetRow, identityCols, width int) (shown, dropped int) {
+func fittingColumns(sec fleetSection, rows []fleetRow, identityWidth, width int) (shown, dropped int) {
 	n := len(sec.columns)
 	if width <= 0 {
 		return n, 0
@@ -386,7 +386,7 @@ func fittingColumns(sec fleetSection, rows []fleetRow, identityCols, width int) 
 			}
 		}
 	}
-	avail := width - identityCols
+	avail := width - identityWidth
 	for i, w := range need {
 		if avail-w < 0 {
 			return i, n - i

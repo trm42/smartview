@@ -360,24 +360,16 @@ func shortKind(r *smart.Report) string {
 
 // seriesRange returns the extremes of an observed series; a single sample has
 // no range and reports absent until a second poll lands.
-func seriesRange(series []float64) (min, max int, ok bool) {
+func seriesRange(series []float64) (lo, hi int, ok bool) {
 	if len(series) < 2 {
 		return 0, 0, false
 	}
-	lo, hi := series[0], series[0]
-	for _, v := range series {
-		if v < lo {
-			lo = v
-		}
-		if v > hi {
-			hi = v
-		}
-	}
-	return int(lo), int(hi), true
+	return int(slices.Min(series)), int(slices.Max(series)), true
 }
 
 // sparkString renders a series as a text sparkline (so the comparison can be
-// one selectable table). The scale is relative to the series' own range; the
+// one selectable table), reducing through chart.go's downsample when there are
+// more samples than cells. The scale is relative to the series' own range; the
 // numeric columns carry the absolute values.
 func sparkString(data []float64, width int) string {
 	if len(data) < 2 || width <= 0 {

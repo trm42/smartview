@@ -456,7 +456,6 @@ func buildTempSparkline(r *smart.Report, runtime []float64) tview.Primitive {
 		// Colour by the current temperature, not the drive-wide verdict.
 		setColor(severityColor(tempSeverity(now)))
 	c.SetBorder(true)
-	c.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	c.SetTitle(fmt.Sprintf(" Temperature — now %d°C · range %.0f–%.0f°C ", now, lo, hi))
 	return c
 }
@@ -478,11 +477,5 @@ func temperatureSeries(r *smart.Report, runtime []float64) []float64 {
 
 // clampPct bounds a percentage into the gauge's 0..100 range.
 func clampPct(v int) int {
-	if v < 0 {
-		return 0
-	}
-	if v > 100 {
-		return 100
-	}
-	return v
+	return min(max(v, 0), 100)
 }
