@@ -179,17 +179,164 @@ var amber = Theme{
 	ListSecondary: tcell.NewHexColor(0xb87818), // dim amber secondary line
 }
 
+// cga draws every role from the authentic IBM CGA 16, nothing interpolated.
+var cga = Theme{
+	Name:          "cga",
+	Accent:        tcell.NewHexColor(0x55ffff), // light cyan: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0xaaaaaa), // light gray: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x55ff55), // light green
+	Caution:       tcell.NewHexColor(0xffff55), // yellow
+	Failing:       tcell.NewHexColor(0xff5555), // light red
+	Neutral:       tcell.NewHexColor(0xffffff), // white body text
+	Inverse:       tcell.NewHexColor(0x000000), // black: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0x0000aa), // blue selected-row bg
+	SelectionFg:   tcell.NewHexColor(0xffffff), // white on selection
+	BannerBg:      tcell.NewHexColor(0xff55ff), // light magenta banner (stands out from cyan)
+	BarHealthy:    tcell.NewHexColor(0x00aaaa), // cyan FARM healthy bar
+	ScrollArrow:   tcell.NewHexColor(0xffffff), // white arrows
+	ListSecondary: tcell.NewHexColor(0xaaaaaa), // light gray secondary line
+}
+
+// neon is the cyberpunk palette: electric blue chrome, magenta banner and
+// bars, white text.
+var neon = Theme{
+	Name:          "neon",
+	Accent:        tcell.NewHexColor(0x22d3ff), // electric blue: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x6b7a99), // desaturated blue-gray: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x39ff9e), // neon mint
+	Caution:       tcell.NewHexColor(0xffcc33), // neon amber
+	Failing:       tcell.NewHexColor(0xff2f5f), // neon crimson
+	Neutral:       tcell.NewHexColor(0xeef2ff), // near-white body text
+	Inverse:       tcell.NewHexColor(0x0a0a12), // near-black: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0x3a0d43), // deep violet selected-row bg
+	SelectionFg:   tcell.NewHexColor(0xffe6fb), // pale pink on selection
+	BannerBg:      tcell.NewHexColor(0xff2fb8), // hot magenta banner (stands out from blue)
+	BarHealthy:    tcell.NewHexColor(0xff2fb8), // magenta FARM healthy bar
+	ScrollArrow:   tcell.NewHexColor(0x22d3ff), // electric blue arrows
+	ListSecondary: tcell.NewHexColor(0xc084d8), // mauve secondary line
+}
+
+// nord is the arctic blue-gray scheme: frost for chrome, aurora for severity.
+var nord = Theme{
+	Name:          "nord",
+	Accent:        tcell.NewHexColor(0x88c0d0), // frost cyan: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x616e88), // polar slate: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0xa3be8c), // aurora green
+	Caution:       tcell.NewHexColor(0xebcb8b), // aurora yellow
+	Failing:       tcell.NewHexColor(0xbf616a), // aurora red
+	Neutral:       tcell.NewHexColor(0xd8dee9), // snow-storm body text
+	Inverse:       tcell.NewHexColor(0x2e3440), // polar night: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0x434c5e), // polar night selected-row bg
+	SelectionFg:   tcell.NewHexColor(0xeceff4), // brightest snow on selection
+	BannerBg:      tcell.NewHexColor(0xd08770), // aurora orange banner (stands out from frost)
+	BarHealthy:    tcell.NewHexColor(0x8fbcbb), // frost teal FARM healthy bar
+	ScrollArrow:   tcell.NewHexColor(0x88c0d0), // frost cyan arrows
+	ListSecondary: tcell.NewHexColor(0x7b8ca6), // muted slate secondary line
+}
+
+// gruvbox is the warm retro-earth scheme. Chrome takes gruvbox blue rather
+// than its signature gold, which would read as a caution on every border.
+var gruvbox = Theme{
+	Name:          "gruvbox",
+	Accent:        tcell.NewHexColor(0x83a598), // gruvbox blue: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x928374), // gray: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0xb8bb26), // bright green
+	Caution:       tcell.NewHexColor(0xfabd2f), // bright yellow
+	Failing:       tcell.NewHexColor(0xfb4934), // bright red
+	Neutral:       tcell.NewHexColor(0xebdbb2), // light cream body text
+	Inverse:       tcell.NewHexColor(0x282828), // dark0: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0x504945), // dark2 selected-row bg
+	SelectionFg:   tcell.NewHexColor(0xfbf1c7), // light0 on selection
+	BannerBg:      tcell.NewHexColor(0xfe8019), // bright orange banner (stands out from blue)
+	BarHealthy:    tcell.NewHexColor(0x8ec07c), // aqua FARM healthy bar
+	ScrollArrow:   tcell.NewHexColor(0x83a598), // gruvbox blue arrows
+	ListSecondary: tcell.NewHexColor(0xa89984), // dim cream secondary line
+}
+
+// beacon is the colour-vision-deficient-safe palette: a blue → yellow → rose
+// severity ramp (Paul Tol's high-contrast set) that stays separable under all
+// three CVD types, with neutral chrome so no hue competes with it.
+var beacon = Theme{
+	Name:          "beacon",
+	Accent:        tcell.NewHexColor(0xd6dee8), // cool near-white: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x6b7785), // slate: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x6cb4ee), // blue
+	Caution:       tcell.NewHexColor(0xeecc66), // yellow
+	Failing:       tcell.NewHexColor(0xee7788), // rose
+	Neutral:       tcell.NewHexColor(0xe4e9ef), // cool white body text
+	Inverse:       tcell.NewHexColor(0x10151b), // near-black: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0x2a3542), // dark slate selected-row bg
+	SelectionFg:   tcell.NewHexColor(0xf0f4f8), // near-white on selection
+	BannerBg:      tcell.NewHexColor(0xeecc66), // yellow banner
+	BarHealthy:    tcell.NewHexColor(0x6cb4ee), // blue FARM healthy bar (matches OK)
+	ScrollArrow:   tcell.NewHexColor(0xd6dee8), // near-white arrows
+	ListSecondary: tcell.NewHexColor(0x8b97a5), // muted slate secondary line
+}
+
+// daylight is the cool light palette. Yellow is invisible on paper, so the
+// ramp is re-tuned for a light field: dark amber caution, darkened green OK.
+// Like parchment it assumes a light terminal background — Theme has no
+// background role, so the terminal supplies it.
+var daylight = Theme{
+	Name:          "daylight",
+	Accent:        tcell.NewHexColor(0x0b6fb4), // deep azure: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x7a8894), // slate: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x1a7f37), // dark green (legible on paper)
+	Caution:       tcell.NewHexColor(0x9a6700), // dark amber
+	Failing:       tcell.NewHexColor(0xcf222e), // red
+	Neutral:       tcell.NewHexColor(0x1f2328), // ink body text
+	Inverse:       tcell.NewHexColor(0xffffff), // white: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0xdbe9f6), // pale blue selected-row bg
+	SelectionFg:   tcell.NewHexColor(0x0b3a5c), // deep blue on selection
+	BannerBg:      tcell.NewHexColor(0xb35900), // dark orange banner (stands out from azure)
+	BarHealthy:    tcell.NewHexColor(0x2da44e), // green FARM healthy bar
+	ScrollArrow:   tcell.NewHexColor(0x0b6fb4), // azure arrows
+	ListSecondary: tcell.NewHexColor(0x6a737d), // gray secondary line
+}
+
+// parchment is the warm light palette: cool teal chrome against a warm
+// severity ramp. Assumes a light terminal background, as daylight does.
+var parchment = Theme{
+	Name:          "parchment",
+	Accent:        tcell.NewHexColor(0x1a6b62), // deep teal: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x93887a), // warm gray: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x4a7a2c), // olive green
+	Caution:       tcell.NewHexColor(0xa86a00), // ochre
+	Failing:       tcell.NewHexColor(0xb3261e), // brick red
+	Neutral:       tcell.NewHexColor(0x3a352d), // warm ink body text
+	Inverse:       tcell.NewHexColor(0xfbf7ee), // cream: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0xe3d9c4), // warm sand selected-row bg
+	SelectionFg:   tcell.NewHexColor(0x2c281f), // dark warm ink on selection
+	BannerBg:      tcell.NewHexColor(0xa86a00), // ochre banner (stands out from teal)
+	BarHealthy:    tcell.NewHexColor(0x5a8f34), // olive FARM healthy bar
+	ScrollArrow:   tcell.NewHexColor(0x1a6b62), // teal arrows
+	ListSecondary: tcell.NewHexColor(0x8c8172), // dim warm gray secondary line
+}
+
 // themes is the registry of built-in palettes; themeCycle gives the stable
 // order for the cycle key and ThemeNames.
 var themes = map[string]Theme{
-	"dark":     dark,
-	"mono":     mono,
-	"electric": electric,
-	"phosphor": phosphor,
-	"amber":    amber,
+	"dark":      dark,
+	"mono":      mono,
+	"electric":  electric,
+	"phosphor":  phosphor,
+	"amber":     amber,
+	"cga":       cga,
+	"neon":      neon,
+	"nord":      nord,
+	"gruvbox":   gruvbox,
+	"beacon":    beacon,
+	"daylight":  daylight,
+	"parchment": parchment,
 }
 
-var themeCycle = []string{"dark", "electric", "phosphor", "amber", "mono"}
+// themeCycle groups the palettes by family — retro hardware, then the modern
+// dark schemes, then the light pair — so cycling walks related looks together.
+var themeCycle = []string{
+	"dark", "electric", "phosphor", "amber", "cga",
+	"neon", "nord", "gruvbox", "beacon",
+	"daylight", "parchment", "mono",
+}
 
 // HasTheme reports whether name is a known built-in theme.
 func HasTheme(name string) bool {

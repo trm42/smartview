@@ -208,7 +208,22 @@ goroutine (`setNarrow` in app.go is the pattern).
   ramp must escalate — `theme_test.go` pins that Failing is hotter than OK, not
   paler),
   `amber` (a Hercules monochrome amber-monitor palette — warm amber accent/text
-  with a warm amber→orange→red severity ramp), and `mono` are the alternates.
+  with a warm amber→orange→red severity ramp),
+  `cga` (the authentic IBM CGA 16 — every role is one of those colours, none
+  interpolated), `neon` (cyberpunk: electric-blue chrome, magenta banner/bars,
+  white text), `nord` and `gruvbox` (the editor schemes; gruvbox takes its blue
+  rather than its signature gold for chrome, since a gold border reads as a
+  caution), `beacon` (colour-vision-safe: Paul Tol's blue→yellow→rose ramp with
+  deliberately neutral chrome, since green/red is exactly the pair deuteranopia
+  collapses; `theme_test.go` simulates a deuteranope and pins that beacon's
+  three stay separable *and* that dark's green/red does not, so the test can't
+  quietly stop proving anything), `daylight` and `parchment` (light, cool and
+  warm — they re-tune the ramp for a light field, since yellow caution vanishes
+  on paper, and they need a light terminal background because a Theme sets
+  foregrounds only), and `mono` are the alternates. Two invariants hold across
+  every palette and are pinned by tests: `ListSecondary` never equals `OK`, and
+  `Inverse` clears 3:1 contrast on both fields it is drawn on (`Accent` for the
+  active-tab pill, `BannerBg` for the root warning).
   `--theme NAME` selects at startup, the `T` key cycles live
   (`cycleTheme`→`repaintAll`, which forces a detail rebuild so widgets that baked
   colour in at build time get re-coloured — the one-shot root-warning banner is
