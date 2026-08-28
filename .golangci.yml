@@ -9,13 +9,18 @@ version: "2"
 
 run:
   timeout: 5m
+  # Lint the dev-tagged fixture loader, the backbone of the fixture workflow.
+  # Only one tag set can be active, and the `!dev` counterpart
+  # (internal/smart/fixture_stub.go) is a handful of no-op stubs.
+  build-tags:
+    - dev
 
 linters:
   default: standard
   # gosec is added on top of the standard set: this tool shells out as root, so a
   # security linter earns its keep as a regression guard (catches a future
-  # subprocess/file-handling slip). Its one expected finding (G204) is excluded
-  # below with the rationale.
+  # subprocess/file-handling slip). Its two expected findings are excluded below
+  # with the rationale.
   enable:
     - gosec
   exclusions:
@@ -24,10 +29,16 @@ linters:
       # smartview deliberately shells out to `smartctl`; the binary name is a
       # constant and arguments come from internal call sites (device names are
       # round-tripped verbatim from `smartctl --scan-open`), so gosec's G204
-      # "subprocess launched with variable" would be a false positive if gosec
-      # is ever enabled. Documented here so the intent is recorded.
+      # "subprocess launched with variable" is a false positive here.
       - path: internal/smart/smart.go
         text: "G204"
+        linters:
+          - gosec
+      # The dev-only fixture loader reads *.json from a directory the operator
+      # names on the command line, so G304's tainted-path concern does not
+      # apply: the path is the input, not an untrusted value.
+      - path: internal/smart/fixture_dev.go
+        text: "G304"
         linters:
           - gosec
       # gosec's threat model is the shipped binary, not test code. Tests read

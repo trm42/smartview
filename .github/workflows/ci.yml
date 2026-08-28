@@ -35,13 +35,35 @@ jobs:
             echo "$files"
             exit 1
           fi
+      - name: SPDX headers
+        run: |
+          # grep -L exits 0 whether or not it printed anything, so the list
+          # itself is the verdict.
+          files="$(git ls-files '*.go' | xargs grep -L 'SPDX-License-Identifier' || true)"
+          if [ -n "$files" ]; then
+            echo "missing an SPDX-License-Identifier header:"
+            echo "$files"
+            exit 1
+          fi
+      - name: go mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
       - name: go vet
         run: go vet ./...
+      - name: go vet (dev fixtures)
+        run: go vet -tags dev ./...
       - name: go build
         run: go build -o smartview .
+      - name: go build (darwin/arm64)
+        # The release targets darwin but every job here is Linux; cross-compiling
+        # catches a darwin break before the release does. No platform-specific
+        # compilation units exist, so a macos runner would add little.
+        run: CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o /dev/null .
       - name: go build (dev fixtures)
         run: go build -tags dev -o /dev/null .
       - name: go test
+        # No dev-tagged tests exist, so a `-tags dev` run would repeat this one.
         run: go test -race -cover ./...
       - name: govulncheck
         run: |
