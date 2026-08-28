@@ -107,7 +107,7 @@ func writePhyCounters(b *strings.Builder, e *smart.SATAPhyEvents) {
 		fmt.Fprintf(b, nestIndent+"%s%6d[-] %s%s[-]\n", tag, c.Value, mutedTag(), esc(c.Name))
 	}
 	if nonzero == 0 {
-		fmt.Fprintf(b, nestIndent+okTag()+"No link events logged[-] (%d counters)\n", len(e.Table))
+		fmt.Fprintf(b, nestIndent+"No link events logged (%d counters)\n", len(e.Table))
 	}
 }
 
@@ -134,13 +134,13 @@ func writeErrorLog(b *strings.Builder, r *smart.Report) {
 	case r.ATAErrorLog != nil && r.ATAErrorLog.Extended != nil:
 		n := r.ATAErrorLog.Extended.Count
 		if n == 0 {
-			fmt.Fprintln(b, nestIndent+okTag()+"No errors logged[-]")
+			fmt.Fprintln(b, nestIndent+"No errors logged")
 		} else {
 			fmt.Fprintf(b, nestIndent+cautionTag()+"%s logged[-]\n", plural(n, "error", "errors"))
 		}
 		writeATAErrorEntries(b, r, r.ATAErrorLog.Extended.Table)
 	default:
-		fmt.Fprintln(b, nestIndent+strings.TrimPrefix(dash, ""))
+		fmt.Fprintln(b, nestIndent+dash)
 	}
 	writePendingDefects(b, r.ATAPendingDefects)
 }
@@ -150,7 +150,7 @@ func writeErrorLog(b *strings.Builder, r *smart.Report) {
 func writeNVMeErrorCount(b *strings.Builder, l *smart.NVMeErrorLog) {
 	n := len(l.Table)
 	if n == 0 {
-		fmt.Fprintln(b, nestIndent+okTag()+"No errors logged[-]")
+		fmt.Fprintln(b, nestIndent+"No errors logged")
 		return
 	}
 	fmt.Fprintf(b, nestIndent+cautionTag()+"%s logged[-]", plural(n, "error", "errors"))
@@ -230,7 +230,7 @@ func writePendingDefects(b *strings.Builder, d *smart.ATAPendingDefects) {
 		return
 	}
 	if d.Count == 0 {
-		fmt.Fprintln(b, nestIndent+okTag()+"No pending defects[-]")
+		fmt.Fprintln(b, nestIndent+"No pending defects")
 		return
 	}
 	fmt.Fprintf(b, nestIndent+cautionTag()+"%s pending reallocation[-]\n",

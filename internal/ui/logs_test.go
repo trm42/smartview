@@ -106,3 +106,58 @@ func TestSelfTestPassedSharesColorResult(t *testing.T) {
 		}
 	}
 }
+
+// TestNVMeErrorStatusEscapedOnce pins the colorResult contract at the NVMe
+// error-log sink: the keyword test runs on the original string and colorResult
+// does the escaping itself, so pre-escaping the argument double-escaped a
+// drive-controlled status ("[red]failed" -> "[red[[]failed").
+func TestNVMeErrorStatusEscapedOnce(t *testing.T) {
+	r := &smart.Report{
+		Device: smart.Device{Protocol: "NVMe"},
+		NVMeErrorLog: &smart.NVMeErrorLog{
+			Size: 256, Read: 1,
+			Table: []smart.NVMeErrorLogEntry{
+				{ErrorCount: 1, StatusField: smart.StringValue{String: "[red]failed"}},
+			},
+		},
+	}
+	got := buildLogsText(r)
+	want := esc("[red]failed")
+	if !strings.Contains(got, want) {
+		t.Errorf("want singly-escaped %q in logs text, got:\n%s", want, got)
+	}
+	if strings.Contains(got, esc(want)) {
+		t.Errorf("status was escaped twice:\n%s", got)
+	}
+	// The keyword test must have run on the original, not the escaped copy.
+	if !strings.Contains(got, failingTag()) {
+		t.Errorf("a %q status should read as a failure:\n%s", "failed", got)
+	}
+}
+
+// TestAllClearLinesAreNotGreen: colour marks exceptions, not membership. The
+// "nothing to report" lines render only when nothing is wrong, so tinting them
+// green made a healthy Logs tab a wall of green and left nothing to notice.
+func TestAllClearLinesAreNotGreen(t *testing.T) {
+	r := &smart.Report{
+		Device:            smart.Device{Protocol: "NVMe"},
+		NVMeErrorLog:      &smart.NVMeErrorLog{Size: 256},
+		ATAPendingDefects: &smart.ATAPendingDefects{Count: 0, Size: 32},
+		SATAPhyEvents: &smart.SATAPhyEvents{Table: []smart.SATAPhyCounter{
+			{ID: 1, Name: "Command failed due to ICRC error", Value: 0},
+		}},
+	}
+	got := buildLogsText(r)
+	for _, line := range strings.Split(got, "\n") {
+		if !strings.Contains(line, okTag()) {
+			continue
+		}
+		t.Errorf("all-clear line is tinted with the healthy colour: %q", line)
+	}
+	// The lines themselves must still be there — neutral, not dropped.
+	for _, want := range []string{"No errors logged", "No pending defects", "No link events logged"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("want %q in logs text, got:\n%s", want, got)
+		}
+	}
+}

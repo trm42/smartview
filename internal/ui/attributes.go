@@ -174,7 +174,7 @@ func (v *attributesView) renderRows() {
 	v.shown = v.visibleRows()
 	if len(v.shown) == 0 {
 		v.table.SetCell(1, 0, tview.NewTableCell(" No attributes match — all healthy ").
-			SetTextColor(activeTheme.OK).SetSelectable(false))
+			SetTextColor(activeTheme.Neutral).SetSelectable(false))
 		v.footer.SetText("")
 		return
 	}

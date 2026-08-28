@@ -334,7 +334,7 @@ const farmHeadPitch = 2
 func farmHeadSummary(title string, heads int) tview.Primitive {
 	tv := tview.NewTextView().SetDynamicColors(true)
 	tv.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(title)
-	tv.SetText(fmt.Sprintf("%snone on any of %d heads[-]", okTag(), heads))
+	tv.SetText(fmt.Sprintf("none on any of %d heads", heads))
 	return tv
 }
 
