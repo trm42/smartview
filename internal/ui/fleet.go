@@ -100,13 +100,28 @@ func (v *fleetView) setFocused(focused bool) {
 	v.table.SetBorderColor(borderColor(focused))
 }
 
-// Draw re-renders on width change; width is only known here.
+// Draw re-renders on width change; width is only known here. The budget is the
+// table's inner width, which a Flex assigns only inside Flex.Draw, so it is
+// measured again afterwards — the first visible frame would otherwise render
+// with no width and drop every comparison column.
 func (v *fleetView) Draw(screen tcell.Screen) {
-	if _, _, w, _ := v.table.GetInnerRect(); w != v.lastWidth {
-		v.lastWidth = w
-		v.render()
-	}
+	v.syncWidth()
 	v.Flex.Draw(screen)
+	if v.syncWidth() {
+		v.Flex.Draw(screen)
+	}
+}
+
+// syncWidth re-renders against the table's current inner width, reporting
+// whether the width had in fact changed.
+func (v *fleetView) syncWidth() bool {
+	_, _, w, _ := v.table.GetInnerRect()
+	if w == v.lastWidth {
+		return false
+	}
+	v.lastWidth = w
+	v.render()
+	return true
 }
 
 // refresh applies the latest poll. Called on every poll, visible or not, so
