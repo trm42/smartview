@@ -189,9 +189,19 @@ func (a *App) setNarrow(narrow bool) {
 	a.applyLayout(narrow)
 	a.refreshBanner()
 	a.refreshChrome()
-	// The list is not in the narrow layout, so focus cannot rest on it there.
+	// The list is not in the narrow layout, so focus cannot rest on it there:
+	// tview would then forward no key to anything, since the focused primitive
+	// is off-tree. The move has to be queued rather than done here — setNarrow
+	// runs from the before-draw hook, which tview calls with the application
+	// mutex held, and SetFocus takes that same (non-reentrant) mutex. Calling it
+	// inline self-deadlocks the event loop on the very first draw. The goroutine
+	// is required too: QueueUpdate blocks until the event loop runs the closure,
+	// which cannot happen until this draw returns.
 	if narrow && a.list.HasFocus() {
-		a.app.SetFocus(a.detail.content())
+		go a.app.QueueUpdateDraw(func() {
+			a.app.SetFocus(a.detail.content())
+			a.refreshChrome()
+		})
 	}
 }
 
@@ -396,6 +406,22 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 	case tcell.KeyTab:
 		a.toggleFocus()
 		return nil
+	case tcell.KeyUp, tcell.KeyDown:
+		// Wide leaves the arrows to the focused widget (the drive list, or the
+		// detail body it scrolls). Narrow has no list on screen for them to
+		// reach, so the drive selection is stepped from here — the narrow hint
+		// bar advertises "↑/↓ drive" and it has to be true. Line-scrolling the
+		// detail there is j/k, paging is PgUp/PgDn. Fleet mode is exempt: its
+		// table is focused and owns them (see onFleetKey).
+		if !a.narrow || a.fleetMode {
+			return ev
+		}
+		delta := 1
+		if ev.Key() == tcell.KeyUp {
+			delta = -1
+		}
+		a.stepDrive(delta)
+		return nil
 	case tcell.KeyLeft:
 		a.focusLeft()
 		return nil
@@ -501,7 +527,9 @@ func (a *App) toggleFleet() {
 func (a *App) exitFleet(focusDetail bool) {
 	a.fleetMode = false
 	a.bodyPages.SwitchToPage(pageDrives)
-	if focusDetail {
+	// Narrow keeps focus on the detail either way: the list is not in that
+	// layout, and focus on an off-tree primitive reaches nothing.
+	if focusDetail || a.narrow {
 		a.app.SetFocus(a.detail.content())
 	} else {
 		a.app.SetFocus(a.list)
@@ -524,8 +552,15 @@ func (a *App) openDrive(name string) {
 	a.exitFleet(true)
 }
 
-// toggleFocus moves focus between the drive list and the detail content.
+// toggleFocus moves focus between the drive list and the detail content. In the
+// narrow layout there is nothing to toggle — the list is not in the widget tree,
+// so focusing it would park focus off-tree and tview would forward no key at all.
 func (a *App) toggleFocus() {
+	if a.narrow {
+		a.app.SetFocus(a.detail.content())
+		a.refreshChrome()
+		return
+	}
 	if a.list.HasFocus() {
 		a.app.SetFocus(a.detail.content())
 	} else {
@@ -548,11 +583,15 @@ func (a *App) focusRight() {
 }
 
 // focusLeft is the reverse of focusRight, falling through to the drive list.
+// The narrow layout has no list to fall through to, so it stops at the first tab.
 func (a *App) focusLeft() {
 	if a.list.HasFocus() {
 		return
 	}
 	if a.detail.active == 0 {
+		if a.narrow {
+			return
+		}
 		a.app.SetFocus(a.list)
 		a.refreshChrome()
 		return
@@ -581,8 +620,27 @@ func (a *App) setInterval(d time.Duration) {
 	a.refreshChrome()
 }
 
+// stepDrive moves the drive selection by delta, clamped at both ends. It is the
+// narrow layout's stand-in for arrowing the drive list, which is not on screen
+// there; the wide layout never needs it because the list handles its own keys.
+func (a *App) stepDrive(delta int) {
+	cur := a.list.GetCurrentItem()
+	next := cur + delta
+	if next < 0 || next >= a.list.GetItemCount() {
+		return
+	}
+	a.list.SetCurrentItem(next)
+	// SetCurrentItem fires the changed-func *before* storing the new index (see
+	// openDrive), so render again now that it is current.
+	a.showSelected()
+	a.refreshChrome()
+}
+
 // showSelected renders the cached report for the highlighted drive.
 func (a *App) showSelected() {
+	// The rail is the narrow layout's drive list, and the selection marker it
+	// carries has to follow the selection like the list's highlight does.
+	a.renderRail()
 	dev, ok := a.selectedDevice()
 	if !ok {
 		return
@@ -607,6 +665,10 @@ func (a *App) selectedDevice() (smart.Device, bool) {
 // updated in place with SetItemText: Clear()+AddItem() fires SetChangedFunc,
 // which would flip the detail to another drive and back, rebuilding every tab.
 func (a *App) populateList() {
+	// The rail renders the same rows in one line, so it is repainted wherever
+	// the list is — otherwise its glyphs, alert count and theme colours freeze
+	// at the moment the narrow layout was installed. No-op when not narrow.
+	defer a.renderRail()
 	if a.list.GetItemCount() != len(a.devices) {
 		cur := a.list.GetCurrentItem()
 		a.list.Clear()
