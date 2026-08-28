@@ -53,6 +53,9 @@ type App struct {
 
 	// All fields below are touched only on the main (event-loop) goroutine,
 	// either directly or inside QueueUpdateDraw callbacks, so need no locking.
+	// One carve-out like refreshing above: devices is written once in Run,
+	// before the poll goroutine is started, and only read afterwards — so the
+	// poll loop may range over it off the event loop without synchronisation.
 	devices   []smart.Device
 	reports   map[string]*smart.Report
 	history   map[string][]float64 // runtime temperature series per device
