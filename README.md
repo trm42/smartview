@@ -52,6 +52,14 @@ cycle the sort order and `f` to cycle the filter (e.g. only flagged attributes).
 
 ![smartview attributes tab — severity-sorted SMART attribute table](docs/images/attributes.png)
 
+**Statistics** — the drive's own Device Statistics log, shown when it reports
+one: lifetime power-on resets, logical sectors written and read, rotating-media
+counters (head flight hours, load events, reallocation candidates), reported
+uncorrectable errors, the full temperature history and transport counters.
+Unlike the attribute table these are plain counters, not normalised values.
+
+![smartview Statistics tab — the drive's Device Statistics pages, from power-on resets to temperature history](docs/images/statistics.png)
+
 **FARM** — Seagate Field Accessible Reliability Metrics: unrecoverable read/write
 counts, reallocated and candidate sectors, command timeouts, the drive's
 temperature range and 12 V rail, workload (read/write command counts), and
@@ -87,6 +95,8 @@ ATA and NVMe expose different counters, so a `—` means *this drive does not
 report that reading* — never a zero. A write total shown as `~1.5 TB` was
 derived from vendor attribute 241, whose unit is vendor-defined; the legend
 under each section spells out that section's caveats.
+
+![smartview fleet comparison — every drive ranked by health, ATA and NVMe error counters side by side](docs/images/fleet.png)
 
 ## Requirements
 
