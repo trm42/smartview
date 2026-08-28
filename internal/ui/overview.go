@@ -385,10 +385,13 @@ func buildGauges(r *smart.Report) tview.Primitive {
 
 	if h.PercentageUsed != nil {
 		g := tvxwidgets.NewPercentageModeGauge()
-		g.SetTitle(" Life used ")
+		// Endurance remaining, not consumed: the fleet's endurance bar drains as
+		// the drive wears, and two surfaces showing the same reading with
+		// opposite polarity read as a contradiction.
+		g.SetTitle(" Life left ")
 		g.SetBorder(true)
 		g.SetMaxValue(100)
-		g.SetValue(clampPct(*h.PercentageUsed))
+		g.SetValue(100 - clampPct(*h.PercentageUsed))
 		// Colour by the value itself, not the drive-wide verdict.
 		g.SetPgBgColor(severityColor(lifeUsedSeverity(*h.PercentageUsed)))
 		col.AddItem(g, 3, 0, false)
