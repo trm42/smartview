@@ -202,7 +202,9 @@ func (v *attributesView) setAttrRow(row int, a smart.ATAAttribute) {
 	// Margin carries its own colour tags (a green bar even on a neutral row).
 	v.table.SetCell(row, 4, tview.NewTableCell(" "+marginCell(a)+" ").
 		SetSelectedStyle(sel))
-	put(5, esc(decodeReading(a)), tview.AlignRight)
+	// decodeReading returns "" when the drive reports no raw value; the themed
+	// dash is substituted here, after escaping, as marginCell's cell does.
+	put(5, orDash(esc(decodeReading(a))), tview.AlignRight)
 }
 
 // attrKind names pre-fail vs old-age from the authoritative flags bit.
@@ -333,7 +335,8 @@ func humanAttrName(s string) string {
 }
 
 // decodeReading converts well-known raw values into real-world figures,
-// falling back to the raw string.
+// falling back to the raw string. An unreported value returns "": the themed
+// dash is substituted at the sink rather than escaped along with the data.
 func decodeReading(a smart.ATAAttribute) string {
 	switch a.ID {
 	case 9, 240: // power-on hours, head flying hours
@@ -348,9 +351,6 @@ func decodeReading(a smart.ATAAttribute) string {
 		if n, ok := smart.LeadingInt(a.Raw.String); ok {
 			return fmt.Sprintf("%d°C", n)
 		}
-	}
-	if a.Raw.String == "" {
-		return "—"
 	}
 	return a.Raw.String
 }
@@ -425,7 +425,7 @@ func (v *nvmeAttributesView) setRows(h *smart.NVMeHealth) {
 	v.table.SetCell(0, 1, headerCell("Value"))
 	for i, r := range v.rows {
 		v.table.SetCell(i+1, 0, tview.NewTableCell(" "+r.k+" ").
-			SetTextColor(activeTheme.SelectionFg).SetSelectedStyle(selectedRowStyle(activeTheme.SelectionFg)))
+			SetTextColor(activeTheme.Neutral).SetSelectedStyle(selectedRowStyle(activeTheme.Neutral)))
 		v.table.SetCell(i+1, 1, tview.NewTableCell(" "+r.v+" ").
 			SetTextColor(severityColor(r.sev)).SetSelectedStyle(selectedRowStyle(severityColor(r.sev))))
 	}
