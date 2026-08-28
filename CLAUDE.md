@@ -9,6 +9,12 @@ health via smartmontools. It shells out to `smartctl -j` and renders the parsed
 JSON in a tview-based dashboard. Licensed GPL-3.0-or-later (every `.go` file
 carries an SPDX header; keep it on new files).
 
+**Comment style: concise.** A doc comment is one sentence — two only when a
+non-obvious constraint needs stating. Inline comments state only constraints
+the code can't show, in one line where possible. No history lessons ("this
+used to…"), no justifying why a change is correct, no restating what the code
+does. Long rationale belongs in this file's bullets, not inline.
+
 ## Commands
 
 ```sh
