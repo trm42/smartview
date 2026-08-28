@@ -339,6 +339,13 @@ func (a *App) contextHints() string {
 	aq := accentTag()
 	switch a.detail.activeID() {
 	case "attributes":
+		// Keyed on the live view, not the tab id: both protocols use the id
+		// "attributes", but only the ATA table binds s/f. The NVMe health view
+		// installs no input capture, so those keys fall through to onKey and are
+		// dropped — advertising a binding that does nothing is worse than silence.
+		if _, ok := a.detail.activeView().(*attributesView); !ok {
+			return ""
+		}
 		return "   " + aq + "s[-] sort   " + aq + "f[-] filter"
 	case "tests":
 		if a.detail.testsRunning() {
@@ -969,25 +976,35 @@ func (a *App) confirm(text, yesLabel string, onYes func()) {
 	a.pushModal(modal)
 }
 
+// keysText is the body of the '?' modal. Every line stays under 26 columns:
+// tview.Modal wraps at a third of the screen width, so a longer line splits at
+// the 80-column floor. keys_test.go fails if a bound rune is missing here.
+const keysText = "Keys\n\n" +
+	"↑/↓        select / scroll\n" +
+	"←/→        prev / next tab\n" +
+	"1-9        jump to tab\n" +
+	"Tab        move focus\n" +
+	"j / k      scroll content\n" +
+	"PgUp/PgDn  page content\n" +
+	"g / G      top / bottom\n" +
+	"s / f      sort / filter\n" +
+	"t          Tests tab\n" +
+	"Enter      start test\n" +
+	"x          cancel test\n" +
+	"c          fleet compare\n" +
+	"Enter      open drive\n" +
+	"Esc        back\n" +
+	"r          refresh now\n" +
+	"+ / -      refresh rate\n" +
+	"T          colour theme\n" +
+	"?          this list\n" +
+	"q          quit"
+
 // showKeys lists every binding in a dismissable modal; the narrow hint bar
 // points here, so nothing is merely hidden.
 func (a *App) showKeys() {
 	modal := tview.NewModal().
-		// One binding per line — tview.Modal wraps, splitting two-column lines.
-		SetText("Keys\n\n" +
-			"↑/↓    select drive\n" +
-			"←/→    previous / next tab\n" +
-			"1-9    jump to tab\n" +
-			"Tab    move focus\n" +
-			"t      Tests tab\n" +
-			"s / f  sort / filter attributes\n" +
-			"c      fleet comparison\n" +
-			"Enter  open drive from the fleet\n" +
-			"Esc    back\n" +
-			"r      refresh now\n" +
-			"+ / -  refresh interval\n" +
-			"T      cycle colour theme\n" +
-			"q      quit").
+		SetText(keysText).
 		AddButtons([]string{"Close"}).
 		SetDoneFunc(func(int, string) { a.popModal() })
 	a.pushModal(modal)
