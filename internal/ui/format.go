@@ -16,8 +16,24 @@ import (
 // names) before it reaches markup-interpreting widgets — otherwise a hostile
 // drive can inject colour tags and spoof the health display. Escape only the
 // data, not the surrounding intentional tags.
+//
+// Control characters are folded to spaces as well: callers write the value into
+// a line of its own, so an embedded newline would forge extra key/value rows.
 func esc(s string) string {
-	return tview.Escape(s)
+	return tview.Escape(stripControl(s))
+}
+
+// stripControl replaces C0 controls, DEL and the C1 range with a space. A space
+// is the benign substitution here: control characters carry no display meaning,
+// and the widths every panel is laid out against stay right. strings.Map returns
+// the original string when nothing changes, so the common case allocates nothing.
+func stripControl(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return ' '
+		}
+		return r
+	}, s)
 }
 
 // dash is defined in theme.go; it carries the active theme's muted colour.
