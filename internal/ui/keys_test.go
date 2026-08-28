@@ -186,7 +186,8 @@ func TestKeysModalDocumentsEveryBoundRune(t *testing.T) {
 }
 
 // TestKeysModalDocumentsNamedKeys covers the bindings that are not runes, so the
-// AST scan cannot see them: they are matched as tcell.Key constants.
+// AST scan cannot see them: they are matched as tcell.Key constants. This list
+// is hand kept — add to it when a handler matches a new tcell.Key.
 func TestKeysModalDocumentsNamedKeys(t *testing.T) {
 	documented := documentedKeys(t)
 	for _, key := range []string{
@@ -199,6 +200,10 @@ func TestKeysModalDocumentsNamedKeys(t *testing.T) {
 		"→",
 		"PgUp", // scrollView paging
 		"PgDn",
+		"^B", // the Ctrl aliases scrollView binds beside PgUp/PgDn
+		"^F",
+		"Home", // scrollView jump to top / bottom
+		"End",
 	} {
 		if !documented[key] {
 			t.Errorf("%s is bound but missing from the '?' modal (keysText)", key)

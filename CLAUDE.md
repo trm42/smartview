@@ -24,7 +24,14 @@ go run .                       # run (refresh defaults to 30s; --interval 10s se
 go test ./...                  # all tests
 go test ./internal/smart/ -run TestParseNVMe   # single test
 go vet ./... && gofmt -l .     # vet + format check (gofmt -l should print nothing)
+GOTOOLCHAIN=go1.26.4 golangci-lint run ./...   # lint (CI pins via go.mod)
 ```
+
+Pin `GOTOOLCHAIN` for the linter: under Go 1.27.0 a bare `golangci-lint run`
+fails inside `crypto/internal/randutil` with `undefined: rand (typecheck)`.
+CI additionally gates on the SPDX headers, `go mod tidy` leaving no diff, a
+`-tags dev` vet and build, a darwin/arm64 cross-compile, `go test -race -cover`
+and `govulncheck` (see `.github/workflows/`).
 
 Runtime needs `smartctl` (smartmontools ≥ 7.0) on PATH; full attribute access
 often requires `sudo`. Driving the TUI for verification (no tmux in this env):
@@ -38,7 +45,10 @@ go build -tags dev -o smartview .                  # dev build with fixture supp
 ./smartview --fixtures internal/smart/testdata     # render captured fixtures
 ```
 
-This is the canonical way to verify UI changes for hardware not on hand.
+This is the canonical way to verify UI changes without the drives attached. The
+committed fixtures are real `smartctl -j -x` captures from the SATA hardware
+this project is developed against, so a fixture run exercises what those drives
+actually report — it is not a synthetic stand-in.
 `--fixtures DIR` loads every `*.json` in DIR as drive data — the committed
 `internal/smart/testdata/` fixtures cover ATA, NVMe, sparse Apple NVMe, and a
 Seagate FARM log. Fixture mode **bypasses the smartctl preflight** entirely, so
@@ -69,6 +79,15 @@ is applied to UI state **only inside `app.QueueUpdateDraw`**. tview is not
 goroutine-safe; all widget mutation must happen there. App state maps
 (`reports`, `history`) are therefore touched only on the event-loop goroutine and
 need no mutex.
+
+`QueueUpdateDraw` is not the whole rule. **The draw hooks run inside the locked
+draw**: tview calls `SetBeforeDrawFunc`/`SetAfterDrawFunc` with the application
+mutex already held, and it is not reentrant, so any `Application` method that
+takes it — `SetFocus` among them — self-deadlocks the event loop on the very
+first frame. Queuing is not an escape by itself: `QueueUpdate(Draw)` blocks
+until the loop runs the closure, and the loop cannot get there until the draw
+returns. Work a draw hook needs from the application therefore goes on its own
+goroutine (`setNarrow` in app.go is the pattern).
 
 ### Non-obvious invariants (read before changing the data layer)
 
@@ -113,7 +132,12 @@ need no mutex.
   counter is a bug. `DataWritten` also returns its `WriteSource`: only ATA
   attribute 241 has vendor-defined units, so it is flagged `Approximate()` and the
   UI marks it `~` with a legend caveat. Put new shared readings here — they get
-  fixture-backed tests, which UI code cannot.
+  fixture-backed tests against real captured drive JSON, which rendering code
+  only reaches indirectly. Rendering code must then consume what the accessor
+  resolved rather than re-resolving it: `spareSeverityPct` takes the
+  `(pct, threshold)` pair `SparePercent` returns, because `SparePercent` also
+  answers from `Report.SpareAvailable` and a grader that re-reads `NVMeHealth`
+  both drifts from the value beside it and dereferences nil.
 - **Capability-driven tabs** (detail.go `visibleTabs`): a tab only appears when
   its source data exists (the Logs tab hides for drives with no error/self-test
   log; the Tests tab hides unless `Report.SupportsSelfTest()`). When adding a
@@ -132,6 +156,12 @@ need no mutex.
   `a.interval` and signals `intervalCh`, which `poll.go`'s loop drains to call
   `ticker.Reset` — the cadence changes live without restarting the poll loop.
   `--interval` only sets the starting value (default 30s).
+- **The `?` modal is the binding list of record** (`keysText` in app.go), and
+  `keys_test.go` parses the package for the runes the handlers match, so a new
+  binding that is not documented there fails CI. Named keys (`tcell.Key`
+  constants) are invisible to that scan and are pinned by a hand-kept list in
+  the same test — extend it when a handler matches a new one. The README key
+  table is written from it.
 - **Scroll arrows are a shared affordance** (`scroll.go`): every tab that can
   overflow shows the same cyan ▲/▼ off-screen cue via `drawScrollArrows`. The
   `scrollView` container (FARM, Overview's whole layout uses widget composition)
@@ -214,6 +244,13 @@ need no mutex.
   known at draw time. Nothing may truncate silently: the hint bar shortens
   deliberately and offers `?`, and the fleet drops whole columns (measuring the
   cells it actually renders) and says how many in the legend.
+  Narrow is effectively a **second widget tree**: `a.list` is not in it, so
+  focusing the list there parks focus off-tree and tview forwards no key to
+  anything at all. Every wide path gated on `a.narrow` needs a narrow
+  counterpart — a focus guard in `toggleFocus`/`focusLeft`/`exitFleet`,
+  `renderRail` wherever `populateList`/`showSelected` repaint the list, and
+  `stepDrive` on `KeyUp`/`KeyDown` in `onKey`, since no list is on screen to
+  receive them. `layout_test.go` exercises both widths on a simulation screen.
 - **Width-aware panels relayout in `Draw`**, not in `refresh`: farm.go,
   overview.go and statistics.go each cache `lastWidth` and rebuild when it
   changes. Long values are pre-wrapped with `hangingIndent` (format.go) so they
@@ -250,8 +287,20 @@ cross-protocol accessors against the same fixtures, pinning which source each
 drive falls through to (the Seagate reads writes from Device Statistics, the
 Samsung from attribute 241 and is therefore approximate) and that absent
 readings stay absent. Capture new ones with
-`smartctl -j -x <dev> > internal/smart/testdata/<name>.json`. There are no UI
-tests; verify the UI by running it.
+`smartctl -j -x <dev> > internal/smart/testdata/<name>.json`.
+
+`internal/ui` is tested too, in three patterns worth copying rather than
+inventing a fourth. `layout_test.go` runs the whole `App` headlessly on a
+`tcell.NewSimulationScreen()`, injecting keys through the real input capture —
+this is what catches a deadlock, a wrong layout branch or focus parked
+off-tree, none of which a pure-function test can see, and every wait in it is
+bounded so a regression fails instead of hanging CI. `keys_test.go` parses the
+package with `go/ast` and asserts every bound rune appears in `keysText`, a
+doc-drift guard enforced by a test rather than by review. `fleet_test.go`
+asserts from inside the after-draw hook, on the first visible frame, because
+queuing an update draws a second time and the second frame was always correct.
+Running the fixture build stays the check for how it *looks*, not for whether
+it works.
 
 ## Roadmap
 

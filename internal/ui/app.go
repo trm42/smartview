@@ -985,8 +985,8 @@ const keysText = "Keys\n\n" +
 	"1-9        jump to tab\n" +
 	"Tab        move focus\n" +
 	"j / k      scroll content\n" +
-	"PgUp/PgDn  page content\n" +
-	"g / G      top / bottom\n" +
+	"PgUp/PgDn ^B/^F  page\n" +
+	"g/G Home/End  top/bottom\n" +
 	"s / f      sort / filter\n" +
 	"t          Tests tab\n" +
 	"Enter      start test\n" +

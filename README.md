@@ -18,7 +18,7 @@ and whether anything has ever failed.
   auto-refreshes on an interval and can be refreshed on demand.
 - **Per-drive drill-down** — a tabbed detail pane whose tabs appear only when the
   drive actually reports that data (see below). Includes drive identity, NVMe wear
-  gauges (life used / spare), and a temperature-trend sparkline.
+  gauges (life left / spare available), and a temperature-trend sparkline.
 - **SMART attribute table** — the full ATA attribute table or the NVMe health log,
   sorted by severity and coloured green / yellow / red, with a plain-language
   explanation of the selected attribute at the bottom.
@@ -66,8 +66,9 @@ conveyance offline tests) with their results and estimated run times.
 
 **Tests** — shown only on drives that support self-tests. Select a **Short** or
 **Long (extended)** test and press `Enter` to start it (usually requires root);
-a live progress bar with a centered percent tracks the running test, and `x`
-cancels it. Results land in the **Logs** tab when the test completes.
+a progress bar tracks the running test — filled cells, then the percentage and,
+when the drive advertises a duration for that test type, an estimate of the time
+left — and `x` cancels it. Results land in the **Logs** tab when the test completes.
 
 ![smartview Tests tab — start a short or extended self-test](docs/images/tests.png)
 
@@ -156,35 +157,56 @@ go run .
 ## Usage
 
 ```sh
-smartview                 # auto-refresh every 30s (default)
-smartview --interval 10s  # custom starting refresh interval
-sudo smartview            # if attributes require root
+smartview                    # auto-refresh every 30s (default)
+smartview --interval 10s     # custom starting refresh interval
+smartview --theme phosphor   # start in a named colour theme
+smartview --version          # print the version and exit
+sudo smartview               # if attributes require root
 ```
 
 The refresh interval can also be changed at runtime with the `+` / `-` keys (see
 below) — `--interval` only sets the starting cadence.
 
+Five colour themes ship: `dark` (the default), `electric`, `phosphor`, `amber`
+and `mono`. `--theme` picks the starting one and `T` cycles them live, in that
+order. `phosphor` is a green-CRT palette in pure green, where severity reads as
+brightness plus the `●` glyph rather than as hue; `amber` is a Hercules
+amber-monitor palette with an amber → orange → red severity ramp; `mono` drops
+colour entirely and leans on the glyph and bold alone.
+
 ### Keys
 
-| Key                       | Action                                                        |
-| ------------------------- | ------------------------------------------------------------- |
-| `↑` / `↓` (or `j` / `k`)  | Select a drive (list focus) or scroll content (detail focus)  |
-| `PgUp` / `PgDn`, `g` / `G`| Page / jump to top / bottom of scrollable content             |
-| `←` / `→`                 | Move between panes and step through detail tabs (no wrap)     |
-| `Tab`                     | Toggle focus between the drive list and the detail pane       |
-| `1`–`9`                   | Switch detail tab by number                                   |
-| `t`                       | Jump straight to the **Tests** tab                            |
-| `c`                       | Toggle the **Fleet** comparison (all drives side by side)     |
-| `r`                       | Refresh now                                                   |
-| `+` / `-`                 | Slower / faster refresh (2s → 5s → 10s → 30s → 1m → 5m ladder)|
-| `s` / `f` (Attributes)    | Cycle the attribute sort / filter                             |
-| `Enter` / `x` (Tests)     | Start the selected self-test / cancel the running test        |
-| `1`–`4`, `←` / `→` (Fleet)| Switch the comparison section                                 |
-| `s` / `Enter` (Fleet)     | Toggle metric/name sort · open the highlighted drive          |
-| `Esc` (Fleet)             | Back to the per-drive view                                    |
-| `q` or `Esc`              | Quit                                                          |
+| Key                        | Action                                                        |
+| -------------------------- | ------------------------------------------------------------- |
+| `↑` / `↓`                  | Select a drive (list focus) or scroll content (detail focus)  |
+| `j` / `k`                  | Scroll the focused content line by line                       |
+| `PgUp` / `PgDn`, `Ctrl-B` / `Ctrl-F` | Page the scrollable content                       |
+| `g` / `G`, `Home` / `End`  | Jump to the top / bottom of scrollable content                |
+| `←` / `→`                  | Move between panes and step through detail tabs (no wrap)     |
+| `Tab`                      | Toggle focus between the drive list and the detail pane       |
+| `1`–`9`                    | Switch detail tab by number                                   |
+| `t`                        | Jump straight to the **Tests** tab                            |
+| `c`                        | Toggle the **Fleet** comparison (all drives side by side)     |
+| `r`                        | Refresh now                                                   |
+| `+` / `-`                  | Slower / faster refresh (2s → 5s → 10s → 30s → 1m → 5m ladder)|
+| `T`                        | Cycle the colour theme                                        |
+| `?`                        | Show every binding in a modal                                 |
+| `s` / `f` (Attributes)     | Cycle the attribute sort / filter                             |
+| `Enter` / `x` (Tests)      | Start the selected self-test / cancel the running test        |
+| `1`–`4`, `←` / `→` (Fleet) | Switch the comparison section                                 |
+| `s` / `Enter` (Fleet)      | Toggle metric/name sort · open the highlighted drive          |
+| `Esc` (Fleet)              | Back to the per-drive view                                    |
+| `q` or `Esc`               | Quit                                                          |
 
-Mouse is also supported (click drives and tabs, scroll with the wheel).
+Below 100 columns the drive list collapses to a one-row rail and the detail
+takes the full width; `↑` / `↓` then always step the drive, since there is no
+list on screen for them to scroll. `?` shows the authoritative list: a test
+parses the key handlers for the runes they match, and pins the named keys
+alongside, so a binding cannot go undocumented.
+
+Mouse is partly supported: click a drive in the list, and scroll any pane with
+the wheel. Switching tabs by clicking the tab bar is not implemented — use
+`←` / `→` or `1`–`9`.
 
 ### Dev / fixture mode
 
@@ -227,13 +249,41 @@ the app for your disks.
 
 ## Development
 
+What CI gates on, in the order it runs them:
+
 ```sh
-go test ./...     # parser/health tests against fixtures in internal/smart/testdata
+gofmt -l .                                  # must print nothing
+git ls-files '*.go' | xargs grep -L SPDX    # every .go file carries the header
+go mod tidy && git diff --exit-code go.mod go.sum
 go vet ./...
+go vet -tags dev ./...
+go build -o smartview .
+CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o /dev/null .   # release target
+go build -tags dev -o /dev/null .           # the fixture build must keep compiling
+go test -race -cover ./...
+govulncheck ./...                           # pinned in the workflow, not @latest
+golangci-lint run ./...                     # separate Lint workflow; .golangci.yml
+goreleaser check                            # separate CI job; .goreleaser.yaml
 ```
 
-Tests run against real captured `smartctl` output, including a sparse Apple NVMe
-fixture that guards the graceful-degradation behaviour.
+The build/test job runs twice, against the toolchain in `go.mod` and against
+`stable`.
+
+`internal/smart` tests parse real captured `smartctl` output, including a sparse
+Apple NVMe fixture that guards the graceful-degradation behaviour.
+`internal/ui` is tested too: `layout_test.go` drives the whole application
+headlessly on a tcell simulation screen (this is what catches layout and focus
+regressions), `keys_test.go` fails if a bound key is missing from the `?` modal,
+and `fleet_test.go` asserts on the first frame the fleet view draws.
+
+One toolchain footgun: under Go 1.27.0 a bare `golangci-lint run` fails inside
+the standard library with `undefined: rand (typecheck)` in
+`crypto/internal/randutil`. Pin the toolchain to the version in `go.mod` and it
+is clean:
+
+```sh
+GOTOOLCHAIN=go1.26.4 golangci-lint run ./...
+```
 
 ## Roadmap
 
@@ -248,7 +298,9 @@ support is deliberately out of scope rather than merely pending.
 ## Built with
 
 - [rivo/tview](https://github.com/rivo/tview) + [gdamore/tcell](https://github.com/gdamore/tcell) — terminal UI
-- [navidys/tvxwidgets](https://github.com/navidys/tvxwidgets) — gauges and sparklines
+- [navidys/tvxwidgets](https://github.com/navidys/tvxwidgets) — the NVMe
+  percentage gauges (the charts and the temperature sparkline are drawn by
+  `internal/ui/chart.go`, which scales to the data rather than to zero)
 - [smartmontools](https://www.smartmontools.org/) — the SMART data source
 
 ## License
