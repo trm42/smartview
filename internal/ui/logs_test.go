@@ -9,11 +9,8 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// TestNVMeErrorCountIsEntriesNotCapacity pins the fix for a real bug: the NVMe
-// error information log reports its slot capacity in "size" (256 on every drive
-// smartctl has been seen to read), and the Logs tab printed that as an error
-// count — "256 entries (253 unread)" above three decoded entries, on a drive
-// whose Attributes tab said 3.
+// TestNVMeErrorCountIsEntriesNotCapacity: the Logs tab must report len(Table)
+// as the error count, never the log's slot capacity (Size).
 func TestNVMeErrorCountIsEntriesNotCapacity(t *testing.T) {
 	r := &smart.Report{
 		Device: smart.Device{Protocol: "NVMe"},

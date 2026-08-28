@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package smart wraps the smartctl(8) JSON interface (smartmontools >= 7.0).
-//
-// The JSON schema is highly drive- and vendor-dependent: only device, smartctl
-// and smart_status are reliably present. Every other field is modelled as a
-// pointer or slice so an absent section decodes to nil rather than a zero value
-// that the UI would misrender. Callers must nil-check before dereferencing.
+// The schema is drive-dependent: only device, smartctl and smart_status are
+// reliably present, so every other field is a pointer or slice — nil-check
+// before dereferencing.
 package smart
 
 // Report is the parsed result of `smartctl -j -x <device>`.
@@ -57,14 +55,12 @@ type Report struct {
 	NVMeControllerID       *int           `json:"nvme_controller_id"`
 	NVMePCIVendor          *NVMePCIVendor `json:"nvme_pci_vendor"`
 
-	// Apple internal-SSD wear metrics. Apple drives can omit the standard NVMe
-	// health-log wear fields and report these instead, so they are consumed as a
-	// fallback for endurance/spare.
+	// Apple internal-SSD wear metrics, the endurance/spare fallback when the
+	// standard NVMe health-log fields are absent.
 	EnduranceUsed  *PercentValue   `json:"endurance_used"`
 	SpareAvailable *SpareAvailable `json:"spare_available"`
 
-	// Seagate FARM. Not part of `-j -x`; fetched separately via FarmLog and
-	// attached by the caller, so it is never populated by Info's unmarshal.
+	// Seagate FARM, fetched separately via FarmLog and attached by the caller.
 	FARM *FARM `json:"-"`
 }
 
@@ -104,8 +100,7 @@ type SmartStatus struct {
 	} `json:"nvme"`
 }
 
-// Temperature reports the current temperature in Celsius. NVMe drives populate
-// only Current; ATA drives add the lifetime/cycle min-max block.
+// Temperature in Celsius. NVMe populates only Current; ATA adds the min-max block.
 type Temperature struct {
 	Current       *int `json:"current"`
 	PowerCycleMin *int `json:"power_cycle_min"`
@@ -152,14 +147,12 @@ type NVMePCIVendor struct {
 	SubsystemID int `json:"subsystem_id"`
 }
 
-// PercentValue is smartmontools' {current_percent:int} encoding (e.g. Apple's
-// endurance_used).
+// PercentValue is smartmontools' {current_percent:int} encoding.
 type PercentValue struct {
 	CurrentPercent int `json:"current_percent"`
 }
 
-// SpareAvailable is Apple's spare-capacity report: the current spare percentage
-// and the threshold below which it is considered depleted.
+// SpareAvailable is Apple's spare-capacity report with its depletion threshold.
 type SpareAvailable struct {
 	CurrentPercent   int `json:"current_percent"`
 	ThresholdPercent int `json:"threshold_percent"`
@@ -171,8 +164,8 @@ func (r *Report) IsNVMe() bool { return r.Device.Protocol == "NVMe" }
 // IsATA reports whether the report describes an ATA/SATA drive.
 func (r *Report) IsATA() bool { return r.Device.Protocol == "ATA" }
 
-// CurrentTemp returns the current temperature in Celsius, preferring the
-// generic temperature block and falling back to the NVMe health log.
+// CurrentTemp returns the current Celsius reading, falling back from the
+// generic block to the NVMe health log.
 func (r *Report) CurrentTemp() (int, bool) {
 	if r.Temperature != nil && r.Temperature.Current != nil {
 		return *r.Temperature.Current, true

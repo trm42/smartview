@@ -112,11 +112,9 @@ func TestSparePercent(t *testing.T) {
 	}
 }
 
-// TestDataWritten is the important one: it pins which source each drive falls
-// through to, because only the attribute source is approximate and the UI marks
-// it. The Seagate has the Device Statistics log and must NOT be read from
-// attribute 241 even though it also carries one; the Samsung has no log and so
-// is the approximate case.
+// TestDataWritten pins which source each drive falls through to: the Seagate
+// must read from Device Statistics (not attribute 241, which it also has);
+// the Samsung has no log and is the approximate case.
 func TestDataWritten(t *testing.T) {
 	for _, c := range []struct {
 		fixture string

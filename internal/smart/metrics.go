@@ -4,20 +4,13 @@ package smart
 
 import "strings"
 
-// This file holds the cross-protocol metric accessors: the handful of readings
-// that mean the same thing on an ATA drive and an NVMe drive, resolved from
-// whichever section of the sparse smartctl JSON actually carries them. They
-// exist so callers comparing several drives at once (the fleet view) need not
-// branch on protocol per metric, and so the fallback chains are unit-testable
-// against the captured fixtures rather than buried in rendering code.
-//
-// Every accessor reports presence rather than substituting a zero: on this
-// schema "not reported" and "reported as zero" are genuinely different answers,
-// and a comparison that conflates them is misleading.
+// Cross-protocol metric accessors, each resolving a fallback chain across the
+// sparse smartctl JSON. Every accessor reports presence rather than
+// substituting a zero: "not reported" and "reported as zero" are different
+// answers on this schema.
 
-// LeadingInt parses the leading integer of s (smartctl raw attribute strings
-// often read like "9201 (189 58 0)" or "37 (0 21 0 0 0)"), ignoring any
-// trailing detail.
+// LeadingInt parses the leading integer of s, ignoring trailing detail like
+// the "(189 58 0)" in smartctl raw attribute strings.
 func LeadingInt(s string) (int64, bool) {
 	s = strings.TrimSpace(s)
 	end := 0
@@ -34,9 +27,8 @@ func LeadingInt(s string) (int64, bool) {
 	return n, true
 }
 
-// attrRaw returns the raw value of the ATA attribute with the given id. The
-// pre-formatted string is preferred (it is what smartctl considers the raw
-// reading) with the numeric field as the fallback.
+// attrRaw returns the raw value of ATA attribute id, preferring the
+// pre-formatted string over the numeric field.
 func (r *Report) attrRaw(id int) (int64, bool) {
 	if r.ATAAttributes == nil {
 		return 0, false
@@ -53,8 +45,8 @@ func (r *Report) attrRaw(id int) (int64, bool) {
 	return 0, false
 }
 
-// deviceStat returns a Device Statistics counter by its smartctl name. Only
-// entries flagged valid are considered; smartctl emits placeholder rows.
+// deviceStat returns a Device Statistics counter by name, skipping entries
+// not flagged valid (smartctl emits placeholder rows).
 func (r *Report) deviceStat(name string) (int64, bool) {
 	if r.ATADeviceStatistics == nil {
 		return 0, false
@@ -69,9 +61,8 @@ func (r *Report) deviceStat(name string) (int64, bool) {
 	return 0, false
 }
 
-// sectorBytes is the logical block size, defaulting to the 512 B common case.
-// "Logical Sectors *" counters are in these units, which are 4096 B on a 4Kn
-// drive.
+// sectorBytes is the logical block size (default 512 B), the unit of the
+// "Logical Sectors *" counters.
 func (r *Report) sectorBytes() int64 {
 	if r.LogicalBlockSize != nil && *r.LogicalBlockSize > 0 {
 		return int64(*r.LogicalBlockSize)
@@ -101,11 +92,9 @@ func (r *Report) PowerCycles() (int, bool) {
 	return 0, false
 }
 
-// LifeUsedPercent returns the fraction of the drive's rated write endurance
-// consumed, as a percentage. NVMe reports it directly; Apple internal SSDs can
-// omit the standard field and report endurance_used instead; SATA SSDs carry it
-// in the (vendor-neutral) Device Statistics endurance indicator. Spinning disks
-// have no endurance indicator at all and correctly report absent.
+// LifeUsedPercent returns the percentage of rated write endurance consumed:
+// NVMe percentage_used, Apple endurance_used, or the Device Statistics
+// endurance indicator. Spinning disks correctly report absent.
 func (r *Report) LifeUsedPercent() (int, bool) {
 	if r.NVMeHealth != nil && r.NVMeHealth.PercentageUsed != nil {
 		return *r.NVMeHealth.PercentageUsed, true
@@ -119,10 +108,8 @@ func (r *Report) LifeUsedPercent() (int, bool) {
 	return 0, false
 }
 
-// SparePercent returns the available spare capacity and the threshold below
-// which the drive considers it depleted, both as percentages. Named for the
-// reading rather than the field, since Report.SpareAvailable is one of the two
-// sources it resolves.
+// SparePercent returns the available spare percentage and its depletion
+// threshold.
 func (r *Report) SparePercent() (pct, threshold int, ok bool) {
 	if r.NVMeHealth != nil && r.NVMeHealth.AvailableSpare != nil {
 		thr := 0
@@ -137,10 +124,8 @@ func (r *Report) SparePercent() (pct, threshold int, ok bool) {
 	return 0, 0, false
 }
 
-// TempRange returns the drive's recorded temperature extremes in Celsius,
-// preferring the lifetime range over the current power cycle. This is an ATA
-// block: NVMe drives report no such range and yield ok=false, leaving the
-// caller to derive extremes from an observed series if it has one.
+// TempRange returns the recorded temperature extremes in Celsius, preferring
+// lifetime over power-cycle. ATA only; NVMe reports no range and yields false.
 func (r *Report) TempRange() (min, max int, ok bool) {
 	if r.Temperature == nil {
 		return 0, 0, false
@@ -154,20 +139,17 @@ func (r *Report) TempRange() (min, max int, ok bool) {
 	return 0, 0, false
 }
 
-// WriteSource identifies where a WriteTotal came from, because the sources are
-// not equally trustworthy: only the attribute source has vendor-defined units.
+// WriteSource identifies where a WriteTotal came from; only the attribute
+// source has vendor-defined units.
 type WriteSource int
 
 const (
-	// WriteSourceNVMe is the NVMe health log's data_units_written, defined by
-	// the spec as thousands of 512-byte units.
+	// WriteSourceNVMe is data_units_written (thousands of 512-byte units).
 	WriteSourceNVMe WriteSource = iota
-	// WriteSourceDeviceStats is the ATA Device Statistics "Logical Sectors
-	// Written" counter, a vendor-neutral count of logical blocks.
+	// WriteSourceDeviceStats is the "Logical Sectors Written" counter.
 	WriteSourceDeviceStats
-	// WriteSourceAttribute is ATA attribute 241 (Total_LBAs_Written). Its unit
-	// is vendor-defined — some firmware counts 512-byte LBAs, others 32 MiB
-	// chunks or GB — so the byte figure is an estimate, not a comparable total.
+	// WriteSourceAttribute is ATA attribute 241; its unit is vendor-defined,
+	// so the byte figure is an estimate.
 	WriteSourceAttribute
 )
 
@@ -177,18 +159,13 @@ type WriteTotal struct {
 	Source WriteSource
 }
 
-// Approximate reports whether the total was derived from a vendor-defined
-// attribute unit and so must be presented as an estimate.
+// Approximate reports whether the total must be presented as an estimate.
 func (w WriteTotal) Approximate() bool { return w.Source == WriteSourceAttribute }
 
-// DataWritten returns the lifetime host writes, preferring exact sources. The
-// Device Statistics log is preferred over ATA attribute 241 because it is
-// vendor-neutral and the log is explicitly the more reliable of the two (see
-// ATADeviceStatistics); attribute 241 is used only as a last resort and is
-// flagged approximate so callers can mark it.
+// DataWritten returns the lifetime host writes, preferring exact sources;
+// attribute 241 is the last resort and flagged approximate.
 func (r *Report) DataWritten() (WriteTotal, bool) {
 	if r.NVMeHealth != nil {
-		// data_units_written counts thousands of 512-byte units.
 		return WriteTotal{Bytes: r.NVMeHealth.DataUnitsWritten * 512 * 1000, Source: WriteSourceNVMe}, true
 	}
 	if v, ok := r.deviceStat("Logical Sectors Written"); ok {
@@ -200,13 +177,9 @@ func (r *Report) DataWritten() (WriteTotal, bool) {
 	return WriteTotal{}, false
 }
 
-// ErrorCounts is the comparable subset of a drive's error counters. Fields are
-// pointers because a nil counter ("this drive does not report it") and a zero
-// counter ("this drive reports none") are different answers, and a fleet
-// comparison that shows 0 for the former would be a lie.
-//
-// The first four are ATA readings, the last three NVMe — except ErrorLogEntries,
-// which both protocols provide.
+// ErrorCounts is the comparable subset of a drive's error counters. Fields
+// are pointers: nil ("not reported") and zero ("reports none") are different
+// answers. The first four are ATA, the last three NVMe, ErrorLogEntries both.
 type ErrorCounts struct {
 	Reallocated     *int64
 	Pending         *int64
@@ -217,9 +190,8 @@ type ErrorCounts struct {
 	UnsafeShutdowns *int64
 }
 
-// ErrorCounts collects the drive's error counters from whichever sections
-// report them, preferring SMART attributes and falling back to the vendor-neutral
-// Device Statistics counters for drives that omit the attribute.
+// ErrorCounts collects the error counters, preferring SMART attributes and
+// falling back to Device Statistics.
 func (r *Report) ErrorCounts() ErrorCounts {
 	var e ErrorCounts
 	set := func(dst **int64, v int64) { n := v; *dst = &n }
@@ -255,11 +227,8 @@ func (r *Report) ErrorCounts() ErrorCounts {
 	return e
 }
 
-// Worst returns the highest severity implied by the counters. Any nonzero
-// reallocation, pending sector, uncorrectable error or media error is a caution:
-// these are wear/damage signals rather than an immediate failure verdict, which
-// remains the business of Overall(). Interface CRC errors are cabling faults and
-// unsafe shutdowns are host-side, so neither grades the drive.
+// Worst grades the counters: any nonzero wear/damage signal is a Caution.
+// CRC errors (cabling) and unsafe shutdowns (host-side) don't grade the drive.
 func (e ErrorCounts) Worst() Severity {
 	for _, c := range []*int64{e.Reallocated, e.Pending, e.Uncorrectable, e.MediaErrors} {
 		if c != nil && *c > 0 {

@@ -43,13 +43,9 @@ func Scan(ctx context.Context) ([]Device, error) {
 	return res.Devices, nil
 }
 
-// Info runs `smartctl -j -x <name>` and parses the full report.
-//
-// smartctl's process exit status is a bitmask (e.g. 4 on a perfectly healthy
-// drive), so a non-zero exit is NOT treated as failure: we parse stdout
-// regardless and only error out when the JSON is unusable. Real problems
-// (permission denied, device not found) surface as smartctl.messages, which the
-// caller can inspect via Report.Errorf / FatalMessage.
+// Info runs `smartctl -j -x <name>` and parses the full report. smartctl's
+// exit status is a bitmask, often non-zero on healthy drives, so stdout is
+// parsed regardless; real failures surface via smartctl.messages (FatalMessage).
 func Info(ctx context.Context, name string) (*Report, error) {
 	if fixtureActive() {
 		return fixtureInfo(name)
@@ -69,11 +65,7 @@ func Info(ctx context.Context, name string) (*Report, error) {
 }
 
 // FarmLog runs `smartctl -l farm -j <name>` and parses the Seagate FARM log.
-//
-// Like Info, it ignores smartctl's exit-status bitmask and parses stdout
-// regardless. FARM is Seagate-only: on a drive that does not support it the
-// section is absent (or supported=false), which is reported as (nil, nil) — an
-// expected condition, not an error, so the caller simply omits the FARM tab.
+// An unsupported drive yields (nil, nil): expected, not an error.
 func FarmLog(ctx context.Context, name string) (*FARM, error) {
 	if fixtureActive() {
 		return fixtureFarm(name)
@@ -97,11 +89,9 @@ func FarmLog(ctx context.Context, name string) (*FARM, error) {
 	return wrapper.FARM, nil
 }
 
-// RunSelfTest starts a SMART self-test on the named device. testType must be
-// SelfTestShort or SelfTestLong (extended) — smartview deliberately does not
-// expose conveyance/selective tests. It returns nil once smartctl confirms the
-// test has been queued; it does NOT wait for completion (progress is observed
-// via later Info polls). Starting a test usually requires root.
+// RunSelfTest starts a short or long SMART self-test (other types are
+// rejected). It returns once the test is queued; progress arrives via later
+// Info polls. Usually requires root.
 func RunSelfTest(ctx context.Context, name string, testType SelfTestType) error {
 	switch testType {
 	case SelfTestShort, SelfTestLong:
@@ -112,15 +102,14 @@ func RunSelfTest(ctx context.Context, name string, testType SelfTestType) error 
 	return runSelfTestCommand(ctx, name, "start", "-t", string(testType), "-j", name)
 }
 
-// AbortSelfTest cancels the self-test currently running on the named device
-// (`smartctl -X`). It is a no-op on the drive if no test is running.
+// AbortSelfTest cancels the running self-test (`smartctl -X`); a no-op if
+// none is running.
 func AbortSelfTest(ctx context.Context, name string) error {
 	return runSelfTestCommand(ctx, name, "abort", "-X", "-j", name)
 }
 
-// runSelfTestCommand runs a self-test control command and surfaces any
-// error-severity smartctl message as the returned error, mirroring how Info
-// treats smartctl.messages as the authoritative failure channel.
+// runSelfTestCommand runs a self-test control command; error-severity
+// smartctl messages become the returned error.
 func runSelfTestCommand(ctx context.Context, name, action string, args ...string) error {
 	out, err := run(ctx, args...)
 	if len(out) == 0 {
@@ -143,16 +132,14 @@ func runSelfTestCommand(ctx context.Context, name, action string, args ...string
 	return nil
 }
 
-// run executes smartctl and returns its stdout. A non-zero exit code yields a
-// non-nil error AND the captured stdout, because smartctl emits valid JSON even
-// when its exit status bitmask is set. Callers decide whether the error matters.
+// run executes smartctl. A non-zero exit returns stdout alongside the error:
+// smartctl emits valid JSON even with its exit-status bitmask set.
 func run(ctx context.Context, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, binary, args...)
 	out, err := cmd.Output()
 	if err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
-			// Exit-status bitmask set: stdout is still valid JSON.
 			return out, fmt.Errorf("smartctl exit %d: %w", ee.ExitCode(), ee)
 		}
 		return out, fmt.Errorf("run smartctl: %w", err)
@@ -160,9 +147,8 @@ func run(ctx context.Context, args ...string) ([]byte, error) {
 	return out, nil
 }
 
-// FatalMessage returns the first error-severity smartctl message, if any. It is
-// how permission/open failures are surfaced despite a parseable report.
-// Known-benign messages are skipped (see isBenignLogReadFailure).
+// FatalMessage returns the first error-severity smartctl message (permission
+// and open failures), skipping known-benign ones.
 func (r *Report) FatalMessage() (string, bool) {
 	for _, m := range r.Smartctl.Messages {
 		if m.Severity == "error" && !isBenignLogReadFailure(m.String) {
@@ -172,12 +158,9 @@ func (r *Report) FatalMessage() (string, bool) {
 	return "", false
 }
 
-// isBenignLogReadFailure reports whether msg is the error-log read failure that
-// Apple internal NVMe emits on every poll ("Read N entries from Error
-// Information Log failed: GetLogPage failed: ..."): macOS reads these drives
-// through Apple's private NVMeSMARTLib, which rejects that log page, so the
-// message is a permanent platform limitation, not an actionable fault. The
-// missing log is already conveyed by the Logs tab hiding itself.
+// isBenignLogReadFailure matches the error-log read failure Apple internal
+// NVMe emits on every poll: NVMeSMARTLib rejects that log page, a platform
+// limitation rather than a fault.
 func isBenignLogReadFailure(msg string) bool {
 	return strings.Contains(msg, "Error Information Log failed: GetLogPage failed")
 }

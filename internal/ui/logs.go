@@ -9,8 +9,8 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// hasLogs reports whether the drive exposes any error/self-test log, self-test
-// timing, or SATA link diagnostics — used to decide whether the Logs tab shows.
+// hasLogs reports whether the drive exposes any log/link diagnostics; gates
+// the Logs tab.
 func hasLogs(r *smart.Report) bool {
 	return r.ATASelfTestLog != nil || r.ATAErrorLog != nil ||
 		r.NVMeSelfTestLog != nil || r.NVMeErrorLog != nil ||
@@ -18,8 +18,8 @@ func hasLogs(r *smart.Report) bool {
 		r.ATAPendingDefects != nil || r.ATASCTErc != nil
 }
 
-// logsView renders the Logs tab: error-log occupancy plus self-test history. It
-// refreshes its text in place, preserving the scroll position across polls.
+// logsView renders the Logs tab, refreshing in place so the scroll position
+// survives polls.
 type logsView struct {
 	*scrollTextView
 }
@@ -37,8 +37,7 @@ func (v *logsView) setFocused(focused bool) {
 	v.SetBorderColor(borderColor(focused))
 }
 
-// refresh re-renders the log text, restoring the prior scroll offset so a poll
-// does not jump the view back to the top.
+// refresh re-renders the log text, restoring the prior scroll offset.
 func (v *logsView) refresh(r *smart.Report, _ []float64) {
 	row, col := v.GetScrollOffset()
 	v.SetText(buildLogsText(r))
@@ -65,9 +64,7 @@ func buildLogsText(r *smart.Report) string {
 	return b.String()
 }
 
-// writeSCTErc renders the SCT Error Recovery Control (TLER/ERC) read/write time
-// limits. A configured short limit is what keeps a drive from being dropped by a
-// RAID controller; "disabled" leaves the (much longer) firmware default in play.
+// writeSCTErc renders the SCT Error Recovery Control (TLER/ERC) time limits.
 func writeSCTErc(b *strings.Builder, e *smart.ATASCTErc) {
 	fmt.Fprintln(b, "[::b]SCT Error Recovery Control (TLER)[-:-:-]")
 	fmt.Fprintf(b, nestIndent+"%-6s %s\n", "Read", ercTimerString(e.Read))
@@ -92,8 +89,7 @@ func selfTestDurations(r *smart.Report) string {
 		humanMinutes(p.Short), humanMinutes(p.Extended), humanMinutes(p.Conveyance))
 }
 
-// writePhyCounters summarises the SATA PHY event counters: non-zero counters
-// (cable/link trouble) are flagged; an all-zero log reads as healthy.
+// writePhyCounters summarises the SATA PHY event counters.
 func writePhyCounters(b *strings.Builder, e *smart.SATAPhyEvents) {
 	fmt.Fprintln(b, "[::b]SATA link health[-:-:-]")
 	nonzero := 0
@@ -102,17 +98,12 @@ func writePhyCounters(b *strings.Builder, e *smart.SATAPhyEvents) {
 			continue
 		}
 		nonzero++
-		// Not every non-zero PHY counter is a fault. A couple of COMRESETs is
-		// what a normal power-up looks like, and tinting the count caution made
-		// an ordinary link read as a problem. Only the counters that actually
-		// indicate a bad cable or a marginal link are graded.
+		// Only counters that indicate a bad cable/marginal link are graded; a
+		// couple of COMRESETs is a normal power-up.
 		tag := mutedTag()
 		if phyCounterConcerning(c.Name) {
 			tag = cautionTag()
 		}
-		// smartctl's counter name is a sentence ("Device-to-host register FISes
-		// sent due to a COMRESET"), so it gets the line and the value leads,
-		// rather than the value trailing off the end of the prose.
 		fmt.Fprintf(b, nestIndent+"%s%6d[-] %s%s[-]\n", tag, c.Value, mutedTag(), esc(c.Name))
 	}
 	if nonzero == 0 {
@@ -120,9 +111,8 @@ func writePhyCounters(b *strings.Builder, e *smart.SATAPhyEvents) {
 	}
 }
 
-// phyCounterConcerning reports whether a SATA PHY counter indicates a link
-// fault rather than ordinary operation. CRC and decode errors point at a cable
-// or connector; resets and FIS counts accumulate on any healthy link.
+// phyCounterConcerning reports whether a PHY counter indicates a link fault:
+// CRC/decode errors point at a cable, resets accumulate on any healthy link.
 func phyCounterConcerning(name string) bool {
 	low := strings.ToLower(name)
 	for _, kw := range []string{"crc", "non-crc", "decode", "disparity", "handshake"} {
@@ -133,15 +123,12 @@ func phyCounterConcerning(name string) bool {
 	return false
 }
 
-// writeErrorLog summarises the drive's logged command errors, listing the most
-// recent decoded entries when the log carries any.
+// writeErrorLog summarises the drive's logged command errors with the most
+// recent decoded entries.
 func writeErrorLog(b *strings.Builder, r *smart.Report) {
 	fmt.Fprintln(b, "[::b]Error log[-:-:-]")
 	switch {
 	case r.NVMeErrorLog != nil:
-		// Count the decoded entries, not the log's slot capacity: Size is 256 on a
-		// drive with three logged errors. Unread is smartctl's own figure — it must
-		// not be derived from Size, which yielded "256 entries (253 unread)".
 		writeNVMeErrorCount(b, r.NVMeErrorLog)
 		writeNVMeErrorEntries(b, r.NVMeErrorLog.Table)
 	case r.ATAErrorLog != nil && r.ATAErrorLog.Extended != nil:
@@ -158,9 +145,8 @@ func writeErrorLog(b *strings.Builder, r *smart.Report) {
 	writePendingDefects(b, r.ATAPendingDefects)
 }
 
-// writeNVMeErrorCount states how many errors the drive logged, using the decoded
-// entry count rather than the log's capacity, and notes any entries smartctl
-// could not read back.
+// writeNVMeErrorCount states the logged-error count — len(Table), never the
+// log's slot capacity (Size is 256 on a drive with three errors).
 func writeNVMeErrorCount(b *strings.Builder, l *smart.NVMeErrorLog) {
 	n := len(l.Table)
 	if n == 0 {
@@ -174,8 +160,7 @@ func writeNVMeErrorCount(b *strings.Builder, l *smart.NVMeErrorLog) {
 	b.WriteByte('\n')
 }
 
-// maxErrorEntries caps how many decoded log entries the Logs tab lists, newest
-// first, so a drive with a full error log does not flood the view.
+// maxErrorEntries caps the decoded entries listed, newest first.
 const maxErrorEntries = 8
 
 // writeNVMeErrorEntries lists decoded NVMe error-log entries (newest first).
@@ -193,8 +178,8 @@ func writeNVMeErrorEntries(b *strings.Builder, table []smart.NVMeErrorLogEntry) 
 	}
 }
 
-// writeATAErrorEntries lists decoded ATA extended-error-log entries (newest
-// first), pairing each with the lifetime hour it occurred at.
+// writeATAErrorEntries lists decoded ATA error-log entries (newest first)
+// with the lifetime hour each occurred at.
 func writeATAErrorEntries(b *strings.Builder, r *smart.Report, table []smart.ATAErrorLogEntry) {
 	for i, e := range table {
 		if i >= maxErrorEntries {
@@ -205,17 +190,13 @@ func writeATAErrorEntries(b *strings.Builder, r *smart.Report, table []smart.ATA
 		if e.ErrorDescription == "" {
 			desc = fmt.Sprintf("error %d", e.ErrorNumber)
 		}
-		// "@ 1 y 27 d" is the drive's age when the error happened, which reads as
-		// neither a date nor "how long ago" — and how long ago is the question.
-		// Both, labelled: at <age>, <elapsed> ago.
 		fmt.Fprintf(b, nestIndent+cautionTag()+"#%d[-] %s %s%s[-]\n",
 			e.ErrorNumber, desc, mutedTag(), driveAge(r, e.LifetimeHours))
 	}
 }
 
-// driveAge renders when something happened: the drive's age at the time, and how
-// long ago that was in power-on terms. The elapsed figure is omitted when the
-// drive does not report its current hours, rather than being guessed.
+// driveAge renders the drive's age at an event and how long ago it was; the
+// elapsed figure is omitted, not guessed, when current hours are unreported.
 func driveAge(r *smart.Report, hours int) string {
 	now, ok := r.PowerOnHours()
 	if !ok || now < hours {
@@ -228,16 +209,13 @@ func driveAge(r *smart.Report, hours int) string {
 	}
 }
 
-// tidyErrorDescription trims smartctl's phrasing for a line that already sits
-// under an "Error log" heading: it prefixes every entry with "Error: ", and
-// gives the LBA twice, in hex and again in decimal. Decimal is the one a reader
-// can act on.
+// tidyErrorDescription drops smartctl's "Error: " prefix and keeps only the
+// decimal LBA of its hex/decimal pair.
 func tidyErrorDescription(s string) string {
 	s = strings.TrimPrefix(s, "Error: ")
 	const marker = "LBA = "
 	if i := strings.Index(s, marker); i >= 0 {
-		// "LBA = 0x0011a034 = 1155124" -> "LBA 1155124". The decimal form is the
-		// last of the two, so take everything after the final " = ".
+		// "LBA = 0x0011a034 = 1155124" -> "LBA 1155124".
 		rest := s[i+len(marker):]
 		if k := strings.LastIndex(rest, " = "); k >= 0 {
 			s = s[:i] + "LBA " + rest[k+3:]
@@ -246,8 +224,7 @@ func tidyErrorDescription(s string) string {
 	return s
 }
 
-// writePendingDefects renders the Pending Defects count: sectors awaiting
-// reallocation. Nonzero is a caution worth surfacing; zero reads as healthy.
+// writePendingDefects renders the Pending Defects count; nonzero is a caution.
 func writePendingDefects(b *strings.Builder, d *smart.ATAPendingDefects) {
 	if d == nil {
 		return
@@ -260,9 +237,8 @@ func writePendingDefects(b *strings.Builder, d *smart.ATAPendingDefects) {
 		plural(d.Count, "sector", "sectors"))
 }
 
-// writeSelfTestSummary states what the log adds up to: how many runs, whether
-// any failed, and when the most recent was. Without it the reader has to scan
-// nineteen near-identical rows to learn there is nothing to see.
+// writeSelfTestSummary states run count, failures and the newest run, so the
+// reader needn't scan the near-identical rows below.
 func writeSelfTestSummary(b *strings.Builder, r *smart.Report, tbl []smart.ATASelfTestEntry) {
 	failed := 0
 	for _, e := range tbl {
@@ -301,9 +277,6 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 			fmt.Fprintln(b, nestIndent+"no self-tests recorded")
 			return
 		}
-		// The shape first. This log is 19 identical "Completed without error"
-		// rows on a healthy drive, and a failure among them would be one line in
-		// a wall of the same sentence — so state the summary, then list.
 		writeSelfTestSummary(b, r, tbl)
 		for _, e := range tbl {
 			fmt.Fprintf(b, nestIndent+"%-16s %-28s %s\n",
@@ -315,14 +288,10 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 	}
 }
 
-// selfTestPassed reports whether a drive-reported self-test outcome reads as a
-// pass. It is the single keyword test, shared with colorResult, so the summary
-// count and the row colours can never disagree about the same string.
-//
-// "Completed" alone is not a pass: smartctl reports failures as "Completed: read
-// failure", "Completed: electrical failure" and so on, which a bare "completed"
-// check painted green. The failure keywords are therefore tested first, with
-// "without error" recognised before them since it contains "error" itself.
+// selfTestPassed is the single keyword test shared with colorResult, so the
+// summary and row colours can't disagree. "Completed" alone is not a pass
+// (failures read "Completed: read failure"); "without error" is checked first
+// since it contains "error" itself.
 func selfTestPassed(s string) bool {
 	low := strings.ToLower(s)
 	if strings.Contains(low, "without error") {
@@ -336,9 +305,8 @@ func selfTestPassed(s string) bool {
 	return strings.Contains(low, "completed")
 }
 
-// colorResult tints a self-test outcome string green/red by keyword. The string
-// is drive-controlled, so the keyword test runs on the original but the rendered
-// copy is markup-escaped (see esc) — a hostile drive can't inject colour tags.
+// colorResult tints a self-test outcome by keyword; the test runs on the
+// original but the rendered copy is markup-escaped (drive-controlled string).
 func colorResult(s string) string {
 	low := strings.ToLower(s)
 	switch {
@@ -352,8 +320,7 @@ func colorResult(s string) string {
 	}
 }
 
-// plural renders a count with the right noun, so the UI never has to fall back
-// to an "error(s)" placeholder.
+// plural renders a count with the right noun.
 func plural(n int, one, many string) string {
 	if n == 1 {
 		return fmt.Sprintf("%d %s", n, one)

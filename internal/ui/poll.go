@@ -12,9 +12,8 @@ import (
 // fetchTimeout bounds a single smartctl invocation.
 const fetchTimeout = 15 * time.Second
 
-// pollLoop refreshes every drive on a ticker (and on demand via refreshCh),
-// running smartctl off the UI goroutine and applying results through
-// QueueUpdateDraw. It does the initial fetch immediately on start.
+// pollLoop refreshes every drive on a ticker (and on demand via refreshCh):
+// smartctl runs off the UI goroutine, results apply through QueueUpdateDraw.
 func (a *App) pollLoop(ctx context.Context) {
 	a.fetchAndApply(ctx)
 
@@ -45,9 +44,7 @@ func (a *App) fetchAndApply(ctx context.Context) {
 		if rep == nil {
 			continue // transient failure; keep the last-known-good report
 		}
-		// Seagate FARM is a separate smartctl call (and usually needs root);
-		// only attempt it on Seagate ATA drives. Failures are swallowed — the
-		// FARM tab simply stays hidden, like any other unavailable section.
+		// FARM is a separate smartctl call; failures just leave the tab hidden.
 		if rep.SupportsFARM() {
 			fctx, fcancel := context.WithTimeout(ctx, fetchTimeout)
 			if farm, ferr := smart.FarmLog(fctx, d.Name); ferr == nil && farm != nil {
@@ -64,30 +61,25 @@ func (a *App) fetchAndApply(ctx context.Context) {
 			a.recordTemp(name, rep)
 		}
 		a.populateList()
-		// The fleet comparison is refreshed whether or not it is on screen, so
-		// it is already current the moment the user switches to it.
+		// Refreshed even when off screen, so it is current on switch.
 		a.fleet.refresh(a.devices, a.reports, a.history)
-		// detail.update refreshes each tab's data in place (preserving table
-		// selection, scroll and sort/filter) for the common same-drive,
-		// same-tabs case. When the set of tabs changes (e.g. the Logs tab
-		// appears after a self-test completes) it rebuilds the views, which
-		// orphans focus on the destroyed primitive — restore it so an active
-		// detail tab stays keyboard-usable across that transition.
+		// A tab-set change rebuilds the views, orphaning focus on the
+		// destroyed primitive — restore it afterwards.
 		detailFocused := a.detail.HasFocus()
 		a.showSelected()
 		if detailFocused {
 			a.app.SetFocus(a.detail.content())
 		}
-		// A rebuild resets tab borders to default and a self-test may have flipped
-		// the Tests tab idle↔running, so resync the focus accents and hint bar.
+		// A rebuild resets tab borders and the Tests tab may have flipped
+		// idle↔running; resync focus accents and the hint bar.
 		a.refreshChrome()
 		a.refreshing.Store(false)
 		a.renderSpinner()
 	})
 }
 
-// recordTemp appends the current temperature to the device's runtime ring
-// buffer, which backs the NVMe sparkline (NVMe drives have no on-device log).
+// recordTemp appends to the runtime ring buffer backing the NVMe sparkline
+// (NVMe has no on-device temperature log).
 func (a *App) recordTemp(name string, rep *smart.Report) {
 	t, ok := rep.CurrentTemp()
 	if !ok {

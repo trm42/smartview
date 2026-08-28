@@ -19,12 +19,8 @@ import (
 	"github.com/trm42/smartview/internal/ui"
 )
 
-// version is the build version. Override it at link time for release builds:
-//
-//	go build -ldflags "-X main.version=v1.2.3"
-//
-// Left at "dev" it falls back to module/VCS info embedded by the Go toolchain,
-// so `go install` and VCS-stamped builds still report something useful.
+// version is overridden at link time (-ldflags "-X main.version=v1.2.3");
+// left at "dev" it falls back to embedded module/VCS info.
 var version = "dev"
 
 func main() {
@@ -65,9 +61,8 @@ func main() {
 	}
 }
 
-// buildVersion resolves the version to report. It prefers the link-time value,
-// then the module version, then the VCS revision (with a -dirty suffix for an
-// uncommitted tree) recorded in the build info.
+// buildVersion prefers the link-time value, then the module version, then the
+// VCS revision (-dirty when the tree was uncommitted).
 func buildVersion() string {
 	if version != "dev" {
 		return version

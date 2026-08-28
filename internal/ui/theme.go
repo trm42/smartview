@@ -9,16 +9,10 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-// Theme is smartview's colour palette, expressed as semantic roles rather than
-// raw colours so the same widgets render under several built-in palettes. The
-// source of truth is the tcell.Color for each role (needed for SetBorderColor /
-// SetTextColor / tcell.Style); the tview markup tags are derived on demand by
-// the tag helpers below rather than stored, so they can't drift from the colour.
-//
-// The active palette lives in the package-level activeTheme, read by every
-// colour helper. Like App.reports/history it is touched only on the tview
-// event-loop goroutine (all widget mutation happens inside QueueUpdateDraw), so
-// it needs no mutex.
+// Theme is smartview's colour palette as semantic roles. The tcell.Color is
+// the source of truth; markup tags are derived on demand by the tag helpers
+// so they can't drift. activeTheme is touched only on the event-loop
+// goroutine (like App.reports), so no mutex.
 type Theme struct {
 	Name        string
 	Accent      tcell.Color // focused border, key hints, spinner, active tab, table header
@@ -34,15 +28,13 @@ type Theme struct {
 	BarHealthy  tcell.Color // FARM per-head healthy bar
 	ScrollArrow tcell.Color // scroll ▲/▼ arrows
 
-	// ListSecondary is the drive-list secondary line (device · capacity · temp).
-	// It must never equal OK: that line renders on every drive whatever its
-	// state, so painting it the healthy colour puts green on a failing drive.
+	// ListSecondary is the drive-list secondary line. Must never equal OK:
+	// it renders on every drive, failing ones included.
 	ListSecondary tcell.Color
 }
 
-// tag renders a colour as a tview markup token (without the surrounding
-// brackets). ColorDefault or an invalid colour yields "-", tview's reset token,
-// so a themeless role degrades to the terminal default rather than a bogus hex.
+// tag renders a colour as a tview markup token (no brackets); ColorDefault or
+// an invalid colour yields "-" so a themeless role degrades to the default.
 func tag(c tcell.Color) string {
 	if c == tcell.ColorDefault {
 		return "-"
@@ -63,11 +55,8 @@ func failingTag() string { return "[" + tag(activeTheme.Failing) + "]" }
 // fgbgTag builds a compound "[fg:bg]" token for text drawn on a coloured field.
 func fgbgTag(fg, bg tcell.Color) string { return "[" + tag(fg) + ":" + tag(bg) + "]" }
 
-// activeTabTag is the bold "[fg:bg:b]" pill for the active tab: the theme's
-// Inverse-on-Accent colours normally. Under a themeless palette (mono, where
-// Accent is ColorDefault) that pill collapses to the terminal default and
-// vanishes, so it falls back to a high-contrast black-on-white selector — still
-// monochrome, just legible. Bold keeps it distinct even where colour is absent.
+// activeTabTag is the bold Inverse-on-Accent pill for the active tab, falling
+// back to black-on-white under mono where the pill would otherwise vanish.
 func activeTabTag() string {
 	fg, bg := activeTheme.Inverse, activeTheme.Accent
 	if bg == tcell.ColorDefault {
@@ -76,17 +65,15 @@ func activeTabTag() string {
 	return "[" + tag(fg) + ":" + tag(bg) + ":b]"
 }
 
-// activeTheme is the live palette every colour helper reads. setTheme installs a
-// new one; it is initialised to dark (the original hard-coded colours) in init.
+// activeTheme is the live palette every colour helper reads.
 var activeTheme Theme
 
-// dash is rendered wherever a drive does not report a value. It carries the
-// theme's muted colour, so it is recomputed in setTheme rather than being a
-// const — its call sites keep using it as a plain value.
+// dash marks an unreported value; recomputed in setTheme since it carries the
+// muted colour.
 var dash string
 
-// setTheme installs t as the active palette and recomputes the theme-derived
-// package values (currently dash). Runs on the UI goroutine only.
+// setTheme installs the palette and recomputes theme-derived values. UI
+// goroutine only.
 func setTheme(t Theme) {
 	activeTheme = t
 	dash = mutedTag() + "—[-]"
@@ -94,9 +81,7 @@ func setTheme(t Theme) {
 
 func init() { setTheme(dark) }
 
-// dark reproduces smartview's original hard-coded palette exactly, so the
-// default behaviour is unchanged. theme_test.go pins each role to its legacy
-// colour to guard against silent drift.
+// dark reproduces the original hard-coded palette; theme_test.go pins each role.
 var dark = Theme{
 	Name:        "dark",
 	Accent:      tcell.ColorAqua,
@@ -111,18 +96,13 @@ var dark = Theme{
 	BannerBg:    tcell.ColorYellow,
 	BarHealthy:  tcell.ColorTeal,
 	ScrollArrow: tcell.ColorWhite,
-	// Was ColorGreen, i.e. the same value as OK, which meant a failing drive's
-	// row read as a red dot beside a green device/capacity/temperature line.
-	// Muted grey instead: the health glyph carries severity, the metadata does
-	// not claim any.
+	// Was ColorGreen (== OK), which painted a failing drive's metadata line
+	// the healthy colour.
 	ListSecondary: tcell.ColorGray,
 }
 
-// mono is a no-colour degrade for high-contrast or colour-averse terminals:
-// every role is ColorDefault, so tag() emits "-" everywhere and nothing is
-// tinted. Severity survives only through the ● glyph and bold weight; the
-// selected row stands out by bold alone — an accepted limitation of no-colour
-// mode.
+// mono is the no-colour degrade: every role is ColorDefault. Severity
+// survives only via the ● glyph and bold — an accepted limitation.
 var mono = Theme{
 	Name:          "mono",
 	Accent:        tcell.ColorDefault,
@@ -140,10 +120,8 @@ var mono = Theme{
 	ListSecondary: tcell.ColorDefault,
 }
 
-// electric is an "elite BBS" terminal palette: bright azure-cyan and white on
-// near-black with a dark-blue identity, amber caution, red failing. Every role
-// is truecolor hex so it renders identically across terminals regardless of the
-// 16-colour palette.
+// electric is an "elite BBS" palette: azure-cyan and white with amber caution
+// and red failing. All-hex so it renders identically across terminals.
 var electric = Theme{
 	Name:          "electric",
 	Accent:        tcell.NewHexColor(0x00b7ff), // bright azure-cyan: borders, headers, active tab, key hints
@@ -161,21 +139,14 @@ var electric = Theme{
 	ListSecondary: tcell.NewHexColor(0x6f9fc0), // muted blue-cyan secondary line
 }
 
-// phosphor is the classic monochrome green-CRT terminal palette: every role
-// sits in the same ~120° hue family (like a VT100 green-screen monitor), pure
-// green with no departures. Severity reads through green brightness (a dim→
-// bright OK→Caution→Failing ramp) plus the ● glyph and bold weight, exactly as
-// an authentic green CRT would. All-hex so it renders identically across
-// terminals.
+// phosphor is the green-CRT palette: pure green only, severity read through
+// brightness plus the ● glyph and bold. All-hex.
 var phosphor = Theme{
 	Name:   "phosphor",
 	Accent: tcell.NewHexColor(0x33ff33), // pure neon CRT green: borders, headers, active tab, key hints
 	Muted:  tcell.NewHexColor(0x1f8f1f), // dim green: dashes, unfocused border, raw values
-	// The severity ramp escalates by getting HOTTER, not by washing out. It read
-	// the wrong way round: Failing was #99ff99, the palest and least saturated
-	// colour on screen, while OK was a solid #33c633 — so the worst state looked
-	// faded. A green CRT can only vary the intensity of one phosphor, so each
-	// step now raises the green channel and keeps red/blue low.
+	// The severity ramp must escalate by getting brighter, not paler
+	// (theme_test.go pins Failing hotter than OK).
 	OK:            tcell.NewHexColor(0x2a9d2a), // steady green
 	Caution:       tcell.NewHexColor(0x38d938), // brighter
 	Failing:       tcell.NewHexColor(0x6bff6b), // brightest — severity by intensity + ● + bold
@@ -189,9 +160,8 @@ var phosphor = Theme{
 	ListSecondary: tcell.NewHexColor(0x1f9f1f), // dim green secondary line
 }
 
-// amber is the classic monochrome amber-CRT terminal palette — a Hercules amber
-// monitor look: warm orange/red on near-black, with an amber→orange→red severity
-// ramp. All-hex so it renders identically across terminals.
+// amber is the Hercules amber-monitor palette with an amber→orange→red
+// severity ramp. All-hex.
 var amber = Theme{
 	Name:          "amber",
 	Accent:        tcell.NewHexColor(0xffb000), // bright amber: borders, headers, active tab, key hints
@@ -209,9 +179,8 @@ var amber = Theme{
 	ListSecondary: tcell.NewHexColor(0xb87818), // dim amber secondary line
 }
 
-// themes is the registry of built-in palettes by name. themeCycle gives the
-// stable order for the runtime cycle key and the ThemeNames listing, since a map
-// does not preserve insertion order.
+// themes is the registry of built-in palettes; themeCycle gives the stable
+// order for the cycle key and ThemeNames.
 var themes = map[string]Theme{
 	"dark":     dark,
 	"mono":     mono,
@@ -233,8 +202,8 @@ func ThemeNames() string {
 	return strings.Join(themeCycle, ", ")
 }
 
-// nextThemeName returns the theme after cur in themeCycle, wrapping at the end.
-// An unknown cur (shouldn't happen) starts the cycle from the beginning.
+// nextThemeName returns the theme after cur in themeCycle, wrapping; an
+// unknown cur starts from the beginning.
 func nextThemeName(cur string) string {
 	for i, n := range themeCycle {
 		if n == cur {

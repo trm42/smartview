@@ -8,11 +8,8 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-// TestDarkThemeUnchanged pins every role of the default (dark) theme so it
-// can't silently drift. Every role is the colour the UI hard-coded before
-// theming existed, with one deliberate exception: ListSecondary was ColorGreen,
-// the same value as OK, which painted the metadata line of a failing drive the
-// healthy colour. It is muted grey now.
+// TestDarkThemeUnchanged pins every dark-theme role to its pre-theming colour,
+// with one deliberate exception: ListSecondary moved off green (it equalled OK).
 func TestDarkThemeUnchanged(t *testing.T) {
 	want := map[string]tcell.Color{
 		"Accent":        tcell.ColorAqua,
@@ -54,11 +51,8 @@ func TestDarkThemeUnchanged(t *testing.T) {
 	}
 }
 
-// TestThemesComplete asserts every registered theme names itself and assigns
-// every role. ColorDefault is allowed only for the whole mono theme (its point
-// is to drop colour) and for the Neutral role anywhere (healthy text renders in
-// the terminal default, exactly as the original dark palette did); every other
-// role of a coloured theme must be a real colour so nothing silently falls back.
+// TestThemesComplete asserts every theme names itself and assigns every role.
+// ColorDefault is allowed only for mono (all roles) and Neutral (anywhere).
 func TestThemesComplete(t *testing.T) {
 	roles := func(th Theme) map[string]tcell.Color {
 		return map[string]tcell.Color{
@@ -186,10 +180,8 @@ func TestListSecondaryIsNotOK(t *testing.T) {
 	}
 }
 
-// TestSeverityRampEscalates guards the direction of every theme's severity ramp:
-// worse must look hotter, never fainter. phosphor got this backwards — Failing
-// was #99ff99, the palest colour on screen, beside a solid #33c633 OK — so the
-// worst state read as washed out rather than alarming.
+// TestSeverityRampEscalates: every theme's severity ramp must look hotter as
+// it worsens, never fainter.
 func TestSeverityRampEscalates(t *testing.T) {
 	lum := func(c tcell.Color) float64 {
 		h := c.TrueColor().Hex()

@@ -11,19 +11,13 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// statisticsView renders the Statistics tab: the ATA Device Statistics log (GP
-// Log 0x04), a set of vendor-neutral counters grouped into named pages. It is a
-// single scrollable TextView — the page sections vary in length and the whole
-// log can outgrow the viewport — and refreshes its text in place, preserving the
-// scroll offset across polls.
+// statisticsView renders the ATA Device Statistics log as one scrollable
+// TextView, refreshing in place so the scroll offset survives polls.
 type statisticsView struct {
 	*scrollTextView
 
-	// Latest text and the width it was wrapped for. Values are laid out against
-	// the live column width — the same lazy relayout farm.go and overview.go use
-	// — because tview's own wrapping breaks a value back to column 0, splitting
-	// "15.4 TB  (30003609491 sectors)" across two lines and the two-column grid
-	// with it. -1 forces a rebuild.
+	// Width-aware lazy relayout, same pattern as farm.go/overview.go: values
+	// are pre-wrapped for the live width. lastWidth -1 forces a rebuild.
 	raw       string
 	lastWidth int
 }
@@ -41,15 +35,13 @@ func (v *statisticsView) setFocused(focused bool) {
 	v.SetBorderColor(borderColor(focused))
 }
 
-// refresh re-renders the statistics text, restoring the prior scroll offset so a
-// poll does not jump the view back to the top.
+// refresh re-renders the text and invalidates the width for a re-wrap.
 func (v *statisticsView) refresh(r *smart.Report, _ []float64) {
 	v.raw = buildStatisticsText(r)
 	v.lastWidth = -1 // data changed: re-wrap against the current width
 }
 
-// Draw re-wraps the body when the width changed (or a refresh invalidated it),
-// then defers to the scrolling TextView.
+// Draw re-wraps when the width changed (or a refresh invalidated it).
 func (v *statisticsView) Draw(screen tcell.Screen) {
 	if _, _, w, _ := v.GetInnerRect(); w != v.lastWidth {
 		row, col := v.GetScrollOffset()
@@ -60,17 +52,14 @@ func (v *statisticsView) Draw(screen tcell.Screen) {
 	v.scrollTextView.Draw(screen)
 }
 
-// buildStatisticsText assembles the Statistics tab body: one bold-headed section
-// per page, listing only valid entries. Health-relevant counters tint when
-// nonzero; a few well-known counters get a human-readable form alongside the raw
-// value.
+// buildStatisticsText assembles the body: one section per page, valid entries
+// only, health-relevant counters tinted when nonzero.
 func buildStatisticsText(r *smart.Report) string {
 	var b strings.Builder
 	if r.ATADeviceStatistics == nil {
 		return ""
 	}
-	// "Logical Sectors *" counts are in logical-block units, which are 4096 B on
-	// a 4Kn drive — use the reported size, falling back to the 512 B common case.
+	// "Logical Sectors *" counts are in logical-block units (4096 B on 4Kn).
 	sectorBytes := int64(512)
 	if r.LogicalBlockSize != nil && *r.LogicalBlockSize > 0 {
 		sectorBytes = int64(*r.LogicalBlockSize)
@@ -93,17 +82,13 @@ func buildStatisticsText(r *smart.Report) string {
 	return b.String()
 }
 
-// statValueCol is the column the values start in: nestIndent plus the
-// statLabelWidth label plus a space.
+// statValueCol is the column values start in.
 const statValueCol = len(nestIndent) + statLabelWidth + 1
 
-// statLabelWidth is the counter-name column. smartctl's names are long
-// ("Number of Realloc. Candidate Logical Sectors" is 44), and this is the width
-// that keeps their values aligned down the page.
+// statLabelWidth fits smartctl's longest counter names (up to 44 chars).
 const statLabelWidth = 46
 
-// validStatEntries returns the entries whose value is meaningful (smartctl marks
-// placeholder rows such as timestamps with valid=false).
+// validStatEntries drops placeholder rows (valid=false).
 func validStatEntries(table []smart.ATAStatEntry) []smart.ATAStatEntry {
 	out := make([]smart.ATAStatEntry, 0, len(table))
 	for _, e := range table {
@@ -114,15 +99,13 @@ func validStatEntries(table []smart.ATAStatEntry) []smart.ATAStatEntry {
 	return out
 }
 
-// statValue formats one statistic, tinting health-relevant counters when set.
-// Well-known counters lead with the human-readable form (a duration, capacity or
-// temperature) and keep the exact raw counter in gray — this is the detailed
-// view, so the precise number stays available without dominating the column.
+// statValue formats one statistic: well-known counters lead with the
+// human-readable form and keep the raw counter in gray; health-relevant ones
+// tint when set.
 func statValue(p smart.ATAStatPage, e smart.ATAStatEntry, sectorBytes int64) string {
 	var val string
 	switch {
 	case strings.HasSuffix(e.Name, "Hours"):
-		// Any "* Hours" counter (Power-on, Spindle Motor Power-on, Head Flying).
 		val = fmt.Sprintf("%s  %s(%d h)[-]", humanDuration(int(e.Value)), mutedTag(), e.Value)
 	case e.Name == "Logical Sectors Written" || e.Name == "Logical Sectors Read":
 		val = fmt.Sprintf("%s  %s(%d sectors)[-]", humanBytes(e.Value*sectorBytes), mutedTag(), e.Value)
@@ -137,16 +120,14 @@ func statValue(p smart.ATAStatPage, e smart.ATAStatEntry, sectorBytes int64) str
 	return val
 }
 
-// isTemperatureStat reports whether an entry on the Temperature Statistics page
-// is a degrees-Celsius reading (vs a duration like "Time in Over-Temperature").
+// isTemperatureStat reports whether an entry is a Celsius reading (vs a
+// duration like "Time in Over-Temperature").
 func isTemperatureStat(p smart.ATAStatPage, e smart.ATAStatEntry) bool {
 	return p.Number == 5 && strings.Contains(e.Name, "Temperature") &&
 		!strings.Contains(e.Name, "Time in")
 }
 
-// statSeverity grades the health-relevant Device Statistics counters: any
-// nonzero reallocation, uncorrectable-error or interface-error count is a
-// caution, and the SSD endurance indicator escalates as it nears its rated life.
+// statSeverity grades the health-relevant counters.
 func statSeverity(e smart.ATAStatEntry) smart.Severity {
 	switch e.Name {
 	case "Percentage Used Endurance Indicator":

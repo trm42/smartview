@@ -16,8 +16,8 @@ type tab struct {
 	title string
 }
 
-// tabView is a detail sub-view that can refresh its data in place, preserving
-// interaction state (table selection, scroll offset, sort/filter) across polls.
+// tabView is a detail sub-view that refreshes in place, preserving
+// interaction state across polls.
 type tabView interface {
 	tview.Primitive
 	refresh(r *smart.Report, tempHistory []float64)
@@ -28,16 +28,14 @@ type staticView struct{ tview.Primitive }
 
 func (staticView) refresh(*smart.Report, []float64) {}
 
-// focusChromer is implemented by tab views that can signal keyboard focus by
-// accenting their border. detail.setContentFocus routes the focus state to the
-// active view so the focused pane is always obvious.
+// focusChromer is implemented by tab views that signal keyboard focus by
+// accenting their border.
 type focusChromer interface {
 	setFocused(focused bool)
 }
 
-// detail is the right-hand pane: a tab bar above a Pages content area. Which
-// tabs exist is recomputed from each report, so drives that omit a section
-// (e.g. the Apple NVMe with no logs) simply don't show that tab.
+// detail is the right-hand pane: a tab bar above a Pages content area. The
+// tab set is recomputed from each report, so absent sections show no tab.
 type detail struct {
 	*tview.Flex
 	bar     *tview.TextView
@@ -60,9 +58,8 @@ func newDetail() *detail {
 		pages:   tview.NewPages(),
 	}
 	d.bar.SetBorderPadding(0, 0, uiGutter, uiGutter)
-	// The tab strip and the refresh spinner share a single full-width row; the
-	// spinner occupies a fixed 2-col cell flush to the right (the top-right
-	// corner of the content area).
+	// Tab strip and refresh spinner share one row; the spinner gets a fixed
+	// 2-col cell flush right.
 	barRow := tview.NewFlex().
 		AddItem(d.bar, 0, 1, false).
 		AddItem(d.spinner, 2, 0, false)
@@ -82,11 +79,9 @@ func (d *detail) showPlaceholder(msg string) {
 	d.pages.AddPage("placeholder", centeredNote(msg), true, true)
 }
 
-// update applies a fresh report. For the same drive with the same set of tabs it
-// refreshes each view's data in place — the table/scroll widgets are not
-// recreated, so the selected row, scroll position and sort/filter survive the
-// poll. A device switch or a change in which tabs are available triggers a full
-// rebuild (which legitimately resets selection: it is a different drive).
+// update applies a fresh report. Same drive + same tab set refreshes each
+// view in place so selection/scroll/sort survive the poll; a device or
+// tab-set change triggers a full rebuild.
 func (d *detail) update(r *smart.Report, tempHistory []float64) {
 	newTabs := visibleTabs(r)
 	if d.device == r.Device.Name && d.device != "" && sameTabIDs(newTabs, d.tabs) {
@@ -113,7 +108,7 @@ func (d *detail) update(r *smart.Report, tempHistory []float64) {
 		d.pages.AddPage(t.id, v, true, false)
 	}
 
-	// Preserve the previously focused tab when still available.
+	// Keep the previously focused tab when still available.
 	d.active = 0
 	for i, t := range d.tabs {
 		if t.id == prev {
@@ -158,8 +153,8 @@ func visibleTabs(r *smart.Report) []tab {
 	return tabs
 }
 
-// buildTabView constructs the refreshable view for a tab id. The tab set is
-// derived from visibleTabs, so the data each view needs is guaranteed present.
+// buildTabView constructs the view for a tab id; visibleTabs guarantees the
+// data each view needs is present.
 func (d *detail) buildTabView(id string, r *smart.Report, tempHistory []float64) tabView {
 	switch id {
 	case "overview":
@@ -204,9 +199,7 @@ func (d *detail) renderBar() {
 	s := ""
 	for i, t := range d.tabs {
 		if i == d.active {
-			// activeTabTag is the themed pill, with a black-on-white fallback so
-			// the active tab stays legible under mono (where the colour pill
-			// would otherwise collapse to the terminal default).
+			// activeTabTag falls back to black-on-white so the pill survives mono.
 			s += fmt.Sprintf(" %s %d %s [-:-:-] ", activeTabTag(), i+1, t.title)
 		} else {
 			s += fmt.Sprintf(" %s %d %s [-] ", accentTag(), i+1, t.title)
@@ -215,9 +208,8 @@ func (d *detail) renderBar() {
 	d.bar.SetText(s)
 }
 
-// stepTab moves the active tab by delta, clamped to the visible tabs (no wrap).
-// It reports whether the active tab actually changed, so the caller can fall
-// through to the drive list at the left edge.
+// stepTab moves the active tab by delta, clamped (no wrap), reporting whether
+// it changed so the caller can fall through to the drive list at the edge.
 func (d *detail) stepTab(delta int) bool {
 	n := len(d.tabs)
 	if n == 0 {
@@ -241,8 +233,7 @@ func (d *detail) selectTab(i int) {
 	d.selectActive()
 }
 
-// selectTabID activates the tab with the given id if it is visible, reporting
-// whether it was found.
+// selectTabID activates the tab with the given id, reporting whether it was found.
 func (d *detail) selectTabID(id string) bool {
 	for i, t := range d.tabs {
 		if t.id == id {
@@ -262,8 +253,8 @@ func (d *detail) content() tview.Primitive {
 	return d.pages
 }
 
-// setContentFocus accents (or dims) the active tab body's border so it reads as
-// holding — or not holding — keyboard focus. No-op for a placeholder page.
+// setContentFocus accents or dims the active tab body's border; no-op for a
+// placeholder page.
 func (d *detail) setContentFocus(focused bool) {
 	if f, ok := d.content().(focusChromer); ok {
 		f.setFocused(focused)
@@ -273,8 +264,8 @@ func (d *detail) setContentFocus(focused bool) {
 // tabCount is the number of visible tabs, used to size the "1-N tab" hint.
 func (d *detail) tabCount() int { return len(d.tabs) }
 
-// testsRunning reports whether the Tests tab currently shows a running self-test,
-// so the hint bar can offer "x cancel" rather than "Enter start".
+// testsRunning reports whether the Tests tab shows a running self-test, so
+// the hint bar can offer cancel instead of start.
 func (d *detail) testsRunning() bool {
 	if v, ok := d.views["tests"].(*testsView); ok {
 		return v.mode == modeRunning

@@ -164,11 +164,8 @@ func TestFatalMessage(t *testing.T) {
 	}
 }
 
-// TestFailingFixture exercises the severity path against captured-shaped data
-// rather than hand-built structs. Until smart-sdc-failing.json was added, every
-// fixture in testdata was a healthy drive, so nothing verified the caution and
-// failing paths end to end — the design review had to synthesise a bad drive to
-// look at one.
+// TestFailingFixture exercises the severity path end to end against
+// smart-sdc-failing.json, the one unhealthy fixture in testdata.
 func TestFailingFixture(t *testing.T) {
 	r := parseFixture(t, "smart-sdc-failing.json")
 

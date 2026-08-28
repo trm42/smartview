@@ -24,13 +24,8 @@ type NVMeHealth struct {
 	CriticalCompTime        int   `json:"critical_comp_time"`   // minutes
 }
 
-// NVMeErrorLog reports the NVMe error information log and, when errors are
-// present, the decoded entries (Table is empty on a healthy drive).
-//
-// Size is the log's SLOT CAPACITY, not an error count — smartctl reports 256 on
-// a drive with three logged errors. Read is how many slots it read back and
-// Unread how many it did not; the number of errors the drive actually recorded
-// is len(Table). Rendering Size as a count is a real bug this type once caused.
+// NVMeErrorLog is the NVMe error information log. Size is the log's slot
+// capacity, NOT an error count; the recorded-error count is len(Table).
 type NVMeErrorLog struct {
 	Size   int                 `json:"size"`
 	Read   int                 `json:"read"`
@@ -38,9 +33,8 @@ type NVMeErrorLog struct {
 	Table  []NVMeErrorLogEntry `json:"table"`
 }
 
-// NVMeErrorLogEntry is one entry of the NVMe error information log. ErrorCount
-// is the running controller-wide error counter at the time of the entry;
-// StatusField decodes the failing command's status.
+// NVMeErrorLogEntry is one entry of the NVMe error information log; ErrorCount
+// is the controller-wide running counter at the time of the entry.
 type NVMeErrorLogEntry struct {
 	ErrorCount  int64       `json:"error_count"`
 	CommandID   int         `json:"command_id"`
@@ -60,8 +54,8 @@ type NVMeSelfTestLog struct {
 	Table                    []NVMeSelfTestEntry `json:"table"`
 }
 
-// NVMeOptAdmin mirrors nvme_optional_admin_commands; its SelfTest bit reports
-// whether the controller implements the Device Self-test admin command.
+// NVMeOptAdmin mirrors nvme_optional_admin_commands; SelfTest reports Device
+// Self-test support.
 type NVMeOptAdmin struct {
 	SelfTest bool `json:"self_test"`
 }

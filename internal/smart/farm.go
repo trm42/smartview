@@ -8,10 +8,8 @@ import (
 	"strings"
 )
 
-// SupportsFARM reports whether a FARM fetch is worth attempting for this drive.
-// FARM is a Seagate ATA/SAS feature; gating on it avoids a wasted smartctl call
-// on every non-Seagate SATA drive each poll. The actual support is confirmed by
-// FARM.Supported once fetched.
+// SupportsFARM reports whether a FARM fetch is worth attempting (Seagate
+// only); actual support is confirmed by FARM.Supported once fetched.
 func (r *Report) SupportsFARM() bool {
 	if !r.IsATA() {
 		return false
@@ -27,8 +25,7 @@ func (r *Report) SupportsFARM() bool {
 func (r *Report) HasFARM() bool { return r.FARM != nil && r.FARM.Supported }
 
 // FARM is a curated view of the Seagate Field Accessible Reliability Metrics
-// log (`smartctl -l farm <dev> -j`). Only the fields smartview visualizes are
-// modelled; the log carries far more.
+// log; only the fields smartview visualizes are modelled.
 type FARM struct {
 	Supported   bool            `json:"supported"`
 	DriveInfo   FARMDriveInfo   `json:"page_1_drive_information"`
@@ -95,9 +92,8 @@ type FARMEnvironment struct {
 	Max5V       int `json:"maximum_5v_in_mv"`
 }
 
-// FARMReliability is FARM page 5. smartctl flattens the per-head arrays into
-// numbered keys (e.g. mr_head_resistance_from_head_0..N), so a custom unmarshal
-// gathers each family into an index-ordered slice.
+// FARMReliability is FARM page 5. smartctl flattens per-head arrays into
+// numbered keys, so a custom unmarshal gathers each family into a slice.
 type FARMReliability struct {
 	ErrorRateNormalized     int
 	SeekErrorRateNormalized int

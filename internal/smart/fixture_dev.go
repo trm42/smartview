@@ -12,41 +12,30 @@ import (
 	"slices"
 )
 
-// This file is the dev-only fixture data source. Built with `-tags dev`, it
-// lets the live TUI render captured smartctl JSON from a directory instead of
-// shelling out to a real smartctl. The release counterpart (fixture_stub.go,
-// //go:build !dev) disables all of this. UseFixtures populates the package-level
-// index eagerly so a bad/empty dir fails fast at startup; the guards in
-// Scan/Info/FarmLog then delegate to fixtureScan/fixtureInfo/fixtureFarm.
+// Dev-only fixture data source (-tags dev): the TUI renders captured smartctl
+// JSON from a directory instead of shelling out. fixture_stub.go is the
+// release counterpart.
 
 var (
-	// fixtureDir is the active fixture directory. Empty means inactive, which
-	// is what fixtureActive keys off of.
+	// fixtureDir is the active fixture directory; empty means inactive.
 	fixtureDir string
-	// fixtureReports holds the parsed full reports in deterministic (sorted by
-	// filename) order so fixtureScan is stable across runs.
+	// fixtureReports is sorted by filename so fixtureScan is stable.
 	fixtureReports []*Report
-	// fixtureByName indexes those reports by Device.Name (round-tripped
-	// verbatim, never normalized).
+	// fixtureByName indexes reports by verbatim Device.Name.
 	fixtureByName map[string]*Report
-	// fixtureFarms holds standalone FARM logs paired with their drive serial,
-	// used to attach FARM data to a matching FARM-capable report.
+	// fixtureFarms holds standalone FARM logs keyed by drive serial.
 	fixtureFarms []fixtureFarmEntry
 )
 
-// fixtureFarmEntry is a standalone FARM fixture and the serial number reported
-// in its page-1 drive information, used to match it to a Report.
+// fixtureFarmEntry pairs a standalone FARM fixture with its page-1 serial.
 type fixtureFarmEntry struct {
 	serial string
 	farm   *FARM
 }
 
-// UseFixtures activates the fixture source backed by dir. It stats dir, reads
-// every *.json once and classifies each file: a standalone FARM log (top-level
-// seagate_farm_log present but with no report fields) is stored as a FARM log;
-// any other file decodes into a Report via the same json.Unmarshal path as Info
-// and is keyed by Device.Name. Validation is eager — a missing, non-directory,
-// or report-less directory returns a non-nil error so startup fails fast.
+// UseFixtures activates the fixture source: every *.json in dir is classified
+// as a standalone FARM log or a full Report. Validation is eager so a bad or
+// empty directory fails at startup.
 func UseFixtures(dir string) error {
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -72,12 +61,8 @@ func UseFixtures(dir string) error {
 			return fmt.Errorf("read fixture %s: %w", f, err)
 		}
 
-		// Probe the file to classify it. A standalone FARM log carries the
-		// seagate_farm_log key but lacks the fields a full report always has
-		// (smart_status, model_name, the attribute table). Note that the FARM
-		// log fixture DOES carry a device block with a protocol, so absence of
-		// Device.Protocol is not a reliable discriminator — the report fields
-		// are.
+		// A standalone FARM log lacks the fields a full report always has;
+		// it DOES carry a device block, so Device.Protocol can't discriminate.
 		var probe struct {
 			SmartStatus   *json.RawMessage `json:"smart_status"`
 			ModelName     string           `json:"model_name"`
@@ -116,7 +101,6 @@ func UseFixtures(dir string) error {
 			continue
 		}
 
-		// Full report: decode via the same path as Info and key by Device.Name.
 		var rep Report
 		if err := json.Unmarshal(data, &rep); err != nil {
 			return fmt.Errorf("parse report fixture %s: %w", f, err)
@@ -139,8 +123,7 @@ func UseFixtures(dir string) error {
 // fixtureActive reports whether the fixture source is in use.
 func fixtureActive() bool { return fixtureDir != "" }
 
-// fixtureScan returns each indexed report's Device verbatim, standing in for
-// `smartctl --scan-open`. Device names are not constructed or normalized.
+// fixtureScan stands in for `smartctl --scan-open`, returning each Device verbatim.
 func fixtureScan() ([]Device, error) {
 	devices := make([]Device, 0, len(fixtureReports))
 	for _, r := range fixtureReports {
@@ -149,8 +132,7 @@ func fixtureScan() ([]Device, error) {
 	return devices, nil
 }
 
-// fixtureInfo returns the report whose Device.Name matches name, standing in
-// for `smartctl -j -x <name>`. An unknown name is an error.
+// fixtureInfo stands in for `smartctl -j -x <name>`; an unknown name is an error.
 func fixtureInfo(name string) (*Report, error) {
 	if r, ok := fixtureByName[name]; ok {
 		return r, nil
@@ -158,10 +140,8 @@ func fixtureInfo(name string) (*Report, error) {
 	return nil, fmt.Errorf("no fixture report for device %q", name)
 }
 
-// fixtureFarm returns the FARM log for the named device, mirroring FarmLog: it
-// yields (nil, nil) for any drive that does not SupportsFARM or for which no
-// supported FARM fixture matches. When several FARM fixtures exist it matches
-// on serial number; with a single FARM fixture it attaches to the sole
+// fixtureFarm mirrors FarmLog's (nil, nil)-on-unsupported contract. Several
+// FARM fixtures match by serial; a single one attaches to the sole
 // FARM-capable device.
 func fixtureFarm(name string) (*FARM, error) {
 	rep, ok := fixtureByName[name]
@@ -181,12 +161,10 @@ func fixtureFarm(name string) (*FARM, error) {
 		return nil, nil
 	}
 
-	// Single FARM fixture: attach it to the sole FARM-capable device.
 	return supportedFarm(fixtureFarms[0].farm), nil
 }
 
-// supportedFarm returns f only when it is present and reports Supported, matching
-// FarmLog's (nil, nil)-on-unsupported contract.
+// supportedFarm returns f only when present and Supported.
 func supportedFarm(f *FARM) *FARM {
 	if f == nil || !f.Supported {
 		return nil
