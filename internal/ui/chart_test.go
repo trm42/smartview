@@ -10,10 +10,8 @@ import (
 // The scaling is a pure function, so unlike the widgets it replaces it can be
 // tested. These cases pin the behaviour the old charts got wrong.
 
-// TestSeriesRowsScalesToRangeNotZero is the whole reason this file exists: the
-// Seagate fixture's SCT history lives between 35°C and 40°C, and a zero-anchored
-// renderer drew it as a solid block. Scaled to its own range it must use the
-// full height and leave the top and bottom rows distinguishable.
+// TestSeriesRowsScalesToRangeNotZero: a 35–40°C series scaled to its own
+// range must use the full height, not draw as a zero-anchored solid block.
 func TestSeriesRowsScalesToRangeNotZero(t *testing.T) {
 	data := []float64{35, 36, 37, 38, 39, 40}
 	rows := seriesRows(data, 6, 4, 35, 40)

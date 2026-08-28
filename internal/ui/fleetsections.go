@@ -11,22 +11,20 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// This file defines what the fleet view compares. fleet.go owns the widget and
-// the interaction; a section here is pure data — which columns exist, how one
-// drive's row renders, how the rows sort, and what caveat the legend must carry.
-// Adding a comparison means adding a fleetSection, not touching the widget.
+// What the fleet view compares. fleet.go owns the widget; a section here is
+// pure data. Adding a comparison means adding a fleetSection, not touching
+// the widget.
 
-// fleetRow is one drive's input to a section: the device, its latest report
-// (nil while the first scan is still running) and its temperature series.
+// fleetRow is one drive's input to a section; rep is nil while the first scan
+// is still running.
 type fleetRow struct {
 	dev    smart.Device
 	rep    *smart.Report
 	series []float64
 }
 
-// fleetCell is one rendered table cell. Text may carry intentional tview markup
-// (a severity glyph, a coloured bar); drive-controlled data inside it must
-// already be escaped by the producer.
+// fleetCell is one rendered cell; text may carry intentional markup, and
+// drive-controlled data in it must already be escaped by the producer.
 type fleetCell struct {
 	text  string
 	color tcell.Color
@@ -38,17 +36,15 @@ type fleetCell struct {
 type fleetSection struct {
 	id, title string
 	columns   []string
-	// available reports whether any drive supplies this section's data. A
-	// section that no drive can fill is hidden entirely, the same
-	// capability-driven rule the detail tabs follow (see visibleTabs).
+	// available: any drive supplies this section's data; hidden otherwise
+	// (same capability rule as the detail tabs).
 	available func(rows []fleetRow) bool
-	// cells renders one drive's row; it must return one cell per column.
+	// cells renders one drive's row, one cell per column.
 	cells func(row fleetRow) []fleetCell
-	// rank is the sort key, descending. ok=false sorts the drive last, so
-	// drives that cannot report the focus metric fall to the bottom rather
+	// rank is the sort key, descending; ok=false sorts the drive last rather
 	// than pretending to a zero.
 	rank func(row fleetRow) (float64, bool)
-	// legend explains this section's gaps and caveats, given the actual rows.
+	// legend explains this section's gaps and caveats.
 	legend func(rows []fleetRow) string
 }
 
@@ -64,8 +60,8 @@ func fleetSections() []fleetSection {
 
 // --- Temperature -------------------------------------------------------------
 
-// temperatureSection compares running temperature. It is the one metric every
-// drive type reports, which is why it leads.
+// temperatureSection compares running temperature — the one metric every
+// drive type reports, so it leads.
 func temperatureSection() fleetSection {
 	return fleetSection{
 		id:      "temperature",
@@ -122,9 +118,9 @@ func temperatureSection() fleetSection {
 
 // --- Health & errors ---------------------------------------------------------
 
-// healthSection compares the verdict and the error counters behind it. ATA and
-// NVMe expose different counters, so roughly half of every row is legitimately
-// blank; the legend says so rather than leaving it to look broken.
+// healthSection compares the verdict and the error counters behind it. ATA
+// and NVMe expose different counters, so half of every row is legitimately
+// blank; the legend says so.
 func healthSection() fleetSection {
 	return fleetSection{
 		id:      "health",
@@ -137,8 +133,7 @@ func healthSection() fleetSection {
 			if row.rep == nil {
 				return 0, false
 			}
-			// Worst verdict first, then by how many errors are logged, so two
-			// drives at the same verdict still order meaningfully.
+			// Worst verdict first, then by logged errors as the tiebreaker.
 			return float64(row.rep.Overall())*1e9 + float64(totalErrors(row.rep)), true
 		},
 		cells: func(row fleetRow) []fleetCell {
@@ -154,9 +149,8 @@ func healthSection() fleetSection {
 				counterCell(e.Reallocated, smart.SeverityCaution),
 				counterCell(e.Pending, smart.SeverityCaution),
 				counterCell(e.Uncorrectable, smart.SeverityCaution),
-				// Interface CRC errors are a cabling fault, not drive wear, and
-				// unsafe shutdowns are host-side — neither grades the drive, so
-				// both stay neutral even when nonzero.
+				// CRC errors are cabling, unsafe shutdowns host-side; neither
+				// grades the drive, so both stay neutral.
 				counterCell(e.CRCErrors, smart.SeverityOK),
 				counterCell(e.MediaErrors, smart.SeverityCaution),
 				counterCell(e.ErrorLogEntries, smart.SeverityOK),
@@ -170,8 +164,8 @@ func healthSection() fleetSection {
 	}
 }
 
-// counterCell renders an optional error counter: absent stays a dash, zero reads
-// neutral, and a nonzero count takes the given severity.
+// counterCell renders an optional counter: absent stays a dash, zero reads
+// neutral, nonzero takes the given severity.
 func counterCell(v *int64, nonzero smart.Severity) fleetCell {
 	if v == nil {
 		return numCell(dash)
@@ -196,8 +190,7 @@ func totalErrors(r *smart.Report) int64 {
 
 // --- Endurance & wear --------------------------------------------------------
 
-// enduranceSection compares write wear. Spinning disks have no endurance
-// indicator, so an all-HDD machine never sees this section at all.
+// enduranceSection compares write wear; an all-HDD machine never sees it.
 func enduranceSection() fleetSection {
 	return fleetSection{
 		id:      "endurance",
@@ -226,9 +219,7 @@ func enduranceSection() fleetSection {
 			r := row.rep
 			life := fleetCell{text: dash, color: activeTheme.Neutral}
 			if pct, ok := r.LifeUsedPercent(); ok {
-				// pctBarUsed drains as the drive wears, so this bar and the spare
-				// bar beside it fill in the same direction; the number stays the
-				// "percentage used" figure the drive reports.
+				// pctBarUsed drains as the drive wears, matching the spare bar's polarity.
 				life = fleetCell{text: pctBarUsed(pct, lifeUsedSeverity(pct)), color: activeTheme.Neutral}
 			}
 			spare := fleetCell{text: dash, color: activeTheme.Neutral}
@@ -261,8 +252,8 @@ func enduranceSection() fleetSection {
 	}
 }
 
-// writeCell renders a write total, marking an attribute-derived estimate with a
-// tilde and the caution colour so it is never mistaken for a comparable figure.
+// writeCell renders a write total, marking an attribute-derived estimate with
+// a caution-coloured tilde.
 func writeCell(text string, approximate bool) fleetCell {
 	if approximate {
 		return fleetCell{
@@ -276,9 +267,7 @@ func writeCell(text string, approximate bool) fleetCell {
 
 // --- Age & usage -------------------------------------------------------------
 
-// ageSection compares how much service each drive has seen. Power-on time and
-// power cycles are present on every drive, making this the one section with no
-// protocol gaps.
+// ageSection compares service seen; the one section with no protocol gaps.
 func ageSection() fleetSection {
 	return fleetSection{
 		id:      "age",
@@ -340,8 +329,7 @@ func numCell(text string) fleetCell {
 	return fleetCell{text: text, color: activeTheme.Neutral, align: tview.AlignRight}
 }
 
-// sevCell is a right-aligned cell tinted by severity, healthy rows staying
-// neutral so only the readings needing attention draw the eye.
+// sevCell is a right-aligned cell tinted by severity; healthy stays neutral.
 func sevCell(text string, sev smart.Severity) fleetCell {
 	return fleetCell{text: text, color: attrTextColor(sev), align: tview.AlignRight}
 }
@@ -356,8 +344,7 @@ func anyRow(rows []fleetRow, pred func(*smart.Report) bool) bool {
 	return false
 }
 
-// shortKind is driveKind compressed for a table column ("HDD" rather than
-// "HDD @ 7200 rpm"), since the fleet table trades detail for width.
+// shortKind is driveKind compressed for a table column.
 func shortKind(r *smart.Report) string {
 	switch {
 	case r.IsNVMe():
@@ -371,10 +358,8 @@ func shortKind(r *smart.Report) string {
 	}
 }
 
-// seriesRange returns the extremes of an observed temperature series. A single
-// sample has no range to report — showing min = max = the current reading would
-// look like a lifetime range the drive never gave us — so it reports absent
-// until a second poll lands.
+// seriesRange returns the extremes of an observed series; a single sample has
+// no range and reports absent until a second poll lands.
 func seriesRange(series []float64) (min, max int, ok bool) {
 	if len(series) < 2 {
 		return 0, 0, false
@@ -391,14 +376,9 @@ func seriesRange(series []float64) (min, max int, ok bool) {
 	return int(lo), int(hi), true
 }
 
-// sparkString renders a series as a text sparkline of at most width glyphs,
-// bucket-averaging when there are more samples than cells. A text sparkline (as
-// opposed to a sparkline widget per drive) is what lets the whole comparison be
-// one selectable, scrollable table.
-//
-// The scale is relative to the series' own range, so the shape of each drive's
-// trend is readable even when drives sit at very different temperatures; the
-// numeric columns beside it carry the absolute values.
+// sparkString renders a series as a text sparkline (so the comparison can be
+// one selectable table). The scale is relative to the series' own range; the
+// numeric columns carry the absolute values.
 func sparkString(data []float64, width int) string {
 	if len(data) < 2 || width <= 0 {
 		return ""
@@ -430,8 +410,7 @@ func sparkString(data []float64, width int) string {
 	out := make([]rune, n)
 	span := hi - lo
 	for i, v := range buckets {
-		// A flat series has no range to scale against; draw it mid-height so it
-		// reads as steady rather than as an arbitrary floor or ceiling.
+		// A flat series draws mid-height so it reads as steady.
 		level := len(sparkLevels) / 2
 		if span > 0 {
 			level = int((v-lo)/span*float64(len(sparkLevels)-1) + 0.5)

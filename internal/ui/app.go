@@ -26,16 +26,13 @@ type App struct {
 	status *tview.TextView
 	banner *tview.TextView
 
-	// bodyPages swaps the main body between the per-drive view (list + detail)
-	// and the fleet comparison. It sits inside root, so the banner and status
-	// bar are shared by both and the modal push/pop machinery is unaffected.
+	// bodyPages swaps the body between the per-drive view and the fleet
+	// comparison; it sits inside root so banner/status/modals are shared.
 	bodyPages *tview.Pages
 	fleet     *fleetView
 
-	// rail is the narrow-terminal stand-in for the drive list: a single row of
-	// severity glyphs and short names. narrow tracks which layout is installed
-	// and lastWidth the width it was chosen for, so the swap happens only when
-	// the terminal actually crosses the breakpoint rather than on every draw.
+	// rail is the narrow-layout drive selector; narrow/lastWidth make the
+	// layout swap happen only when the width crosses the breakpoint.
 	rail      *tview.TextView
 	body      *tview.Flex
 	narrow    bool
@@ -45,15 +42,12 @@ type App struct {
 	themeName  string // active colour theme; cycled by the 'T' key
 	refreshCh  chan struct{}
 	intervalCh chan time.Duration // runtime interval changes → poll-loop ticker reset
-	// rootCtx is the application context (set in Run); interactive smartctl
-	// calls derive their timeout from it so they are cancelled on shutdown
-	// rather than lingering until the per-call timeout elapses.
+	// rootCtx is the application context; interactive smartctl calls derive
+	// from it so they are cancelled on shutdown.
 	rootCtx context.Context
 
-	// refreshing is set on the poll goroutine and read on the animation
-	// goroutine, so it is an atomic. This does not violate the event-loop-only
-	// invariant below — the reports/history maps stay event-loop-only; only this
-	// flag crosses goroutines.
+	// refreshing crosses the poll and animation goroutines, hence atomic —
+	// the only field that does; the maps below stay event-loop-only.
 	refreshing atomic.Bool
 	spinFrame  int // animation frame; mutated only inside QueueUpdateDraw
 
@@ -65,28 +59,19 @@ type App struct {
 	inModal   bool                 // true while a modal overlay is shown
 	fleetMode bool                 // true while the fleet comparison is on screen
 
-	// bannerShown is true when the root-warning banner is part of the layout (we
-	// lack root). refreshBanner re-renders its theme-coloured text on a theme
-	// cycle; the banner is set once at build, so it is the easy repaint miss.
+	// bannerShown: the root-warning banner is in the layout. Its text is set
+	// once at build, so theme cycles must call refreshBanner explicitly.
 	bannerShown bool
 }
 
-// maxHistory bounds the runtime temperature ring buffer that backs the NVMe
-// sparkline (NVMe has no on-device temperature log). 120 samples is a ~60-minute
-// trend window at the default 30s poll interval; since the interval is now
-// adjustable at runtime (+/- keys) the spanned duration varies — the sparkline
-// is only ever a rough trend, not a fixed-time axis. Enough to show movement
-// without growing unbounded.
+// maxHistory bounds the temperature ring buffer backing the NVMe sparkline
+// (~60 min at the default 30s poll; a rough trend, not a fixed-time axis).
 const maxHistory = 120
 
-// spinnerInterval is the cadence of the refresh spinner animation: fast enough
-// to read as motion, slow enough not to spam the event loop with redraws.
+// spinnerInterval is the refresh spinner animation cadence.
 const spinnerInterval = 120 * time.Millisecond
 
-// intervalPresets is the ladder the +/- keys walk to change the poll cadence at
-// runtime. The slowest end keeps background load gentle; the fastest is for a
-// close watch. nextInterval walks this relative to the current value, so an
-// arbitrary --interval still snaps to a neighbouring preset on the first press.
+// intervalPresets is the ladder the +/- keys walk to change poll cadence.
 var intervalPresets = []time.Duration{
 	2 * time.Second,
 	5 * time.Second,
@@ -96,10 +81,8 @@ var intervalPresets = []time.Duration{
 	5 * time.Minute,
 }
 
-// nextInterval returns the adjacent preset relative to cur: the first preset
-// strictly greater (slower) or strictly less (faster), clamped at the ends. It
-// walks by value rather than a stored index so an off-ladder --interval (e.g.
-// 7s) still resolves to a sensible neighbour on the first keypress.
+// nextInterval returns the adjacent preset, clamped at the ends. It walks by
+// value, not index, so an off-ladder --interval snaps to a neighbour.
 func nextInterval(cur time.Duration, faster bool) time.Duration {
 	if faster {
 		next := intervalPresets[0]
@@ -119,9 +102,8 @@ func nextInterval(cur time.Duration, faster bool) time.Duration {
 	return next
 }
 
-// New constructs the application with the given poll interval and colour theme.
-// themeName must be a known theme (validated by the caller via HasTheme); the
-// theme is installed before build so every widget is created with its colours.
+// New constructs the application. themeName must be valid (caller checks
+// HasTheme); the theme installs before build so widgets get its colours.
 func New(interval time.Duration, themeName string) *App {
 	setTheme(themes[themeName])
 	a := &App{
@@ -181,8 +163,7 @@ func (a *App) build() {
 	a.root = root
 	a.app.SetRoot(root, true).EnableMouse(true)
 	a.app.SetInputCapture(a.onKey)
-	// The terminal width is only known at draw time, so the layout choice lives
-	// here rather than in build.
+	// Width is only known at draw time, so the layout choice lives here.
 	a.app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
 		w, _ := screen.Size()
 		if w != a.lastWidth {
@@ -195,15 +176,12 @@ func (a *App) build() {
 	a.refreshFocusChrome()
 }
 
-// narrowBreakpoint is the width below which the drive list and the detail pane
-// cannot both be useful. At 80 columns the old layout gave the list its fixed 38
-// and left the detail 42, in which key/value rows split across lines, box titles
-// clipped at both ends and eight identity fields fell below the fold.
+// narrowBreakpoint is the width below which the drive list and the detail
+// pane cannot both be useful.
 const narrowBreakpoint = 100
 
-// setNarrow switches between the two-pane layout and the narrow one, if the
-// choice actually changed. Runs on the event-loop goroutine (from the draw hook)
-// like every other widget mutation.
+// setNarrow switches between the two-pane and narrow layouts when the choice
+// changed. Runs on the event-loop goroutine (from the draw hook).
 func (a *App) setNarrow(narrow bool) {
 	if narrow == a.narrow && a.body.GetItemCount() > 0 {
 		return
@@ -217,10 +195,8 @@ func (a *App) setNarrow(narrow bool) {
 	}
 }
 
-// applyLayout installs the widget arrangement for the current width. Wide: the
-// drive list beside the detail. Narrow: the list collapses to a one-row rail and
-// the detail takes the full width, which is the difference between a readable
-// 80-column screen and a clipped one.
+// applyLayout installs the arrangement: wide is list beside detail; narrow
+// collapses the list to a one-row rail and gives the detail the full width.
 func (a *App) applyLayout(narrow bool) {
 	a.narrow = narrow
 	a.body.Clear().SetDirection(tview.FlexColumn)
@@ -238,11 +214,8 @@ func (a *App) applyLayout(narrow bool) {
 // driveListWidth is the drive list's fixed column width in the wide layout.
 const driveListWidth = 38
 
-// renderRail draws the narrow layout's drive selector: one row of severity
-// glyphs and short names, with the selected drive highlighted and a count of
-// whatever needs attention. It carries the same information the sidebar's first
-// line does — which drives exist and how they are — in a thirty-eighth of the
-// space.
+// renderRail draws the narrow drive selector: one row of severity glyphs and
+// short names, selection highlighted, plus an attention count.
 func (a *App) renderRail() {
 	if !a.narrow {
 		return
@@ -263,8 +236,7 @@ func (a *App) renderRail() {
 			alerts++
 		}
 		if i == cur {
-			// A leading marker as well as the highlight, so the selection is still
-			// visible under mono where every colour resolves to the default.
+			// The ▸ marker keeps the selection visible under mono.
 			fmt.Fprintf(&b, " %s▸%s %s[-:-:-]",
 				fgbgTag(severityColor(sev), activeTheme.SelectionBg), healthGlyph(sev), esc(name))
 			continue
@@ -272,15 +244,12 @@ func (a *App) renderRail() {
 		fmt.Fprintf(&b, "  %s %s", healthGlyph(sev), esc(name))
 	}
 	if alerts > 0 {
-		// Kept to three cells: the rail is one row and the drive names have to
-		// fit first. The severity is on each glyph; this is the count.
 		fmt.Fprintf(&b, "  %s▲ %d[-]", cautionTag(), alerts)
 	}
 	a.rail.SetText(b.String())
 }
 
-// railName is the shortest identifying form of a device name: the rail has room
-// for a handful of drives, so it drops the /dev/ prefix every Linux name shares.
+// railName is the shortest identifying form of a device name (drops /dev/).
 func railName(d smart.Device) string {
 	n := shortDevice(d.Name, railDeviceWidth)
 	return strings.TrimPrefix(n, "/dev/")
@@ -289,14 +258,11 @@ func railName(d smart.Device) string {
 // railDeviceWidth bounds a name on the rail.
 const railDeviceWidth = 10
 
-// statusText renders the bottom key-hint bar. A stable global prefix is followed
-// by a context segment for the focused tab (the sort/filter and self-test keys
-// are otherwise undiscoverable), then the refresh cadence.
+// statusText renders the bottom key-hint bar: global keys, then a context
+// segment for the focused tab, then the refresh cadence.
 func (a *App) statusText() string {
 	aq := accentTag()
-	// Narrow terminals get a deliberately shorter bar rather than the full one
-	// truncated: the old bar simply ran off the edge at 80 columns, losing the
-	// theme key and the cadence readout with no indication anything was cut.
+	// Narrow terminals get a deliberately shorter bar, never a truncated one.
 	if a.narrow {
 		hint := aq + "↑/↓[-] drive   " + aq + "←/→[-] nav"
 		if n := a.detail.tabCount(); n >= 2 {
@@ -325,9 +291,7 @@ func (a *App) statusText() string {
 	return hint + fmt.Sprintf("      %s · refresh every %s", a.themeName, a.interval)
 }
 
-// fleetHints is the key-hint segment for the fleet comparison. Its keys differ
-// enough from the per-drive view (sections rather than tabs, Enter to open a
-// drive) that the bar swaps wholesale rather than appending a context segment.
+// fleetHints is the fleet comparison's key-hint bar, swapped in wholesale.
 func (a *App) fleetHints() string {
 	aq := accentTag()
 	hint := aq + "↑/↓[-] drive"
@@ -338,9 +302,8 @@ func (a *App) fleetHints() string {
 		aq + "c/Esc[-] back   " + aq + "r[-] refresh   " + aq + "q[-] quit"
 }
 
-// contextHints returns the key hints specific to the focused detail tab. They
-// apply only while the detail pane holds focus (the keys reach the focused tab
-// body, not the drive list), so the bar stays honest about what works right now.
+// contextHints returns the hints for the focused detail tab; empty while the
+// list holds focus, so the bar only advertises keys that currently work.
 func (a *App) contextHints() string {
 	if a.list.HasFocus() {
 		return ""
@@ -358,20 +321,16 @@ func (a *App) contextHints() string {
 	return ""
 }
 
-// refreshChrome resyncs the focus-border accents and the context-aware hint bar.
-// Call it after any focus change, tab change, or poll (the Tests tab can flip
-// idle↔running, and the available tab set can change).
+// refreshChrome resyncs focus-border accents and the hint bar; call after any
+// focus change, tab change, or poll.
 func (a *App) refreshChrome() {
 	a.refreshFocusChrome()
 	a.status.SetText(a.statusText())
 }
 
-// refreshFocusChrome accents the border of whichever pane (drive list or detail
-// content) holds keyboard focus and dims the other, so the focused container is
-// always obvious. Must be called after focus has actually moved.
+// refreshFocusChrome accents the focused pane's border and dims the other.
+// Must be called after focus has actually moved.
 func (a *App) refreshFocusChrome() {
-	// In fleet mode the comparison table is the only thing on screen, so it
-	// holds focus unconditionally and the hidden panes are dimmed.
 	a.fleet.setFocused(a.fleetMode)
 	if a.fleetMode {
 		a.list.SetBorderColor(borderColor(false))
@@ -383,52 +342,42 @@ func (a *App) refreshFocusChrome() {
 	a.detail.setContentFocus(!listFocused)
 }
 
-// refreshBanner re-renders the root-warning banner text in the active theme.
-// The banner is set once at build, so it is the one surface a theme cycle would
-// otherwise leave at the old colours; no-op when no banner is shown.
+// refreshBanner re-renders the root-warning banner in the active theme — its
+// text is set once at build, so theme cycles would otherwise miss it.
 func (a *App) refreshBanner() {
 	if !a.bannerShown {
 		return
 	}
-	// Short enough to survive an 80-column terminal. The old wording ran to 94
-	// characters and was cut at "re-run with" — losing the sudo hint, which is
-	// the only reason the banner exists.
+	// Must fit an 80-column terminal without losing the sudo hint.
 	const text = " ⚠ Without root some drives report limited data — re-run with sudo. "
 	if activeTheme.BannerBg == tcell.ColorDefault {
-		// Under a themeless palette (mono) the background disappears and the line
-		// renders exactly like body text — a warning that looks like data. A solid
-		// left bar and bold weight survive where colour does not.
+		// Under mono the background disappears; a left bar + bold survive.
 		a.banner.SetText("[::b]▌" + text + "[-:-:-]")
 		return
 	}
 	a.banner.SetText(fgbgTag(activeTheme.Inverse, activeTheme.BannerBg) + text + "[-:-]")
 }
 
-// cycleTheme advances to the next built-in theme and repaints everything. Runs
-// on the UI goroutine (called from onKey), so it mutates activeTheme and widgets
-// directly without QueueUpdateDraw — the same reasoning as setInterval.
+// cycleTheme advances to the next theme and repaints. Runs on the UI
+// goroutine (from onKey), so no QueueUpdateDraw is needed.
 func (a *App) cycleTheme() {
 	a.themeName = nextThemeName(a.themeName)
 	setTheme(themes[a.themeName])
 	a.repaintAll()
 }
 
-// repaintAll re-applies the active theme everywhere a colour was baked in at
-// build time. Forcing a detail rebuild (by invalidating the cached device) is
-// the robust hammer: it recreates every tab view with current-theme borders and
-// selected-row styles. The list rows, focus chrome/hint bar and the one-shot
-// banner are then re-rendered explicitly. Accepted trade-off: the rebuild resets
-// the Attributes table selection/scroll — fine for an explicit user action.
+// repaintAll re-applies the theme everywhere colour was baked in at build
+// time: force a detail rebuild, then re-render list, fleet, chrome and
+// banner. Trade-off: the rebuild resets Attributes selection/scroll.
 func (a *App) repaintAll() {
-	a.detail.device = "" // invalidate cache → next update() takes the rebuild branch
-	a.showSelected()     // rebuild + re-render all tabs (preserves active tab index)
+	a.detail.device = "" // invalidate cache so update() takes the rebuild branch
+	a.showSelected()
 	styleList(a.list)
-	a.populateList() // re-render list rows (scanning + severity glyphs)
-	// The fleet table bakes a colour into every cell at build time, so it is a
-	// repaint miss of the same kind as the banner; re-render it from the cache.
+	a.populateList()
+	// The fleet table bakes a colour into every cell, same miss as the banner.
 	a.fleet.refresh(a.devices, a.reports, a.history)
-	a.refreshChrome() // status hints + focus borders
-	a.refreshBanner() // re-set the root-warning banner text if shown
+	a.refreshChrome()
+	a.refreshBanner()
 }
 
 // onKey is the global key handler.
@@ -436,9 +385,7 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 	if a.inModal {
 		return ev // let the modal handle all input
 	}
-	// The fleet view rebinds a handful of keys (sections rather than tabs) and
-	// swallows the ones that address the hidden per-drive panes; everything it
-	// does not claim falls through to the shared bindings below.
+	// Keys the fleet view doesn't claim fall through to the shared bindings.
 	if a.fleetMode && a.onFleetKey(ev) {
 		return nil
 	}
@@ -479,8 +426,7 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 			a.showKeys()
 			return nil
 		case 'T':
-			// Uppercase T cycles the colour theme; lowercase t (above) jumps to the
-			// Tests tab. ev.Rune() distinguishes the case.
+			// Uppercase cycles the theme; lowercase t (above) is the Tests tab.
 			a.cycleTheme()
 			return nil
 		case '1', '2', '3', '4', '5', '6', '7', '8', '9':
@@ -500,21 +446,16 @@ const (
 )
 
 // onFleetKey handles the keys the fleet view claims, reporting whether it
-// consumed the event. Keys it declines (q, r, +/-, T) fall through to the
-// shared bindings, so the global chrome keeps working in both modes.
-//
-// Up/Down and Enter are deliberately absent: they reach the focused table
-// directly, which scrolls and fires its selected-func. 's' likewise belongs to
-// the table's own input capture, next to the sort state it toggles.
+// consumed the event. Up/Down, Enter and 's' are deliberately absent — they
+// belong to the focused table itself.
 func (a *App) onFleetKey(ev *tcell.EventKey) bool {
 	switch ev.Key() {
 	case tcell.KeyEscape:
-		// Esc is "back" here rather than "quit": leaving a full-screen view is
-		// what it means everywhere else, and q still quits.
+		// Esc is "back" here, not "quit"; q still quits.
 		a.exitFleet(false)
 		return true
 	case tcell.KeyTab:
-		return true // nothing to move focus between; swallow rather than orphan it
+		return true // swallow rather than orphan focus
 	case tcell.KeyLeft:
 		a.stepFleetSection(-1)
 		return true
@@ -524,7 +465,7 @@ func (a *App) onFleetKey(ev *tcell.EventKey) bool {
 	case tcell.KeyRune:
 		switch r := ev.Rune(); {
 		case r == 't':
-			return true // the Tests tab belongs to a drive, and none is on screen
+			return true // no drive on screen for the Tests tab to address
 		case r >= '1' && r <= '9':
 			a.fleet.selectSection(int(r - '1'))
 			a.refreshChrome()
@@ -548,17 +489,15 @@ func (a *App) toggleFleet() {
 		return
 	}
 	a.fleetMode = true
-	// Render from the cache on entry so the comparison is current even if the
-	// next poll is half a minute away.
+	// Render from the cache so entry doesn't wait for the next poll.
 	a.fleet.refresh(a.devices, a.reports, a.history)
 	a.bodyPages.SwitchToPage(pageFleet)
 	a.app.SetFocus(a.fleet.table)
 	a.refreshChrome()
 }
 
-// exitFleet returns to the per-drive view. focusDetail puts focus on the detail
-// pane rather than the drive list, which is what opening a drive from the fleet
-// table should do; plain "back" restores the list.
+// exitFleet returns to the per-drive view; focusDetail focuses the detail
+// pane (opening a drive) instead of the list (plain "back").
 func (a *App) exitFleet(focusDetail bool) {
 	a.fleetMode = false
 	a.bodyPages.SwitchToPage(pageDrives)
@@ -571,8 +510,7 @@ func (a *App) exitFleet(focusDetail bool) {
 }
 
 // openDrive selects a drive by device name and leaves the fleet view for its
-// detail. Setting the list item fires its changed-func, which renders the
-// drive — the same path an arrow-key selection takes.
+// detail.
 func (a *App) openDrive(name string) {
 	for i, d := range a.devices {
 		if d.Name == name {
@@ -580,9 +518,8 @@ func (a *App) openDrive(name string) {
 			break
 		}
 	}
-	// SetCurrentItem fires the list's changed-func *before* it stores the new
-	// index, so the showSelected it triggers still reads the previous drive and
-	// renders that one. Render again here, once the index is actually current.
+	// SetCurrentItem fires the changed-func *before* storing the new index, so
+	// its showSelected rendered the previous drive; render again here.
 	a.showSelected()
 	a.exitFleet(true)
 }
@@ -597,9 +534,7 @@ func (a *App) toggleFocus() {
 	a.refreshChrome()
 }
 
-// focusRight advances along the focus chain list → tab0 → tab1 … → tabN. From
-// the list it enters the detail at the current tab; within the detail it steps
-// to the next tab, stopping at the last (no wrap).
+// focusRight advances along the chain list → tab0 → … → tabN (no wrap).
 func (a *App) focusRight() {
 	if a.list.HasFocus() {
 		a.app.SetFocus(a.detail.content())
@@ -612,8 +547,7 @@ func (a *App) focusRight() {
 	}
 }
 
-// focusLeft is the reverse of focusRight: it steps to the previous tab, and on
-// the first tab falls through to the drive list.
+// focusLeft is the reverse of focusRight, falling through to the drive list.
 func (a *App) focusLeft() {
 	if a.list.HasFocus() {
 		return
@@ -636,10 +570,8 @@ func (a *App) triggerRefresh() {
 	}
 }
 
-// setInterval changes the poll cadence at runtime. Runs on the UI goroutine: it
-// updates a.interval (read by statusText), signals the poll loop to reset its
-// ticker (non-blocking, like triggerRefresh), and refreshes the status bar so
-// the displayed cadence updates immediately.
+// setInterval changes the poll cadence at runtime: updates a.interval,
+// signals the poll loop to reset its ticker, refreshes the status bar.
 func (a *App) setInterval(d time.Duration) {
 	a.interval = d
 	select {
@@ -671,16 +603,11 @@ func (a *App) selectedDevice() (smart.Device, bool) {
 	return a.devices[i], true
 }
 
-// populateList fills the drive list rows from cached reports. The device set is
-// fixed after the initial scan, so once the rows exist they are updated in place
-// with SetItemText. This is deliberate: Clear()+AddItem() fires the list's
-// SetChangedFunc (on the first re-added item, and again via SetCurrentItem),
-// which would momentarily switch the detail to another drive and back — a device
-// switch that rebuilds every tab, discarding the Attributes selection and
-// orphaning focus on the interactive Tests tab. SetItemText fires nothing.
+// populateList fills the drive list from cached reports. Existing rows are
+// updated in place with SetItemText: Clear()+AddItem() fires SetChangedFunc,
+// which would flip the detail to another drive and back, rebuilding every tab.
 func (a *App) populateList() {
 	if a.list.GetItemCount() != len(a.devices) {
-		// Initial build (or a device-count change): create the rows once.
 		cur := a.list.GetCurrentItem()
 		a.list.Clear()
 		for _, d := range a.devices {
@@ -704,15 +631,14 @@ func (a *App) listRow(d smart.Device) (string, string) {
 	if !ok {
 		return fmt.Sprintf("%s●[-] %s", mutedTag(), esc(shortName(d))), "scanning…"
 	}
-	// model and the device name are drive-controlled; escape markup (see esc) so
-	// the always-visible sidebar can't be made to paint a fake health verdict.
+	// Model and device name are drive-controlled; esc() blocks markup injection.
 	model := esc(rep.ModelName)
 	if rep.ModelName == "" {
 		model = esc(shortName(d))
 	}
 	main := fmt.Sprintf("%s %s", healthGlyph(rep.Overall()), model)
-	// Temperature is last on the line because tempCell's tint ends with a style
-	// reset, which would otherwise drop the secondary colour for what follows.
+	// Temperature goes last: tempCell ends with a style reset that would drop
+	// the secondary colour for anything after it.
 	sec := fmt.Sprintf("%s · %s · %s",
 		esc(shortName(d)), capacityString(rep), tempCell(rep))
 	return main, sec
@@ -731,8 +657,7 @@ func (a *App) Run(ctx context.Context) error {
 		a.detail.showPlaceholder("No drives found. Try running with sudo.")
 	}
 
-	// Stop the UI when the context is cancelled (SIGINT/SIGTERM), so signal
-	// handling quits cleanly rather than leaving the event loop running.
+	// Stop the UI on context cancellation (SIGINT/SIGTERM).
 	go func() {
 		<-ctx.Done()
 		a.app.Stop()
@@ -743,12 +668,11 @@ func (a *App) Run(ctx context.Context) error {
 	return a.app.Run()
 }
 
-// spinnerFrames are the single-width braille glyphs cycled by the refresh
-// spinner. Swap for ASCII (`|/-\`) if a target terminal can't render braille.
+// spinnerFrames are single-width braille glyphs; swap for ASCII (`|/-\`) if a
+// target terminal can't render braille.
 var spinnerFrames = []rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
 
-// renderSpinner paints the top-right spinner cell from the current refresh
-// state. Called only on the event-loop goroutine.
+// renderSpinner paints the top-right spinner cell; event-loop goroutine only.
 func (a *App) renderSpinner() {
 	if a.refreshing.Load() {
 		a.detail.spinner.SetText(fmt.Sprintf("%s%c[-] ",
@@ -758,8 +682,8 @@ func (a *App) renderSpinner() {
 	}
 }
 
-// animateSpinner advances the spinner animation while a refresh is underway.
-// When idle it queues no redraws, so it does not busy-spin the event loop.
+// animateSpinner advances the spinner while a refresh is underway; idle it
+// queues no redraws.
 func (a *App) animateSpinner(ctx context.Context) {
 	ticker := time.NewTicker(spinnerInterval)
 	defer ticker.Stop()
@@ -787,14 +711,9 @@ func shortName(d smart.Device) string {
 // listDeviceWidth is the display budget for a device name in the drive list.
 const listDeviceWidth = 30
 
-// shortDevice trims a device name to at most n runes for display. Device names
-// are round-tripped verbatim everywhere else (see CLAUDE.md); this is display
-// only, and the full name is shown on the Overview.
-//
-// A macOS IOService path is long and its distinguishing part is a path
-// component, not a character offset, so keeping the last n characters
-// ("…pleANS3CGv2Controller/NS_01@1") cut mid-word and made every Apple drive
-// look alike. Prefer whole trailing components, adding as many as fit.
+// shortDevice trims a device name to n runes — display only; names stay
+// verbatim everywhere else. Whole trailing path components are kept, since a
+// character cut makes every macOS IOService path look alike.
 func shortDevice(name string, n int) string {
 	if len([]rune(name)) <= n {
 		return name
@@ -846,8 +765,7 @@ func testLabel(testType smart.SelfTestType) string {
 	return string(testType)
 }
 
-// onSelfTestRun confirms, then starts a self-test on the selected drive. It is
-// wired into the Tests view via selfTestActions and runs on the event loop.
+// onSelfTestRun confirms, then starts a self-test on the selected drive.
 func (a *App) onSelfTestRun(testType smart.SelfTestType) {
 	dev, ok := a.selectedDevice()
 	if !ok {
@@ -890,9 +808,8 @@ func (a *App) onSelfTestCancel() {
 	)
 }
 
-// runSmartctl runs a self-test control call off the event loop, then restores
-// the status bar and either surfaces the error or triggers an immediate refresh
-// so the Tests view reflects the new state.
+// runSmartctl runs a self-test control call off the event loop, then either
+// surfaces the error or triggers an immediate refresh.
 func (a *App) runSmartctl(action string, fn func(context.Context) error) {
 	parent := a.rootCtx
 	if parent == nil {
@@ -919,9 +836,8 @@ func (a *App) confirm(text, yesLabel string, onYes func()) {
 	modal := tview.NewModal().
 		SetText(text).
 		AddButtons([]string{yesLabel, "Back"}).
-		// Accent (not the OK colour) activated button: the affirmative may be a
-		// destructive "Cancel test", so the OK colour stays reserved for healthy/go
-		// semantics.
+		// Accent, not OK: the affirmative may be destructive, and OK stays
+		// reserved for healthy/go semantics.
 		SetButtonActivatedStyle(tcell.StyleDefault.
 			Background(activeTheme.Accent).Foreground(activeTheme.Inverse)).
 		SetDoneFunc(func(_ int, label string) {
@@ -933,12 +849,11 @@ func (a *App) confirm(text, yesLabel string, onYes func()) {
 	a.pushModal(modal)
 }
 
-// showKeys lists every binding in a dismissable modal. The narrow hint bar drops
-// to essentials and points here, so nothing is merely hidden.
+// showKeys lists every binding in a dismissable modal; the narrow hint bar
+// points here, so nothing is merely hidden.
 func (a *App) showKeys() {
 	modal := tview.NewModal().
-		// One binding per line: tview.Modal sizes itself to the text and wraps,
-		// and a two-column line splits across the wrap into nonsense.
+		// One binding per line — tview.Modal wraps, splitting two-column lines.
 		SetText("Keys\n\n" +
 			"↑/↓    select drive\n" +
 			"←/→    previous / next tab\n" +
@@ -958,9 +873,8 @@ func (a *App) showKeys() {
 	a.pushModal(modal)
 }
 
-// showError displays a smartctl failure (commonly a permission error) in a
-// dismissable modal. action names the operation that failed (e.g. "start the
-// short self-test on disk0") so the message says which drive and command.
+// showError displays a smartctl failure in a dismissable modal; action names
+// the operation that failed.
 func (a *App) showError(action string, err error) {
 	modal := tview.NewModal().
 		SetText(fmt.Sprintf("Could not %s:\n%s", action, err)).

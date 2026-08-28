@@ -57,10 +57,7 @@ func TestHumanMinutes(t *testing.T) {
 }
 
 func TestMarginBar(t *testing.T) {
-	// Full headroom (value at base, far above threshold) → full bar. The bar
-	// carries no number: value-minus-threshold read as a contradiction on a full
-	// bar and went negative on a failing row, so those numbers moved to the
-	// table's own now/thr column.
+	// Full headroom → full bar; the bar carries no number (the now/thr column does).
 	full := marginBar(100, 100, 10, smart.SeverityOK)
 	if !strings.Contains(full, "["+severityTag(smart.SeverityOK)+"]") {
 		t.Errorf("full bar = %q", full)
@@ -181,10 +178,8 @@ func TestPctBarsShareOnePolarity(t *testing.T) {
 	}
 }
 
-// TestShortDeviceKeepsDistinguishingPart guards a display choice: a macOS
-// IOService path is long and what tells two of them apart is a trailing path
-// component, not a character offset. Keeping the last N characters cut
-// mid-word and made every Apple drive render alike.
+// TestShortDeviceKeepsDistinguishingPart: a trimmed macOS IOService path must
+// keep whole trailing components, not a mid-word character cut.
 func TestShortDeviceKeepsDistinguishingPart(t *testing.T) {
 	const apple = "IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@9600000/" +
 		"AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1"

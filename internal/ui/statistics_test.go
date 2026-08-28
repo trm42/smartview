@@ -7,10 +7,8 @@ import (
 	"testing"
 )
 
-// TestHangingIndent pins the fix for a broken two-column grid: tview's own
-// wrapping returned an overflowing value to column 0, so "15.4 TB (30003609491
-// sectors)" split with "sectors)" against the left border, between two rows that
-// were still aligned. The overflow now hangs under the value column.
+// TestHangingIndent: an overflowing value must hang under the value column,
+// not wrap back to column 0.
 func TestHangingIndent(t *testing.T) {
 	line := "  " + padRight("Logical Sectors Read", statLabelWidth) + " 193.6 TB (378186418521 sectors)"
 	got := hangingIndent(line, statValueCol, 60)

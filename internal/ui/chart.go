@@ -10,27 +10,17 @@ import (
 	"github.com/rivo/tview"
 )
 
-// This file is smartview's chart renderer. It exists because every chart widget
-// we had anchored its axis to zero, which destroys the signal whenever the
-// interesting variation sits in the top few percent of the range:
-//
-//   - tvxwidgets.Sparkline computes int((data/maxVal) * barHeight), so a drive
-//     that lived between 35°C and 40°C rendered as a solid rectangle.
-//   - tvxwidgets.BarChart offers only SetMaxValue and draws its own axis labels
-//     from the values it is handed, so per-head resistances of 350–495 drew as
-//     twenty bars of identical height. Offsetting the data before handing it
-//     over would fix the shape under an axis that then lied about the numbers.
-//
-// Neither exposes a baseline, so the renderer is ours. The scaling is a pure
-// function over a slice — the first chart code here that can be unit-tested.
+// smartview's chart renderer: charts scale to their data, never to zero.
+// tvxwidgets' Sparkline and BarChart both anchor to zero and expose no
+// baseline, which flattens any series whose variation sits high in its range
+// (a 35–40°C history, per-head resistances of 350–495). The scaling here is
+// pure and unit-tested.
 
-// blockRamp is the eighths ramp used to sub-divide a cell vertically. Index 0 is
-// the shortest visible mark, index 7 a full cell. It is []rune deliberately:
+// blockRamp sub-divides a cell vertically in eighths. []rune deliberately:
 // each glyph is three bytes, so indexing the string would slice mid-character.
 var blockRamp = []rune("▁▂▃▄▅▆▇█")
 
-// dataRange returns the smallest and largest value in data. ok is false for an
-// empty series, so callers can decline to draw rather than inventing a range.
+// dataRange returns the data's min and max; ok is false for an empty series.
 func dataRange(data []float64) (lo, hi float64, ok bool) {
 	if len(data) == 0 {
 		return 0, 0, false
@@ -43,9 +33,8 @@ func dataRange(data []float64) (lo, hi float64, ok bool) {
 	return lo, hi, true
 }
 
-// padRange widens a degenerate range so a perfectly flat series still draws a
-// line rather than dividing by zero. A flat series is a real answer ("this never
-// moved"), so it renders along the baseline instead of being suppressed.
+// padRange widens a degenerate range so a flat series draws along the
+// baseline instead of dividing by zero.
 func padRange(lo, hi float64) (float64, float64) {
 	if hi > lo {
 		return lo, hi
@@ -53,11 +42,8 @@ func padRange(lo, hi float64) (float64, float64) {
 	return lo, lo + 1
 }
 
-// downsample reduces data to at most width points by taking the MAXIMUM of each
-// bucket rather than the mean. Averaging would smooth away exactly the thing a
-// health tool is looking for — a single hot sample or a lone bad head — so a
-// spike always survives the reduction. Series shorter than width are returned
-// unchanged; the caller decides how to place a short series.
+// downsample reduces data to width points by bucket MAXIMUM, not mean, so a
+// spike is never averaged away. Shorter series return unchanged.
 func downsample(data []float64, width int) []float64 {
 	if width <= 0 || len(data) <= width {
 		return data
@@ -78,13 +64,9 @@ func downsample(data []float64, width int) []float64 {
 	return out
 }
 
-// seriesRows renders data as rows lines of width cells, tracing the TOP EDGE of
-// the series scaled to [lo, hi] — a line, not a filled area. Filling from the
-// baseline reproduces the solid-block failure whenever the series sits high in
-// its own range, which is the common case for drive temperatures.
-//
-// Row 0 is the top of the chart. Values at or above hi occupy the top row as a
-// full cell; values at lo sit on the baseline row.
+// seriesRows traces the TOP EDGE of the series scaled to [lo, hi] — a line,
+// not a filled area, which would reproduce the solid-block failure. Row 0 is
+// the top of the chart.
 func seriesRows(data []float64, width, rows int, lo, hi float64) []string {
 	if width <= 0 || rows <= 0 {
 		return nil
@@ -115,10 +97,8 @@ func seriesRows(data []float64, width, rows int, lo, hi float64) []string {
 	return out
 }
 
-// barRows renders values as vertical bars of barWidth cells each, scaled to
-// [lo, hi]. Unlike seriesRows this fills from the baseline: the values are
-// categorical (one per head), so the comparison between neighbours is the point
-// and a filled bar reads better than a traced edge.
+// barRows renders categorical values as vertical bars scaled to [lo, hi],
+// filled from the baseline (comparison between neighbours is the point).
 func barRows(values []float64, barWidth, rows int, lo, hi float64) []string {
 	if barWidth <= 0 || rows <= 0 {
 		return nil
@@ -130,8 +110,7 @@ func barRows(values []float64, barWidth, rows int, lo, hi float64) []string {
 		frac = min(max(frac, 0), 1)
 		eighths := frac * float64(rows) * 8
 		for r := range rows {
-			// How much of this cell the bar fills, in eighths, counting up from
-			// the baseline row.
+			// This cell's fill in eighths, counting up from the baseline row.
 			cell := eighths - float64((rows-1-r)*8)
 			g := ' '
 			switch {
@@ -140,9 +119,8 @@ func barRows(values []float64, barWidth, rows int, lo, hi float64) []string {
 			case cell > 0:
 				g = blockRamp[int(cell)]
 			case r == rows-1:
-				// The smallest value sits exactly on the baseline and would
-				// otherwise draw nothing, reading as a missing category rather
-				// than the lowest one. Give the baseline row a minimum mark.
+				// The smallest value would draw nothing and read as a missing
+				// category; give the baseline row a minimum mark.
 				g = blockRamp[0]
 			}
 			cols[r] = append(cols[r], g)
@@ -158,14 +136,9 @@ func barRows(values []float64, barWidth, rows int, lo, hi float64) []string {
 	return out
 }
 
-// axisLabels returns the label for each chart row, top first: the value at the
-// TOP of that row's band, so a mark in a row means "at most this". The baseline
-// (lo) is labelled separately, on the axis line beneath the plot.
-//
-// Labels are integers, so a narrow range over many rows rounds neighbouring
-// bands to the same number (35-40 over six rows yields 40 39 38 38 37 36). A
-// repeated label reads as a mistake, so only the first row of each value is
-// labelled and the rest are blank — the axis stays honest and less noisy.
+// axisLabels labels each row with the value at the TOP of its band; the
+// baseline goes on the axis line. Integer rounding can repeat a label across
+// rows, so only the first occurrence is printed.
 func axisLabels(rows int, lo, hi float64) []string {
 	lo, hi = padRange(lo, hi)
 	out := make([]string, rows)
@@ -183,10 +156,9 @@ func axisLabels(rows int, lo, hi float64) []string {
 	return out
 }
 
-// rangeChart is a bordered chart primitive that scales to its data rather than
-// to zero. It renders either a traced series (setSeries) or categorical bars
-// (setBars), with a labelled y axis whose baseline is the smallest value in the
-// data — stated on the axis so the reader knows the plot does not start at zero.
+// rangeChart is a bordered chart that scales to its data rather than zero:
+// a traced series (setSeries) or categorical bars (setBars), with the
+// baseline value stated on the axis.
 type rangeChart struct {
 	*tview.Box
 	data    []float64
@@ -209,8 +181,7 @@ func (c *rangeChart) setSeries(data []float64, unit, caption string) *rangeChart
 	return c
 }
 
-// setBars plots data as categorical bars at the given pitch (bar cell plus
-// gap), which keeps neighbouring bars readable as separate values.
+// setBars plots data as categorical bars at the given pitch (bar cell plus gap).
 func (c *rangeChart) setBars(data []float64, pitch int, unit, caption string) *rangeChart {
 	c.data, c.bars, c.tick, c.unit, c.caption = data, true, max(pitch, 1), unit, caption
 	return c
@@ -218,19 +189,18 @@ func (c *rangeChart) setBars(data []float64, pitch int, unit, caption string) *r
 
 func (c *rangeChart) setColor(col tcell.Color) *rangeChart { c.color = col; return c }
 
-// setFocused accents the border when the chart holds keyboard focus, matching
-// every other focusable body in the UI.
+// setFocused accents the border when the chart holds keyboard focus.
 func (c *rangeChart) setFocused(focused bool) {
 	c.focused = focused
 	c.SetBorderColor(borderColor(focused))
 }
 
-// chartMinHeight is the smallest useful chart: one plot row, an axis line and a
-// caption. Below this the chart draws nothing rather than a misleading stub.
+// chartMinHeight is one plot row, an axis line and a caption; below this the
+// chart draws nothing rather than a misleading stub.
 const chartMinHeight = 3
 
-// Draw paints the axis, the plot and the caption. The y-axis gutter is sized to
-// the widest label so the plot never shifts as values change magnitude.
+// Draw paints the axis, plot and caption; the y-axis gutter is sized to the
+// widest label so the plot never shifts.
 func (c *rangeChart) Draw(screen tcell.Screen) {
 	c.DrawForSubclass(screen, c)
 	x, y, w, h := c.GetInnerRect()
@@ -243,10 +213,8 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 	}
 
 	plotRows := h - 2 // one axis line, one caption line
-	// Do not resolve finer than the data: temperatures are whole degrees, so a
-	// 35-40°C series over nine rows would repeat its labels and leave rows that
-	// no value can ever land in. Cap to the integer span and anchor the plot to
-	// the axis, leaving any surplus as headroom at the top of the box.
+	// Cap resolution to the integer span: values are whole numbers, and finer
+	// rows could never be landed in.
 	if span := int(hi-lo) + 1; span > 0 && span < plotRows {
 		plotRows = span
 	}
@@ -274,9 +242,7 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 		lbl := fmt.Sprintf("%*s ", gutter-2, labels[r])
 		tview.Print(screen, esc(lbl), x, top+r, gutter, tview.AlignLeft, muted)
 		tview.Print(screen, "┤", x+gutter-1, top+r, 1, tview.AlignLeft, activeTheme.Accent)
-		// Clip by RUNES, not bytes: the block glyphs are three bytes each, so a
-		// byte-length comparison both over-counts the width and slices a rune
-		// slice past its end.
+		// Clip by RUNES, not bytes: the block glyphs are three bytes each.
 		cells := []rune(line)
 		if len(cells) > plotW {
 			cells = cells[:plotW]
@@ -284,8 +250,7 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 		tview.Print(screen, esc(string(cells)), x+gutter, top+r, plotW, tview.AlignLeft, c.color)
 	}
 
-	// The axis line carries the baseline value, so it is always obvious that the
-	// plot does not start at zero.
+	// The axis line carries the baseline value, so a non-zero start is obvious.
 	base := fmt.Sprintf("%*s ", gutter-2, fmt.Sprintf("%.0f", lo))
 	tview.Print(screen, esc(base), x, top+plotRows, gutter, tview.AlignLeft, muted)
 	tview.Print(screen, "└"+strings.Repeat("─", plotW-1), x+gutter-1, top+plotRows, plotW, tview.AlignLeft, muted)

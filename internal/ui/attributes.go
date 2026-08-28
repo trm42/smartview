@@ -14,11 +14,9 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// The Attributes tab pairs a selectable table with a description footer for the
-// highlighted row: a rich, decoded ATA attribute table for ATA drives
-// (attributesView), or the NVMe health-log table for NVMe drives
-// (nvmeAttributesView). Both refresh their data in place so the selected row
-// survives polls. The views are constructed from detail.buildTabView.
+// The Attributes tab pairs a selectable table with a description footer:
+// attributesView for ATA, nvmeAttributesView for NVMe. Both refresh in place
+// so the selected row survives polls.
 
 // sortMode orders the ATA attribute rows.
 type sortMode int
@@ -60,19 +58,16 @@ func (m filterMode) String() string {
 	}
 }
 
-// attrFooterHeight is the footer's fixed height: two borders and three text
-// rows — the numbers, the description, and what the state means for the reader.
-// It was four (two text rows), and the description alone wraps to two at any
-// usual width, so the numbers fell out of the box with no scroll cue.
+// attrFooterHeight fits two borders plus three text rows: numbers, verdict,
+// description (which wraps to two lines at usual widths).
 const attrFooterHeight = 5
 
-// attrNameWidth bounds the attribute-name column. Names come from the drive, so
-// without a cap a single long one sets the width for the whole table.
+// attrNameWidth caps the attribute-name column so one long drive-supplied
+// name can't set the whole table's width.
 const attrNameWidth = 22
 
-// attributesView is the ATA attribute table plus a description footer, with
-// interactive sort (s) and filter (f). It rebuilds rows in place so selection
-// and focus survive a re-render.
+// attributesView is the ATA attribute table plus footer, with sort (s) and
+// filter (f); rows rebuild in place so selection and focus survive.
 type attributesView struct {
 	*tview.Flex
 	table  *scrollTable
@@ -125,8 +120,7 @@ func (v *attributesView) setFocused(focused bool) {
 	v.table.SetBorderColor(borderColor(focused))
 }
 
-// refresh re-applies the latest attribute data, keeping the selected attribute
-// (by ID) and the current sort/filter so a poll never disturbs the user.
+// refresh re-applies the latest data, keeping selection (by ID) and sort/filter.
 func (v *attributesView) refresh(r *smart.Report, _ []float64) {
 	if r.ATAAttributes == nil {
 		return
@@ -145,8 +139,8 @@ func (v *attributesView) selectedID() int {
 	return -1
 }
 
-// selectByID selects the row showing attribute id (or the first row when id is
-// not present / -1), and refreshes the footer.
+// selectByID selects the row for attribute id (first row when absent/-1) and
+// refreshes the footer.
 func (v *attributesView) selectByID(id int) {
 	if len(v.shown) == 0 {
 		v.footer.SetText("")
@@ -165,26 +159,13 @@ func (v *attributesView) selectByID(id int) {
 	v.updateFooter(target)
 }
 
-// renderRows rebuilds the table body for the current sort/filter, preserving the
-// table primitive so focus is not lost. Selection is applied separately by the
-// caller (selectByID) so it can be retained across re-renders.
+// renderRows rebuilds the table body for the current sort/filter, preserving
+// the table primitive so focus is not lost; the caller applies selection.
 func (v *attributesView) renderRows() {
 	v.table.Clear()
 	v.table.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(fmt.Sprintf(
 		" SMART attributes — sort: %s · filter: %s  %s[s/f][-] ", v.sortBy, v.filter, accentTag()))
 
-	// The ID earns its column: every SMART reference is indexed by it, and an
-	// unnamed vendor attribute ("Unknown Attribute") has no other handle. It used
-	// to live only in the footer, which clips (see updateFooter).
-	//
-	// "Health" is split into State and Margin because one column cannot carry two
-	// encodings: it held a headroom bar for thresholded attributes and a bare dot
-	// for the rest, with no key, and the bar's number was an unlabelled
-	// value-minus-threshold that printed negative on the one row that mattered.
-	//
-	// "When" is gone: it was 22 rows of "-" that truncated to "FAILING_NO…"
-	// exactly when it filled. State says the same thing in words, and the exact
-	// normalized/threshold/raw numbers are in the footer, which no longer clips.
 	headers := []string{"ID", "Attribute", "Kind", "State", "Margin", "Reading"}
 	for c, h := range headers {
 		v.table.SetCell(0, c, headerCell(h))
@@ -203,9 +184,8 @@ func (v *attributesView) renderRows() {
 	}
 }
 
-// setAttrRow fills table row (1-based) with the cells for attribute a. Healthy
-// rows render neutral so the table is easy to scan; yellow/red is reserved for
-// attributes that need attention.
+// setAttrRow fills table row (1-based) for attribute a; healthy rows render
+// neutral.
 func (v *attributesView) setAttrRow(row int, a smart.ATAAttribute) {
 	color := attrTextColor(a.Severity())
 	sel := selectedRowStyle(color)
@@ -213,24 +193,19 @@ func (v *attributesView) setAttrRow(row int, a smart.ATAAttribute) {
 		v.table.SetCell(row, col, tview.NewTableCell(" "+text+" ").
 			SetTextColor(color).SetAlign(align).SetSelectedStyle(sel))
 	}
-	// Name and reading are drive-controlled; table cells interpret markup, so
-	// escape them (see esc) to keep a hostile drive from injecting tags.
+	// Name and reading are drive-controlled: esc() blocks markup injection.
 	put(0, fmt.Sprintf("%3d", a.ID), tview.AlignLeft)
-	// Capped like fleet.go's model column: one long vendor name must not squeeze
-	// the reading off the right edge of a narrow detail pane.
 	v.table.SetCell(row, 1, tview.NewTableCell(" "+esc(truncateRunes(humanAttrName(a.Name), attrNameWidth))+" ").
 		SetTextColor(color).SetSelectedStyle(sel))
 	put(2, attrKind(a), tview.AlignLeft)
 	put(3, attrState(a), tview.AlignLeft)
-	// Margin carries its own colour tags, so it keeps a green bar on a healthy
-	// row rather than inheriting the neutral row colour.
+	// Margin carries its own colour tags (a green bar even on a neutral row).
 	v.table.SetCell(row, 4, tview.NewTableCell(" "+marginCell(a)+" ").
 		SetSelectedStyle(sel))
 	put(5, esc(decodeReading(a)), tview.AlignRight)
 }
 
-// attrKind names the pre-fail/old-age distinction, taken from the authoritative
-// flags bit rather than the attribute name.
+// attrKind names pre-fail vs old-age from the authoritative flags bit.
 func attrKind(a smart.ATAAttribute) string {
 	if a.Flags.Prefailure {
 		return "pre-fail"
@@ -238,10 +213,7 @@ func attrKind(a smart.ATAAttribute) string {
 	return "old-age"
 }
 
-// attrState renders the attribute's condition as a word. smartctl's when_failed
-// enums (FAILING_NOW, in_the_past) were previously printed raw in a column
-// narrow enough to truncate them to "FAILING_NO…" and "in_the_pas…" — exactly
-// when they finally carried a value, after twenty rows of "-".
+// attrState renders the attribute's condition as a word.
 func attrState(a smart.ATAAttribute) string {
 	switch a.Severity() {
 	case smart.SeverityFailing:
@@ -256,9 +228,8 @@ func attrState(a smart.ATAAttribute) string {
 	}
 }
 
-// attrLimits renders the pair of numbers a state is derived from — the current
-// normalized value against its threshold — for the footer. A drive that sets no
-// threshold gets the not-reported dash rather than a fabricated 0.
+// attrLimits renders value/threshold for the footer; no threshold gets the
+// dash, not a fabricated 0.
 func attrLimits(a smart.ATAAttribute) string {
 	if a.Thresh <= 0 {
 		return fmt.Sprintf("%d/%s", a.Value, dash)
@@ -307,12 +278,8 @@ func (v *attributesView) updateFooter(row int) {
 	if desc == "" {
 		desc = esc(humanAttrName(a.Name)) // drive-controlled fallback; escape markup
 	}
-	// Ordered by what is scarce: the numbers, then what the state means, then the
-	// description. The box is a fixed height and the description is what wraps,
-	// so a narrow terminal runs out of prose rather than out of data or advice.
-	// The numbers line used to be SECOND, and a two-line description pushed the
-	// id, threshold and raw value out of the box with no scroll cue — leaving the
-	// id with no home at all, since the table did not carry it either.
+	// Numbers first, verdict, then description: the description is what wraps,
+	// so a narrow terminal runs out of prose rather than data.
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s%d · %s[-]  %s%s · now/thr %s · worst %d · raw %s[-]\n",
 		accentTag(), a.ID, esc(humanAttrName(a.Name)),
@@ -324,9 +291,8 @@ func (v *attributesView) updateFooter(row int) {
 	v.footer.SetText(b.String())
 }
 
-// attrVerdict states what the attribute's condition means for the reader, so the
-// footer ends with a consequence rather than leaving one to be inferred from a
-// normalized number. Healthy attributes get nothing: silence is the message.
+// attrVerdict states what the condition means for the reader; healthy
+// attributes get nothing.
 func attrVerdict(a smart.ATAAttribute) string {
 	switch a.Severity() {
 	case smart.SeverityFailing:
@@ -352,11 +318,8 @@ func attrMargin(a smart.ATAAttribute) int {
 	return a.Value - a.Thresh
 }
 
-// marginCell renders the threshold headroom as a bar, or the not-reported dash
-// where the drive sets no threshold. One encoding per column: the bar always
-// means the same thing and always fills toward healthy, and an attribute without
-// a threshold says so with the same dash the fleet legend already teaches,
-// rather than borrowing a dot that also stood in for a bar elsewhere.
+// marginCell renders the threshold headroom bar, or the dash when the drive
+// sets no threshold.
 func marginCell(a smart.ATAAttribute) string {
 	if a.Thresh <= 0 {
 		return dash
@@ -369,8 +332,8 @@ func humanAttrName(s string) string {
 	return strings.ReplaceAll(s, "_", " ")
 }
 
-// decodeReading converts the vendor raw value of well-known attributes into a
-// human-readable real-world figure, falling back to the raw string otherwise.
+// decodeReading converts well-known raw values into real-world figures,
+// falling back to the raw string.
 func decodeReading(a smart.ATAAttribute) string {
 	switch a.ID {
 	case 9, 240: // power-on hours, head flying hours
@@ -399,8 +362,8 @@ type attrKV struct {
 	sev smart.Severity
 }
 
-// nvmeAttributesView renders the NVMe SMART/health log as a key/value table with
-// a description footer, refreshing rows in place so the selection is preserved.
+// nvmeAttributesView renders the NVMe health log as a key/value table with a
+// description footer, refreshing in place.
 type nvmeAttributesView struct {
 	*tview.Flex
 	table  *scrollTable
@@ -434,8 +397,8 @@ func (v *nvmeAttributesView) setFocused(focused bool) {
 	v.table.SetBorderColor(borderColor(focused))
 }
 
-// refresh re-applies the latest health data, keeping the selected row (field
-// order is stable, so the row index maps to the same field).
+// refresh re-applies the latest data, keeping the selected row (field order
+// is stable).
 func (v *nvmeAttributesView) refresh(r *smart.Report, _ []float64) {
 	if r.NVMeHealth == nil {
 		return
@@ -534,10 +497,8 @@ func nvmeRows(h *smart.NVMeHealth) []attrKV {
 	}
 	add("Crit temp time", humanMinutes(h.CriticalCompTime), critSevTemp)
 	if len(h.TemperatureSensors) > 0 {
-		// Grade each sensor on its own reading and the row on the hottest of
-		// them. The composite temperature on the Overview can sit comfortably in
-		// range while one sensor is well past the failing threshold, so printing
-		// these as plain text hid the only place that shows up.
+		// Grade each sensor and the row on the hottest: the composite can sit
+		// in range while one sensor is past the failing threshold.
 		parts := make([]string, len(h.TemperatureSensors))
 		rowSev := smart.SeverityOK
 		for i, t := range h.TemperatureSensors {
@@ -554,9 +515,8 @@ func headerCell(s string) *tview.TableCell {
 	return headerCellAligned(s, tview.AlignLeft)
 }
 
-// headerCellAligned is headerCell with an explicit alignment. A right-aligned
-// header takes a leading pad only, matching the numeric cells beneath it — see
-// the note in fleetView.setRow about what padding both sides costs.
+// headerCellAligned is headerCell with an explicit alignment; a right-aligned
+// header takes a leading pad only, matching the numeric cells beneath it.
 func headerCellAligned(s string, align int) *tview.TableCell {
 	text := " " + s + " "
 	if align == tview.AlignRight {

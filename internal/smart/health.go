@@ -47,16 +47,10 @@ func (r *Report) Overall() Severity {
 	return max(worst, r.logSeverity())
 }
 
-// logSeverity grades the drive's own error logs, which the attribute table can
-// miss entirely: an uncorrectable read is written to the ATA error log without
-// necessarily moving any normalized value, so a drive can log a UNC and still
-// present every attribute above its threshold. A populated log is the drive
-// reporting a fault about itself and is worth a Caution.
-//
-// NVMe is deliberately excluded. Its num_err_log_entries is a lifetime counter
-// that accumulates for entirely benign reasons (a rejected Identify field is an
-// "error"), so a non-zero value there is a count worth reading, not a verdict.
-// The Logs tab decodes the entries; grading on the bare number would cry wolf.
+// logSeverity grades the drive's own error logs: an uncorrectable read can be
+// logged without moving any normalized attribute value. NVMe's
+// num_err_log_entries is deliberately excluded — it accumulates for benign
+// reasons, so it is a count to display, not a verdict.
 func (r *Report) logSeverity() Severity {
 	if r.ATAErrorLog != nil && r.ATAErrorLog.Extended != nil && r.ATAErrorLog.Extended.Count > 0 {
 		return SeverityCaution
@@ -67,9 +61,8 @@ func (r *Report) logSeverity() Severity {
 	return SeverityOK
 }
 
-// Severity classifies a single ATA attribute. The pre-fail vs old-age
-// distinction comes from the authoritative Flags.Prefailure bit rather than a
-// heuristic on the attribute name.
+// Severity classifies one ATA attribute; pre-fail vs old-age comes from the
+// authoritative Flags.Prefailure bit, not the attribute name.
 func (a *ATAAttribute) Severity() Severity {
 	switch a.WhenFailed {
 	case "FAILING_NOW":
@@ -77,7 +70,7 @@ func (a *ATAAttribute) Severity() Severity {
 	case "in_the_past":
 		return SeverityCaution
 	}
-	// thresh of 0 means "no threshold"; only meaningful when positive.
+	// Thresh 0 means "no threshold".
 	if a.Thresh > 0 && a.Value <= a.Thresh {
 		if a.Flags.Prefailure {
 			return SeverityFailing
@@ -87,8 +80,7 @@ func (a *ATAAttribute) Severity() Severity {
 	return SeverityOK
 }
 
-// PctUsedSeverity grades NVMe endurance consumption (percentage_used): a drive
-// at or past 90% of its rated writes is worth a Caution.
+// PctUsedSeverity grades NVMe endurance consumption: Caution at >= 90%.
 func PctUsedSeverity(percent int) Severity {
 	if percent >= 90 {
 		return SeverityCaution

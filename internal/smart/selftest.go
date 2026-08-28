@@ -4,10 +4,8 @@ package smart
 
 import "time"
 
-// SelfTestType is the kind of SMART self-test smartview can start. smartctl also
-// accepts conveyance and selective tests, but smartview deliberately exposes only
-// the short and long (extended) variants; using a named type keeps the valid set
-// discoverable and compiler-checked at call sites instead of passing raw strings.
+// SelfTestType is the kind of SMART self-test smartview can start; only short
+// and long are exposed, deliberately.
 type SelfTestType string
 
 const (
@@ -15,20 +13,17 @@ const (
 	SelfTestLong  SelfTestType = "long"
 )
 
-// SupportsSelfTest reports whether the drive can run SMART self-tests, gating
-// the Tests tab. ATA exposes the capability bit directly; NVMe self-test is an
-// optional admin command. Drives that omit these sections (e.g. Apple internal
-// NVMe) decode to nil and report false.
+// SupportsSelfTest reports whether the drive can run SMART self-tests; gates
+// the Tests tab. Drives that omit the relevant sections report false.
 func (r *Report) SupportsSelfTest() bool {
 	switch {
 	case r.IsATA():
 		return r.ATASmartData != nil && r.ATASmartData.Capabilities != nil &&
 			r.ATASmartData.Capabilities.SelfTestsSupported
 	case r.IsNVMe():
-		// The optional-admin bit is authoritative, but some smartctl
-		// builds omit that section; smartctl only emits the self-test log
-		// section for controllers that implement the command, so its
-		// presence is an equally reliable support signal.
+		// Some smartctl builds omit the optional-admin section; the self-test
+		// log is only emitted for controllers that implement the command, so
+		// its presence is an equally reliable signal.
 		if r.NVMeOptAdmin != nil && r.NVMeOptAdmin.SelfTest {
 			return true
 		}
@@ -38,10 +33,8 @@ func (r *Report) SupportsSelfTest() bool {
 	}
 }
 
-// SelfTestProgress reports an in-progress self-test. running is true only while
-// a test executes; percent is 0..100 done, and label is smartctl's status
-// string (e.g. "Extended offline" / the NVMe operation name) when available.
-// Both protocols are unified here so the UI need not branch.
+// SelfTestProgress reports an in-progress self-test for either protocol:
+// percent done (0..100) and smartctl's status string.
 func (r *Report) SelfTestProgress() (label string, percent int, running bool) {
 	switch {
 	case r.IsATA():
@@ -75,8 +68,8 @@ func (r *Report) SelfTestProgress() (label string, percent int, running bool) {
 	}
 }
 
-// SelfTestDuration returns the estimated runtime for a self-test type, when the
-// drive advertises it. Only ATA reports polling minutes; NVMe returns ok=false.
+// SelfTestDuration returns the advertised runtime for a self-test type; ATA
+// only, NVMe returns false.
 func (r *Report) SelfTestDuration(testType SelfTestType) (time.Duration, bool) {
 	if r.ATASmartData == nil || r.ATASmartData.SelfTest == nil || r.ATASmartData.SelfTest.PollingMinutes == nil {
 		return 0, false

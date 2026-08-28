@@ -7,13 +7,9 @@ import (
 	"github.com/rivo/tview"
 )
 
-// clipScreen wraps a tcell.Screen and drops any cell write whose row falls
-// outside [top, bottom). tview and tvxwidgets render exclusively through
-// SetContent during Draw, so clipping it confines a primitive's output —
-// backgrounds, text and bar-chart cells alike — to the scroll viewport. Size()
-// and every other method delegate to the embedded real screen: tview's
-// printWithStyle leans on Size() to suppress y<0 rows and clip the right edge,
-// so it must report the true screen dimensions.
+// clipScreen drops cell writes outside [top, bottom), confining a primitive's
+// Draw output to the scroll viewport. Size() must keep reporting the true
+// screen dimensions — tview's printWithStyle relies on it.
 type clipScreen struct {
 	tcell.Screen
 	top, bottom int
@@ -26,11 +22,9 @@ func (c clipScreen) SetContent(x, y int, primary rune, combining []rune, style t
 	c.Screen.SetContent(x, y, primary, combining, style)
 }
 
-// scrollView is a borderless container that vertically scrolls a single inner
-// primitive taller than its viewport. tview v0.42 has no scrollable container
-// for arbitrary primitives (only TextView/Table scroll natively), so this gives
-// widget-based layouts — like the FARM tab's bordered boxes and bar charts — a
-// way to be reached when they overflow the terminal.
+// scrollView is a borderless container that vertically scrolls one inner
+// primitive; tview has no scrollable container for arbitrary primitives, so
+// widget-composed layouts (e.g. the FARM tab) need this.
 type scrollView struct {
 	*tview.Box
 	inner         tview.Primitive
@@ -44,16 +38,14 @@ func newScrollView() *scrollView {
 	return &scrollView{Box: tview.NewBox()}
 }
 
-// setContent stores the inner primitive and its full (unclipped) height. The
-// scroll offset is preserved across calls so an in-place refresh does not jump
-// the view; it is clamped to the viewport in Draw, where the height is known.
+// setContent stores the inner primitive and its full height. The scroll
+// offset survives so an in-place refresh doesn't jump; Draw clamps it.
 func (s *scrollView) setContent(p tview.Primitive, height int) {
 	s.inner = p
 	s.contentHeight = height
 }
 
-// clamp constrains the scroll offset to [0, max(0, contentHeight-h)] for a
-// viewport of height h.
+// clamp constrains the offset to [0, max(0, contentHeight-h)].
 func (s *scrollView) clamp(h int) {
 	maxOffset := s.contentHeight - h
 	if maxOffset < 0 {
@@ -77,8 +69,8 @@ func (s *scrollView) Draw(screen tcell.Screen) {
 	}
 	s.clamp(h)
 
-	// Clear the viewport rows: when the offset changes, the inner Flex's
-	// flexible spacer does not repaint, so stale rows would otherwise linger.
+	// Clear the viewport: the inner Flex's spacer doesn't repaint on scroll,
+	// so stale rows would linger.
 	for cy := y; cy < y+h; cy++ {
 		for cx := x; cx < x+w; cx++ {
 			screen.SetContent(cx, cy, ' ', nil, tcell.StyleDefault)
@@ -90,20 +82,12 @@ func (s *scrollView) Draw(screen tcell.Screen) {
 		s.inner.Draw(clipScreen{Screen: screen, top: y, bottom: y + h})
 	}
 
-	// Scroll indicators at the right edge, drawn unclipped inside the viewport.
 	drawScrollArrows(screen, x, y, w, h, s.offset, s.contentHeight)
 }
 
-// drawScrollArrows overlays the up/down indicators at the right edge of the rect
-// (x, y, w, h) when content overflows it: ▲ when offset rows are hidden above, ▼
-// when content extends below. This is the one scroll affordance shared by every
-// tab — the scrollView container and the natively-scrolling TextView, Table and
-// List wrappers below all route through it so the cue looks identical everywhere.
-// h is both the viewport height and the placement rect, so callers pass an inner
-// rect (border/gutter already removed); the arrows then sit just inside the right
-// border on the top and bottom content rows. The arrows use the theme's neutral
-// ScrollArrow colour so they read as chrome rather than competing with the
-// accent/focus colour.
+// drawScrollArrows overlays ▲/▼ at the right edge when content overflows —
+// the one scroll affordance every wrapper routes through. Callers pass an
+// inner rect (border/gutter already removed).
 func drawScrollArrows(screen tcell.Screen, x, y, w, h, offset, contentHeight int) {
 	if w <= 0 || h <= 0 || contentHeight <= h {
 		return
@@ -117,10 +101,8 @@ func drawScrollArrows(screen tcell.Screen, x, y, w, h, offset, contentHeight int
 	}
 }
 
-// scrollTextView is a TextView that draws the shared scroll arrows on overflow.
-// tview's TextView scrolls itself (arrow/j/k/PgUp/etc when focused); this only
-// adds the off-screen cue the bare widget lacks. Used by any tab whose body is a
-// single scrollable TextView (Logs, the Overview drive panel, a running test).
+// scrollTextView is a TextView plus the shared scroll arrows; the widget
+// already scrolls itself, this only adds the off-screen cue.
 type scrollTextView struct {
 	*tview.TextView
 }
@@ -136,10 +118,8 @@ func (s *scrollTextView) Draw(screen tcell.Screen) {
 	drawScrollArrows(screen, x, y, w, h, row, s.GetWrappedLineCount())
 }
 
-// scrollTable is a Table that draws the shared scroll arrows on overflow. The
-// row offset and total row count are in the same units as the inner viewport
-// height (one row each, fixed header included on both sides), so the generic
-// helper's offset < contentHeight-h test lines up with the table's own scroll.
+// scrollTable is a Table plus the shared scroll arrows; row offset/count are
+// already in viewport-row units, so the overflow test lines up.
 type scrollTable struct {
 	*tview.Table
 }
@@ -155,9 +135,8 @@ func (s *scrollTable) Draw(screen tcell.Screen) {
 	drawScrollArrows(screen, x, y, w, h, row, s.GetRowCount())
 }
 
-// scrollList is a List that draws the shared scroll arrows on overflow. Items
-// are converted to row units via linesPerItem (a secondary-text list spends two
-// rows per item) so the cue matches the list's actual height.
+// scrollList is a List plus the shared scroll arrows; linesPerItem converts
+// items to row units (a secondary-text list spends two rows per item).
 type scrollList struct {
 	*tview.List
 	linesPerItem int
@@ -174,9 +153,8 @@ func (s *scrollList) Draw(screen tcell.Screen) {
 	drawScrollArrows(screen, x, y, w, h, offset*s.linesPerItem, s.GetItemCount()*s.linesPerItem)
 }
 
-// InputHandler scrolls the viewport. These keys already reach the focused page
-// primitive: App.onKey returns everything except Tab/Left/Right/Esc/q/r/1–5,
-// exactly as the Logs tab's TextView relies on.
+// InputHandler scrolls the viewport with the keys App.onKey lets through to
+// the focused primitive.
 func (s *scrollView) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 	return s.WrapInputHandler(func(event *tcell.EventKey, _ func(tview.Primitive)) {
 		_, _, _, h := s.GetInnerRect()

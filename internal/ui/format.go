@@ -12,40 +12,29 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// esc escapes drive-controlled free text before it is inserted into a widget
-// that interprets tview colour/region markup (every SetDynamicColors(true)
-// TextView, and all table cells). SMART identity and log fields — model name,
-// serial, firmware, self-test/error strings, PHY-counter and attribute names —
-// originate from the device and are attacker-controllable (writable via vendor
-// tooling, or fully forged by a hostile USB enclosure). Without escaping, a
-// failing drive whose model_name is "Disk [green]HEALTHY[-]" could paint a fake
-// healthy verdict or recolour the real severity. esc wraps only the data; the
-// surrounding intentional tags stay literal.
+// esc escapes drive-controlled free text (identity, log strings, attribute
+// names) before it reaches markup-interpreting widgets — otherwise a hostile
+// drive can inject colour tags and spoof the health display. Escape only the
+// data, not the surrounding intentional tags.
 func esc(s string) string {
 	return tview.Escape(s)
 }
 
-// dash is defined in theme.go (it carries the active theme's muted colour and is
-// recomputed in setTheme); its call sites here use it as a plain value.
+// dash is defined in theme.go; it carries the active theme's muted colour.
 
-// uiGutter is the standard horizontal inset (cells) between a box border and its
-// text, applied via SetBorderPadding on every text/table/list box so the left
-// margin is identical across tabs. Vertical padding stays 0 for density; graphical
-// widgets (gauges, sparkline, bar charts) opt out to keep visualizations full-width.
+// uiGutter is the standard horizontal inset between a box border and its
+// text (SetBorderPadding on every text/table/list box). Vertical padding
+// stays 0 for density; graphical widgets opt out to stay full-width.
 const uiGutter = 1
 
-// nestIndent is the leading whitespace for a line subordinate to an in-box header
-// (e.g. self-test entries under "Self-test history").
+// nestIndent is the leading whitespace for a line under an in-box header.
 const nestIndent = "  "
 
 // marginBar renders a severity-coloured headroom bar for a normalized SMART
-// value above its threshold: a fuller bar means more margin before the
-// attribute is considered failing — the same polarity as every other bar in the
-// UI. base is the smallest standard top value (100/200/253) at least as large
-// as the observed value/worst.
+// value above its threshold: fuller means more margin, same polarity as every
+// other bar. base is the smallest standard top value (100/200/253) covering
+// value/worst.
 func marginBar(value, worst, thresh int, sev smart.Severity) string {
-	// Same width as pctBar: one bar vocabulary across the UI, and it buys the two
-	// columns the Attributes table needs to show its reading without clipping.
 	const width = pctBarWidth
 	base := 100
 	for _, b := range []int{200, 253} {
@@ -66,38 +55,23 @@ func marginBar(value, worst, thresh int, sev smart.Severity) string {
 	}
 	filled := int(frac*float64(width) + 0.5)
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
-	// The bar alone: it used to be followed by value-thresh, an unlabelled
-	// number that read as a contradiction on a full bar (10/10 filled, "3") and
-	// went negative on a failing row ("░░░░░░░░░░ -24"). The two numbers it was
-	// derived from now have their own column.
 	return fmt.Sprintf("[%s]%s[-]", severityTag(sev), bar)
 }
 
-// pctBarWidth is the cell width of every bar in the UI — the fleet's endurance
-// and spare pair, and the Attributes margin bar. One width, one polarity, one
-// meaning: see pctBar.
+// pctBarWidth is the cell width of every bar in the UI.
 const pctBarWidth = 8
 
-// pctBar renders a percentage as a severity-coloured bar followed by the value —
-// the fleet view's compact form for endurance and spare. marginBar is the
-// sibling for normalized SMART values, which need a threshold-relative scale
-// rather than a straight 0-100 one.
-//
-// A FULLER BAR ALWAYS MEANS HEALTHIER. The fleet shows endurance and spare side
-// by side, and rendering "life used" directly gave the two columns opposite
-// polarity in the same colour: an empty bar (3% used, good) beside a full one
-// (100% spare, good) reads as a contradiction until you go back to the headers.
-// Callers with a "consumed" percentage pass the remaining share instead — see
-// pctBarUsed.
+// pctBar renders a percentage as a severity-coloured bar plus the value.
+// A FULLER BAR ALWAYS MEANS HEALTHIER; callers with a "consumed" percentage
+// use pctBarUsed so opposite polarities never share a colour.
 func pctBar(pct int, sev smart.Severity) string {
 	filled := (clampPct(pct)*pctBarWidth + 50) / 100
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", pctBarWidth-filled)
 	return fmt.Sprintf("[%s]%s[-] %d%%", severityTag(sev), bar, pct)
 }
 
-// pctBarUsed renders a CONSUMED percentage: the bar shows what is left, so it
-// drains as the drive wears and matches the polarity of every other bar, while
-// the number stays the "used" figure the SMART field actually reports.
+// pctBarUsed renders a CONSUMED percentage: the bar drains as the drive wears
+// (matching every other bar's polarity) while the number stays the "used" figure.
 func pctBarUsed(pct int, sev smart.Severity) string {
 	used := clampPct(pct)
 	filled := ((100-used)*pctBarWidth + 50) / 100
@@ -105,9 +79,7 @@ func pctBarUsed(pct int, sev smart.Severity) string {
 	return fmt.Sprintf("[%s]%s[-] %d%%", severityTag(sev), bar, used)
 }
 
-// borderColor returns the accent border colour for a pane that holds keyboard
-// focus and a dim one for an unfocused pane, so the active container is obvious.
-// Driven from App.refreshFocusChrome on every focus/tab transition.
+// borderColor returns the accent colour for a focused pane, muted otherwise.
 func borderColor(focused bool) tcell.Color {
 	if focused {
 		return activeTheme.Accent
@@ -115,10 +87,8 @@ func borderColor(focused bool) tcell.Color {
 	return activeTheme.Muted
 }
 
-// tempSeverity grades a drive temperature for display colouring only. The data
-// layer derives health from SMART status and attributes, never from raw
-// temperature, so these thresholds live in the UI layer to keep internal/smart
-// untouched.
+// tempSeverity grades a temperature for display colouring only; health never
+// derives from raw temperature, so these thresholds stay in the UI layer.
 func tempSeverity(celsius int) smart.Severity {
 	switch {
 	case celsius >= 65:
@@ -142,9 +112,7 @@ func severityColor(s smart.Severity) tcell.Color {
 	}
 }
 
-// severityTag returns a tview colour token (e.g. "#dc322f", or "-" under the
-// mono theme) for inline markup. Every caller interpolates it into a "[%s]"
-// bracket, so the bare token is what they need.
+// severityTag returns the bare colour token, for callers interpolating into "[%s]".
 func severityTag(s smart.Severity) string {
 	return tag(severityColor(s))
 }
@@ -154,15 +122,12 @@ func healthGlyph(s smart.Severity) string {
 	return fmt.Sprintf("[%s]●[-]", severityTag(s))
 }
 
-// selectedRowStyle is the per-cell highlight for the selected table row. tview's
-// default selection inverts a cell's own fg/bg, which makes neutral rows
-// (ColorDefault text) vanish into the background. We instead paint an explicit
-// highlight background and keep the cell's foreground colour so the text — and
-// any severity colour — stays legible while selected.
+// selectedRowStyle is the selected-row highlight: an explicit background that
+// keeps the cell's own foreground (tview's default inversion makes neutral
+// rows vanish).
 func selectedRowStyle(fg tcell.Color) tcell.Style {
-	// ColorDefault would resolve to the terminal's default foreground, which is
-	// dark on light themes and thus illegible on the dark highlight; pin it to
-	// white so neutral rows stay readable everywhere.
+	// Pin ColorDefault to SelectionFg — the terminal default can be illegible
+	// on the highlight.
 	if fg == tcell.ColorDefault {
 		fg = activeTheme.SelectionFg
 	}
@@ -172,19 +137,17 @@ func selectedRowStyle(fg tcell.Color) tcell.Style {
 		Attributes(tcell.AttrBold)
 }
 
-// styleList applies the active theme to a List: the secondary-text colour and a
-// selected-row highlight that matches the themed table selection (SelectionBg/Fg
-// via selectedRowStyle) rather than tview's default white inverse, so list and
-// table selections look the same. tview Lists default their secondary text to
-// Styles.TertiaryTextColor (green), which would otherwise leak green into every
-// theme; this pins it to ListSecondary. Re-call after a theme change.
+// styleList applies the theme to a List: pins the secondary-text colour
+// (tview defaults it to a green that leaks into every theme) and routes
+// selection through selectedRowStyle so list and table selections match.
+// Re-call after a theme change.
 func styleList(l *tview.List) {
 	l.SetSecondaryTextColor(activeTheme.ListSecondary)
 	l.SetSelectedStyle(selectedRowStyle(activeTheme.SelectionFg))
 }
 
-// attrTextColor colours attribute row text: neutral for healthy rows so the
-// table is easy to scan, reserving yellow/red for rows that need attention.
+// attrTextColor colours attribute row text: neutral when healthy, so only
+// rows needing attention are tinted.
 func attrTextColor(s smart.Severity) tcell.Color {
 	switch s {
 	case smart.SeverityFailing:
@@ -210,8 +173,7 @@ func humanBytes(b int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "kMGTPE"[exp])
 }
 
-// humanDuration renders an hour count as years+days, falling back to days, or
-// raw hours under a day. E.g. 9439h → "1 y 28 d", 100h → "4 d", 9h → "9 h".
+// humanDuration renders hours as "1 y 28 d" / "4 d" / "9 h".
 func humanDuration(hours int) string {
 	if hours < 24 {
 		return fmt.Sprintf("%d h", hours)
@@ -223,8 +185,7 @@ func humanDuration(hours int) string {
 	return fmt.Sprintf("%d y %d d", days/365, days%365)
 }
 
-// humanMinutes renders a minute count compactly: raw minutes under 90, else
-// approximate hours. E.g. 1 → "1 min", 1804 → "~30 h".
+// humanMinutes renders minutes under 90 raw, else approximate hours ("~30 h").
 func humanMinutes(m int) string {
 	if m < 90 {
 		return fmt.Sprintf("%d min", m)
@@ -240,8 +201,7 @@ func orDash(s string) string {
 	return s
 }
 
-// capacityBytes returns the drive's usable size, preferring user_capacity and
-// falling back to nvme_total_capacity (Apple/NVMe drives often omit the former).
+// capacityBytes returns the usable size: user_capacity, else nvme_total_capacity.
 func capacityBytes(r *smart.Report) (int64, bool) {
 	if r.UserCapacity != nil && r.UserCapacity.Bytes > 0 {
 		return r.UserCapacity.Bytes, true
@@ -268,12 +228,9 @@ func tempString(r *smart.Report) string {
 	return dash
 }
 
-// tempMarkup formats a temperature and tints it once it leaves the OK band.
-// Colour marks exceptions rather than membership: an in-band reading keeps the
-// surrounding text colour, so a healthy fleet is not a wall of green and a hot
-// drive is the only thing tinted. Callers must place it where a trailing style
-// reset is harmless — the closing tag returns to the widget default, not to the
-// caller's colour.
+// tempMarkup tints a temperature only once it leaves the OK band (colour
+// marks exceptions, not membership). Its trailing style reset returns to the
+// widget default, so callers must place it where that is harmless.
 func tempMarkup(celsius int) string {
 	s := fmt.Sprintf("%d°C", celsius)
 	sev := tempSeverity(celsius)
@@ -283,8 +240,7 @@ func tempMarkup(celsius int) string {
 	return fmt.Sprintf("[%s::b]%s[-:-:-]", severityTag(sev), s)
 }
 
-// tempCell is tempMarkup for a whole report, falling back to the dash when the
-// drive reports no temperature.
+// tempCell is tempMarkup for a whole report, dash when unreported.
 func tempCell(r *smart.Report) string {
 	if t, ok := r.CurrentTemp(); ok {
 		return tempMarkup(t)
@@ -306,11 +262,9 @@ func driveKind(r *smart.Report) string {
 	}
 }
 
-// hangingIndent re-wraps any line too long for innerW so the overflow hangs
-// under the value column instead of returning to the left margin. tview's own
-// wrapping breaks a value back to column 0, which splits a two-column key/value
-// grid mid-value: "15.4 TB  (30003609491" in the value column and "sectors)"
-// against the left border. Callers disable tview's wrapping and pre-wrap here.
+// hangingIndent re-wraps over-long lines so overflow hangs under the value
+// column; tview's own wrapping would break a value back to column 0, so
+// callers disable it and pre-wrap here.
 func hangingIndent(text string, valueCol, innerW int) string {
 	valueW := innerW - valueCol
 	if valueW <= 8 || text == "" {
@@ -339,9 +293,8 @@ func hangingIndent(text string, valueCol, innerW int) string {
 				out.WriteString("\n" + indent)
 				col = 0
 			}
-			// A single token can be longer than the column — a macOS IOService
-			// path is 150+ characters with no spaces in it — so break it rather
-			// than emit a line the caller's SetWrap(false) will simply cut.
+			// A single token (e.g. a macOS IOService path) can exceed the
+			// column; break it rather than emit a line SetWrap(false) will cut.
 			for _, chunk := range splitEvery(word, valueW) {
 				if col > 0 && col+len(chunk) > valueW {
 					out.WriteString("\n" + indent)
