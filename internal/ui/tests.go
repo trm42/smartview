@@ -19,6 +19,12 @@ import (
 type selfTestActions struct {
 	run    func(testType smart.SelfTestType)
 	cancel func()
+	// started reports the type of the self-test smartview itself started on this
+	// drive, or "" when it is unknown — a test already running when smartview
+	// launched, or one started by another tool. The drive cannot tell us: ATA's
+	// status string is "in progress, N% remaining" and names no type, so the
+	// running view's time estimate has no other source (see remainingTime).
+	started func() smart.SelfTestType
 }
 
 // testMode is the Tests view's display state.
@@ -98,7 +104,7 @@ func (v *testsView) showRunning(r *smart.Report, label string, pct int) {
 	}
 	fmt.Fprintf(&b, "[::b]%s[-:-:-]\n\n", heading)
 	fmt.Fprintf(&b, "%s", progressBar(pct))
-	if left, ok := remainingTime(r, pct); ok {
+	if left, ok := remainingTime(r, pct, v.startedType()); ok {
 		fmt.Fprintf(&b, "%s   about %s left[-]", mutedTag(), formatTestDuration(left))
 	}
 	b.WriteString("\n\n")
@@ -165,10 +171,21 @@ func progressBar(pct int) string {
 		pct)
 }
 
+// startedType returns the self-test type the App recorded for this drive, or ""
+// when none is known; nothing in the report can supply it.
+func (v *testsView) startedType() smart.SelfTestType {
+	if v.actions.started == nil {
+		return ""
+	}
+	return v.actions.started()
+}
+
 // remainingTime estimates time left from the completion percentage and the
-// drive's whole-run estimate; false when none is advertised (NVMe never is).
-func remainingTime(r *smart.Report, pct int) (time.Duration, bool) {
-	total, ok := r.SelfTestDuration(smart.SelfTestLong)
+// drive's whole-run estimate for testType. False when no duration is advertised
+// (NVMe never is), the run is complete, or the type is unknown — short and
+// extended differ by orders of magnitude, so a guess would be badly wrong.
+func remainingTime(r *smart.Report, pct int, testType smart.SelfTestType) (time.Duration, bool) {
+	total, ok := r.SelfTestDuration(testType)
 	if !ok || pct >= 100 {
 		return 0, false
 	}

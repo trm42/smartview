@@ -179,3 +179,107 @@ func stripTags(s string) string {
 	}
 	return b.String()
 }
+
+// runningATAReport is an ATA drive with a self-test in progress at pct percent.
+// The drive advertises both durations (2 min short, 2 h extended) but, as ATA
+// always does, says nothing about which test is running — its status string
+// names a percentage and nothing else.
+func runningATAReport(pct int) *smart.Report {
+	remaining := 100 - pct
+	r := idleATAReport()
+	r.ATASmartData.SelfTest.Status = &smart.ATASelfTestStatus{
+		Value:            249,
+		String:           "Self-test routine in progress",
+		RemainingPercent: &remaining,
+	}
+	return r
+}
+
+// TestRemainingTimeUsesTheRunningTestType pins the fix for an estimate that was
+// wrong by up to three orders of magnitude: remainingTime always scaled the
+// extended duration, so a short test at 50% on a drive with a long extended
+// polling time announced hours left for a run with a minute to go.
+func TestRemainingTimeUsesTheRunningTestType(t *testing.T) {
+	r := runningATAReport(50)
+
+	got, ok := remainingTime(r, 50, smart.SelfTestShort)
+	if !ok {
+		t.Fatal("short test at 50%: no estimate, want one")
+	}
+	if want := time.Minute; got != want {
+		t.Errorf("short test at 50%% = %v, want %v", got, want)
+	}
+	if got := formatTestDuration(got); got != "1 min" {
+		t.Errorf("short estimate rendered %q, want \"1 min\"", got)
+	}
+
+	got, ok = remainingTime(r, 50, smart.SelfTestLong)
+	if !ok {
+		t.Fatal("long test at 50%: no estimate, want one")
+	}
+	if want := 60 * time.Minute; got != want {
+		t.Errorf("long test at 50%% = %v, want %v", got, want)
+	}
+
+	// An unknown type gets no estimate at all: the drive cannot tell us which
+	// test is running, and guessing extended is what produced the wrong answer.
+	if _, ok := remainingTime(r, 50, ""); ok {
+		t.Error("unknown test type produced an estimate; want none")
+	}
+	// A finished run has nothing left to estimate.
+	if _, ok := remainingTime(r, 100, smart.SelfTestShort); ok {
+		t.Error("completed test produced an estimate; want none")
+	}
+	// NVMe advertises no durations, so no type yields one.
+	nvme := &smart.Report{Device: smart.Device{Protocol: "NVMe"}}
+	if _, ok := remainingTime(nvme, 50, smart.SelfTestLong); ok {
+		t.Error("NVMe produced an estimate; want none")
+	}
+}
+
+// TestRunningViewEstimateFollowsStartedType checks the whole plumbing: the App
+// records the type it started, the view asks for it through selfTestActions and
+// times the run against that type — and shows nothing when the type is unknown.
+func TestRunningViewEstimateFollowsStartedType(t *testing.T) {
+	cases := []struct {
+		name    string
+		started smart.SelfTestType
+		want    string // "" means the view must show no estimate
+	}{
+		{"short", smart.SelfTestShort, "about 1 min left"},
+		{"long", smart.SelfTestLong, "about 1 h left"},
+		{"unknown", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			actions := selfTestActions{}
+			if c.started != "" {
+				actions.started = func() smart.SelfTestType { return c.started }
+			}
+			v := newTestsView(runningATAReport(50), actions)
+			if v.mode != modeRunning {
+				t.Fatalf("mode = %v, want running", v.mode)
+			}
+			got := v.info.GetText(true)
+			if c.want == "" {
+				if strings.Contains(got, "left") {
+					t.Errorf("unknown test type showed an estimate: %q", got)
+				}
+				return
+			}
+			if !strings.Contains(got, c.want) {
+				t.Errorf("running view = %q, want it to contain %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestRunningViewNilStartedAction guards the plain-struct construction used by
+// the other tests (and by any future caller that wires no callbacks): a missing
+// started func must simply mean "unknown", not a nil dereference.
+func TestRunningViewNilStartedAction(t *testing.T) {
+	v := newTestsView(runningATAReport(30), selfTestActions{})
+	if got := v.startedType(); got != "" {
+		t.Errorf("startedType with no callback = %q, want \"\"", got)
+	}
+}

@@ -56,15 +56,28 @@ type App struct {
 	// One carve-out like refreshing above: devices is written once in Run,
 	// before the poll goroutine is started, and only read afterwards — so the
 	// poll loop may range over it off the event loop without synchronisation.
-	devices   []smart.Device
-	reports   map[string]*smart.Report
-	history   map[string][]float64 // runtime temperature series per device
-	inModal   bool                 // true while a modal overlay is shown
-	fleetMode bool                 // true while the fleet comparison is on screen
+	devices []smart.Device
+	reports map[string]*smart.Report
+	history map[string][]float64 // runtime temperature series per device
+	// startedTests remembers, per device, the self-test type smartview itself
+	// started. The drive reports a running test's progress but never its type
+	// (ATA's status string is "in progress, N% remaining"), so this is the only
+	// source for the Tests tab's time estimate — a test smartview did not start
+	// stays absent and gets none. Entries age out in observeSelfTest.
+	startedTests map[string]startedTest
+	inModal      bool // true while a modal overlay is shown
+	fleetMode    bool // true while the fleet comparison is on screen
 
 	// bannerShown: the root-warning banner is in the layout. Its text is set
 	// once at build, so theme cycles must call refreshBanner explicitly.
 	bannerShown bool
+}
+
+// startedTest records the self-test type smartview asked a drive to run, plus
+// whether the drive has since been seen running it (see observeSelfTest).
+type startedTest struct {
+	typ  smart.SelfTestType
+	seen bool
 }
 
 // maxHistory bounds the temperature ring buffer backing the NVMe sparkline
@@ -110,19 +123,20 @@ func nextInterval(cur time.Duration, faster bool) time.Duration {
 func New(interval time.Duration, themeName string) *App {
 	setTheme(themes[themeName])
 	a := &App{
-		app:        tview.NewApplication(),
-		list:       tview.NewList(),
-		detail:     newDetail(),
-		status:     tview.NewTextView().SetDynamicColors(true),
-		banner:     tview.NewTextView().SetDynamicColors(true),
-		rail:       tview.NewTextView().SetDynamicColors(true),
-		lastWidth:  -1,
-		interval:   interval,
-		themeName:  themeName,
-		refreshCh:  make(chan struct{}, 1),
-		intervalCh: make(chan time.Duration, 1),
-		reports:    map[string]*smart.Report{},
-		history:    map[string][]float64{},
+		app:          tview.NewApplication(),
+		list:         tview.NewList(),
+		detail:       newDetail(),
+		status:       tview.NewTextView().SetDynamicColors(true),
+		banner:       tview.NewTextView().SetDynamicColors(true),
+		rail:         tview.NewTextView().SetDynamicColors(true),
+		lastWidth:    -1,
+		interval:     interval,
+		themeName:    themeName,
+		refreshCh:    make(chan struct{}, 1),
+		intervalCh:   make(chan time.Duration, 1),
+		reports:      map[string]*smart.Report{},
+		history:      map[string][]float64{},
+		startedTests: map[string]startedTest{},
 	}
 	a.build()
 	return a
@@ -159,8 +173,9 @@ func (a *App) build() {
 		AddItem(a.status, 1, 0, false)
 
 	a.detail.selfTest = selfTestActions{
-		run:    a.onSelfTestRun,
-		cancel: a.onSelfTestCancel,
+		run:     a.onSelfTestRun,
+		cancel:  a.onSelfTestCancel,
+		started: a.selfTestStarted,
 	}
 
 	a.root = root
@@ -649,6 +664,7 @@ func (a *App) showSelected() {
 		return
 	}
 	if rep, ok := a.reports[dev.Name]; ok {
+		a.observeSelfTest(dev.Name, rep)
 		a.detail.update(rep, a.history[dev.Name])
 	} else {
 		a.detail.showPlaceholder("Loading " + dev.Name + " …")
@@ -662,6 +678,37 @@ func (a *App) selectedDevice() (smart.Device, bool) {
 		return smart.Device{}, false
 	}
 	return a.devices[i], true
+}
+
+// selfTestStarted reports the self-test type smartview started on the selected
+// drive, or "" when unknown: the drive reports progress but not what is running.
+func (a *App) selfTestStarted() smart.SelfTestType {
+	dev, ok := a.selectedDevice()
+	if !ok {
+		return ""
+	}
+	return a.startedTests[dev.Name].typ
+}
+
+// observeSelfTest ages out the recorded type for a device. The record is dropped
+// only after the drive has been seen running the test: dropping it on the first
+// idle report would race the refresh that follows a start, and never dropping it
+// would let a stale type label a test another tool began.
+func (a *App) observeSelfTest(name string, rep *smart.Report) {
+	st, ok := a.startedTests[name]
+	if !ok {
+		return
+	}
+	if _, _, running := rep.SelfTestProgress(); running {
+		if !st.seen {
+			st.seen = true
+			a.startedTests[name] = st
+		}
+		return
+	}
+	if st.seen {
+		delete(a.startedTests, name)
+	}
 }
 
 // populateList fills the drive list from cached reports. Existing rows are
@@ -847,7 +894,10 @@ func (a *App) onSelfTestRun(testType smart.SelfTestType) {
 				fmt.Sprintf("start the %s self-test on %s", testLabel(testType), shortName(dev)),
 				func(ctx context.Context) error {
 					return smart.RunSelfTest(ctx, dev.Name, testType)
-				})
+				},
+				// Recorded only on success, and only here: the type is what the
+				// Tests tab times the run against, and the drive never reports it.
+				func() { a.startedTests[dev.Name] = startedTest{typ: testType} })
 		},
 	)
 }
@@ -868,14 +918,16 @@ func (a *App) onSelfTestCancel() {
 				fmt.Sprintf("cancel the self-test on %s", shortName(dev)),
 				func(ctx context.Context) error {
 					return smart.AbortSelfTest(ctx, dev.Name)
-				})
+				},
+				func() { delete(a.startedTests, dev.Name) })
 		},
 	)
 }
 
 // runSmartctl runs a self-test control call off the event loop, then either
-// surfaces the error or triggers an immediate refresh.
-func (a *App) runSmartctl(action string, fn func(context.Context) error) {
+// surfaces the error or triggers an immediate refresh. onSuccess (optional) runs
+// on the event loop only after a call the drive accepted.
+func (a *App) runSmartctl(action string, fn func(context.Context) error, onSuccess func()) {
 	parent := a.rootCtx
 	if parent == nil {
 		parent = context.Background()
@@ -889,6 +941,9 @@ func (a *App) runSmartctl(action string, fn func(context.Context) error) {
 			if err != nil {
 				a.showError(action, err)
 				return
+			}
+			if onSuccess != nil {
+				onSuccess()
 			}
 			a.triggerRefresh()
 		})
