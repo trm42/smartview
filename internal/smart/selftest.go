@@ -45,13 +45,7 @@ func (r *Report) SelfTestProgress() (label string, percent int, running bool) {
 		if s == nil || s.RemainingPercent == nil {
 			return "", 0, false
 		}
-		done := 100 - *s.RemainingPercent
-		if done < 0 {
-			done = 0
-		}
-		if done > 100 {
-			done = 100
-		}
+		done := min(max(100-*s.RemainingPercent, 0), 100)
 		return s.String, done, true
 	case r.IsNVMe():
 		l := r.NVMeSelfTestLog
@@ -75,17 +69,17 @@ func (r *Report) SelfTestDuration(testType SelfTestType) (time.Duration, bool) {
 		return 0, false
 	}
 	p := r.ATASmartData.SelfTest.PollingMinutes
-	var min int
+	var minutes int
 	switch testType {
 	case SelfTestShort:
-		min = p.Short
+		minutes = p.Short
 	case SelfTestLong:
-		min = p.Extended
+		minutes = p.Extended
 	default:
 		return 0, false
 	}
-	if min <= 0 {
+	if minutes <= 0 {
 		return 0, false
 	}
-	return time.Duration(min) * time.Minute, true
+	return time.Duration(minutes) * time.Minute, true
 }

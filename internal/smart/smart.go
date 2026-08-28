@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -20,10 +21,84 @@ type scanResult struct {
 	Devices  []Device `json:"devices"`
 }
 
+// minSmartctlVersion is the oldest smartmontools release smartview supports.
+// 7.0 is where smartctl's JSON output (`-j`) landed, and every parser in this
+// package assumes that schema; the README states the same floor.
+var minSmartctlVersion = [2]int{7, 0}
+
 // Available reports whether the smartctl binary is resolvable on PATH.
 func Available() bool {
 	_, err := exec.LookPath(binary)
 	return err == nil
+}
+
+// Version reports smartctl's own version as the [major, minor, ...] list it
+// prints in `smartctl -j -V`. A build too old to understand -j emits no JSON at
+// all, which surfaces here as a parse error rather than a version.
+func Version(ctx context.Context) ([]int, error) {
+	out, err := run(ctx, "-j", "-V")
+	if len(out) == 0 {
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New("smartctl produced no output")
+	}
+	var res struct {
+		Smartctl Smartctl `json:"smartctl"`
+	}
+	if jerr := json.Unmarshal(out, &res); jerr != nil {
+		return nil, fmt.Errorf("parse smartctl version: %w", jerr)
+	}
+	return res.Smartctl.Version, nil
+}
+
+// Preflight is the startup gate: it checks that smartctl is on PATH and new
+// enough to speak the JSON schema this package parses. It is a no-op when the
+// fixture source is active, since no smartctl is involved then.
+func Preflight(ctx context.Context) error {
+	if fixtureActive() {
+		return nil
+	}
+	if !Available() {
+		return errors.New("smartctl not found on PATH")
+	}
+	v, err := Version(ctx)
+	if err != nil {
+		return fmt.Errorf("smartctl version check: %w", err)
+	}
+	if !versionAtLeast(v, minSmartctlVersion) {
+		return fmt.Errorf("smartctl %s is too old: smartview needs smartmontools %d.%d or newer",
+			formatVersion(v), minSmartctlVersion[0], minSmartctlVersion[1])
+	}
+	return nil
+}
+
+// versionAtLeast compares a smartctl version list against a [major, minor]
+// floor. A version we could not determine (empty, or major-only) passes: it is
+// not evidence of an old build, and refusing to start would be the worse error.
+func versionAtLeast(v []int, minimum [2]int) bool {
+	if len(v) == 0 {
+		return true
+	}
+	if v[0] != minimum[0] {
+		return v[0] > minimum[0]
+	}
+	if len(v) < 2 {
+		return true
+	}
+	return v[1] >= minimum[1]
+}
+
+// formatVersion renders a version list for display ([7 4] -> "7.4").
+func formatVersion(v []int) string {
+	if len(v) == 0 {
+		return "(unknown version)"
+	}
+	parts := make([]string, len(v))
+	for i, n := range v {
+		parts[i] = strconv.Itoa(n)
+	}
+	return strings.Join(parts, ".")
 }
 
 // Scan enumerates drives via `smartctl --scan-open -j`. The returned Device
@@ -132,19 +207,39 @@ func runSelfTestCommand(ctx context.Context, name, action string, args ...string
 	return nil
 }
 
+// maxStderrDetail bounds how much of smartctl's stderr is folded into an error.
+const maxStderrDetail = 200
+
 // run executes smartctl. A non-zero exit returns stdout alongside the error:
 // smartctl emits valid JSON even with its exit-status bitmask set.
 func run(ctx context.Context, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, binary, args...)
 	out, err := cmd.Output()
 	if err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			return out, fmt.Errorf("smartctl exit %d: %w", ee.ExitCode(), ee)
+		// A cancelled context kills the child, so exec reports "signal: killed"
+		// and loses the cause; report the context error so errors.Is matches.
+		if ctx.Err() != nil {
+			return out, fmt.Errorf("run smartctl: %w", context.Cause(ctx))
+		}
+		if ee, ok := errors.AsType[*exec.ExitError](err); ok {
+			return out, fmt.Errorf("smartctl exit %d: %w%s", ee.ExitCode(), ee, stderrDetail(ee.Stderr))
 		}
 		return out, fmt.Errorf("run smartctl: %w", err)
 	}
 	return out, nil
+}
+
+// stderrDetail renders captured stderr as a bounded single-line error suffix.
+// ExitError.Error() is only "exit status N", so the real complaint is otherwise lost.
+func stderrDetail(b []byte) string {
+	s := strings.Join(strings.Fields(string(b)), " ")
+	if s == "" {
+		return ""
+	}
+	if len(s) > maxStderrDetail {
+		s = strings.ToValidUTF8(s[:maxStderrDetail], "") + "..."
+	}
+	return ": " + s
 }
 
 // FatalMessage returns the first error-severity smartctl message (permission

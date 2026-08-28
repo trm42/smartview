@@ -4,6 +4,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -223,8 +224,10 @@ func enduranceSection() fleetSection {
 				life = fleetCell{text: pctBarUsed(pct, lifeUsedSeverity(pct)), color: activeTheme.Neutral}
 			}
 			spare := fleetCell{text: dash, color: activeTheme.Neutral}
-			if pct, _, ok := r.SparePercent(); ok {
-				spare = fleetCell{text: pctBar(pct, spareSeverity(r.NVMeHealth)), color: activeTheme.Neutral}
+			if pct, thr, ok := r.SparePercent(); ok {
+				// Grade from the pair SparePercent resolved, not from NVMeHealth:
+				// the non-NVMe source reports spare with NVMeHealth nil.
+				spare = fleetCell{text: pctBar(pct, spareSeverityPct(pct, thr)), color: activeTheme.Neutral}
 			}
 
 			written, perDay := numCell(dash), numCell(dash)
@@ -316,9 +319,6 @@ func ageSection() fleetSection {
 // sparkWidth is the cell width of the temperature trend column.
 const sparkWidth = 16
 
-// sparkLevels are the eighth-block glyphs the trend column is drawn from.
-var sparkLevels = []rune("▁▂▃▄▅▆▇█")
-
 // cell is a plain left-aligned cell in the neutral text colour.
 func cell(text string) fleetCell {
 	return fleetCell{text: text, color: activeTheme.Neutral}
@@ -360,62 +360,34 @@ func shortKind(r *smart.Report) string {
 
 // seriesRange returns the extremes of an observed series; a single sample has
 // no range and reports absent until a second poll lands.
-func seriesRange(series []float64) (min, max int, ok bool) {
+func seriesRange(series []float64) (lo, hi int, ok bool) {
 	if len(series) < 2 {
 		return 0, 0, false
 	}
-	lo, hi := series[0], series[0]
-	for _, v := range series {
-		if v < lo {
-			lo = v
-		}
-		if v > hi {
-			hi = v
-		}
-	}
-	return int(lo), int(hi), true
+	return int(slices.Min(series)), int(slices.Max(series)), true
 }
 
 // sparkString renders a series as a text sparkline (so the comparison can be
-// one selectable table). The scale is relative to the series' own range; the
+// one selectable table), reducing through chart.go's downsample when there are
+// more samples than cells. The scale is relative to the series' own range; the
 // numeric columns carry the absolute values.
 func sparkString(data []float64, width int) string {
 	if len(data) < 2 || width <= 0 {
 		return ""
 	}
-	n := min(width, len(data))
-	buckets := make([]float64, n)
-	for i := range buckets {
-		lo := i * len(data) / n
-		hi := (i + 1) * len(data) / n
-		if hi <= lo {
-			hi = lo + 1
-		}
-		var sum float64
-		for _, v := range data[lo:hi] {
-			sum += v
-		}
-		buckets[i] = sum / float64(hi-lo)
-	}
+	buckets := downsample(data, width)
+	n := len(buckets)
 
-	lo, hi := buckets[0], buckets[0]
-	for _, v := range buckets {
-		if v < lo {
-			lo = v
-		}
-		if v > hi {
-			hi = v
-		}
-	}
+	lo, hi := slices.Min(buckets), slices.Max(buckets)
 	out := make([]rune, n)
 	span := hi - lo
 	for i, v := range buckets {
 		// A flat series draws mid-height so it reads as steady.
-		level := len(sparkLevels) / 2
+		level := len(blockRamp) / 2
 		if span > 0 {
-			level = int((v-lo)/span*float64(len(sparkLevels)-1) + 0.5)
+			level = int((v-lo)/span*float64(len(blockRamp)-1) + 0.5)
 		}
-		out[i] = sparkLevels[level]
+		out[i] = blockRamp[level]
 	}
 	return string(out)
 }

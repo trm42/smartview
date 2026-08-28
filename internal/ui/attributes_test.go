@@ -24,7 +24,7 @@ func TestDecodeReading(t *testing.T) {
 		{mk(240, "9201 (189 58 0)"), "1 y 18 d"},
 		{mk(194, "37 (0 21 0 0 0)"), "37°C"},
 		{mk(4, "15"), "15"},     // undecoded -> raw passthrough
-		{mk(5, ""), "—"},        // empty -> dash
+		{mk(5, ""), ""},         // unreported -> empty, dash substituted at the sink
 		{mk(200, "0"), "0"},     // unknown id -> raw passthrough
 		{mk(194, "n/a"), "n/a"}, // temp id but non-numeric raw -> raw passthrough
 	}
@@ -241,5 +241,45 @@ func TestNVMeSensorsCarrySeverity(t *testing.T) {
 	}
 	if !strings.Contains(row.v, "67°C") || !strings.Contains(row.v, "43°C") {
 		t.Errorf("both sensors should still be listed, got %q", row.v)
+	}
+}
+
+// TestUnreportedReadingUsesThemedDash: decodeReading returns "" for a raw value
+// the drive does not report, and the sink substitutes the themed dash after
+// escaping — the bare em-dash it used to return was the one not-reported
+// placeholder in the UI that ignored the theme.
+func TestUnreportedReadingUsesThemedDash(t *testing.T) {
+	setTheme(dark)
+	empty := smart.ATAAttribute{ID: 5}
+	if got := orDash(esc(decodeReading(empty))); got != dash {
+		t.Errorf("unreported reading = %q, want the themed dash %q", got, dash)
+	}
+	// A reported value still passes through untouched.
+	raw := smart.ATAAttribute{ID: 4, Raw: smart.ATARaw{String: "15"}}
+	if got := orDash(esc(decodeReading(raw))); got != "15" {
+		t.Errorf("reported reading = %q, want %q", got, "15")
+	}
+}
+
+// TestNVMeKeyColumnIsNeutral: both Attributes tables render their non-severity
+// text in the same role. SelectionFg is the pin reached through
+// selectedRowStyle, and using it here made the NVMe key column a different
+// "neutral" from the ATA table's in every theme that separates the two.
+func TestNVMeKeyColumnIsNeutral(t *testing.T) {
+	defer setTheme(dark)
+	for name, th := range themes {
+		setTheme(th)
+		used := 5
+		v := newNVMeAttributesView(&smart.NVMeHealth{PercentageUsed: &used})
+		cell := v.table.GetCell(1, 0)
+		if cell == nil {
+			t.Fatalf("%s: no key cell", name)
+		}
+		// NewTableCell seeds a non-default Style, so SetTextColor lands in the
+		// style's foreground rather than the deprecated Color field.
+		fg, _, _ := cell.Style.Decompose()
+		if fg != activeTheme.Neutral {
+			t.Errorf("%s: key colour = %v, want Neutral %v", name, fg, activeTheme.Neutral)
+		}
 	}
 }

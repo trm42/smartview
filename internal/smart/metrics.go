@@ -126,7 +126,7 @@ func (r *Report) SparePercent() (pct, threshold int, ok bool) {
 
 // TempRange returns the recorded temperature extremes in Celsius, preferring
 // lifetime over power-cycle. ATA only; NVMe reports no range and yields false.
-func (r *Report) TempRange() (min, max int, ok bool) {
+func (r *Report) TempRange() (lo, hi int, ok bool) {
 	if r.Temperature == nil {
 		return 0, 0, false
 	}
@@ -194,16 +194,17 @@ type ErrorCounts struct {
 // falling back to Device Statistics.
 func (r *Report) ErrorCounts() ErrorCounts {
 	var e ErrorCounts
-	set := func(dst **int64, v int64) { n := v; *dst = &n }
 
+	// A field is assigned only on a hit, so an unreported counter stays nil
+	// rather than becoming a zero.
 	pick := func(dst **int64, attrID int, statNames ...string) {
 		if v, ok := r.attrRaw(attrID); ok {
-			set(dst, v)
+			*dst = new(v)
 			return
 		}
 		for _, n := range statNames {
 			if v, ok := r.deviceStat(n); ok {
-				set(dst, v)
+				*dst = new(v)
 				return
 			}
 		}
@@ -212,17 +213,17 @@ func (r *Report) ErrorCounts() ErrorCounts {
 	pick(&e.Reallocated, 5, "Number of Reallocated Logical Sectors", "Number of Reallocated Sectors")
 	pick(&e.Pending, 197, "Number of Realloc. Candidate Logical Sectors")
 	if e.Pending == nil && r.ATAPendingDefects != nil {
-		set(&e.Pending, int64(r.ATAPendingDefects.Count))
+		e.Pending = new(int64(r.ATAPendingDefects.Count))
 	}
 	pick(&e.Uncorrectable, 198, "Number of Reported Uncorrectable Errors")
 	pick(&e.CRCErrors, 199, "Number of Interface CRC Errors")
 
 	if h := r.NVMeHealth; h != nil {
-		set(&e.MediaErrors, int64(h.MediaErrors))
-		set(&e.ErrorLogEntries, int64(h.NumErrLogEntries))
-		set(&e.UnsafeShutdowns, int64(h.UnsafeShutdowns))
+		e.MediaErrors = new(int64(h.MediaErrors))
+		e.ErrorLogEntries = new(int64(h.NumErrLogEntries))
+		e.UnsafeShutdowns = new(int64(h.UnsafeShutdowns))
 	} else if r.ATAErrorLog != nil && r.ATAErrorLog.Extended != nil {
-		set(&e.ErrorLogEntries, int64(r.ATAErrorLog.Extended.Count))
+		e.ErrorLogEntries = new(int64(r.ATAErrorLog.Extended.Count))
 	}
 	return e
 }

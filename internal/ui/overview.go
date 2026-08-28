@@ -385,22 +385,28 @@ func buildGauges(r *smart.Report) tview.Primitive {
 
 	if h.PercentageUsed != nil {
 		g := tvxwidgets.NewPercentageModeGauge()
-		g.SetTitle(" Life used ")
+		// Endurance remaining, not consumed: the fleet's endurance bar drains as
+		// the drive wears, and two surfaces showing the same reading with
+		// opposite polarity read as a contradiction.
+		g.SetTitle(" Life left ")
 		g.SetBorder(true)
 		g.SetMaxValue(100)
-		g.SetValue(clampPct(*h.PercentageUsed))
+		g.SetValue(100 - clampPct(*h.PercentageUsed))
 		// Colour by the value itself, not the drive-wide verdict.
 		g.SetPgBgColor(severityColor(lifeUsedSeverity(*h.PercentageUsed)))
 		col.AddItem(g, 3, 0, false)
 		added = true
 	}
 	if h.AvailableSpare != nil {
+		// SparePercent resolves both the reading and the threshold it is graded
+		// against; re-deriving either here is how the two surfaces drift apart.
+		pct, thr, _ := r.SparePercent()
 		g := tvxwidgets.NewPercentageModeGauge()
 		g.SetTitle(" Spare avail ")
 		g.SetBorder(true)
 		g.SetMaxValue(100)
-		g.SetValue(clampPct(*h.AvailableSpare))
-		g.SetPgBgColor(severityColor(spareSeverity(h)))
+		g.SetValue(clampPct(pct))
+		g.SetPgBgColor(severityColor(spareSeverityPct(pct, thr)))
 		col.AddItem(g, 3, 0, false)
 		added = true
 	}
@@ -419,15 +425,15 @@ func lifeUsedSeverity(pct int) smart.Severity {
 	return smart.PctUsedSeverity(pct)
 }
 
-// spareSeverity grades the "Spare avail" gauge against the drive's threshold.
-func spareSeverity(h *smart.NVMeHealth) smart.Severity {
-	if h.AvailableSpare == nil || h.AvailableSpareThreshold == nil {
-		return smart.SeverityOK
-	}
-	switch thr := *h.AvailableSpareThreshold; {
-	case *h.AvailableSpare <= thr:
+// spareSeverityPct grades available spare against the drive's own depletion
+// threshold: failing once spare has fallen to it, caution as it approaches.
+// It takes the pair SparePercent resolved rather than re-reading NVMeHealth,
+// which may be nil even when spare is reported.
+func spareSeverityPct(pct, threshold int) smart.Severity {
+	switch {
+	case pct <= threshold:
 		return smart.SeverityFailing
-	case *h.AvailableSpare <= thr+10:
+	case pct <= threshold+10:
 		return smart.SeverityCaution
 	default:
 		return smart.SeverityOK
@@ -450,7 +456,6 @@ func buildTempSparkline(r *smart.Report, runtime []float64) tview.Primitive {
 		// Colour by the current temperature, not the drive-wide verdict.
 		setColor(severityColor(tempSeverity(now)))
 	c.SetBorder(true)
-	c.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	c.SetTitle(fmt.Sprintf(" Temperature — now %d°C · range %.0f–%.0f°C ", now, lo, hi))
 	return c
 }
@@ -472,11 +477,5 @@ func temperatureSeries(r *smart.Report, runtime []float64) []float64 {
 
 // clampPct bounds a percentage into the gauge's 0..100 range.
 func clampPct(v int) int {
-	if v < 0 {
-		return 0
-	}
-	if v > 100 {
-		return 100
-	}
-	return v
+	return min(max(v, 0), 100)
 }

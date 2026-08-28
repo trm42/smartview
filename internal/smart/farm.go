@@ -128,25 +128,32 @@ func (p *FARMReliability) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// maxFARMHeads bounds the head index accepted from a key suffix. The index
+// sizes the returned slice, and the JSON is drive- (or fixture-) controlled, so
+// without a ceiling a crafted key turns into a gigabyte allocation or a
+// makeslice panic on the poll goroutine. Real drives are two orders of
+// magnitude below this.
+const maxFARMHeads = 256
+
 // collectByHead gathers keys of the form "<prefix><N>" into an index-ordered
-// slice [0..maxN], filling gaps with zero. Returns nil when none are present.
+// slice [0..maxN], filling gaps with zero. Indices outside [0, maxFARMHeads)
+// are ignored. Returns nil when none are present.
 func collectByHead(m map[string]json.RawMessage, prefix string) []int {
 	vals := map[int]int{}
 	maxIdx := -1
 	for k, raw := range m {
-		if !strings.HasPrefix(k, prefix) {
+		suffix, ok := strings.CutPrefix(k, prefix)
+		if !ok {
 			continue
 		}
-		idx, err := strconv.Atoi(k[len(prefix):])
-		if err != nil {
+		idx, err := strconv.Atoi(suffix)
+		if err != nil || idx < 0 || idx >= maxFARMHeads {
 			continue
 		}
 		var v int
 		if json.Unmarshal(raw, &v) == nil {
 			vals[idx] = v
-			if idx > maxIdx {
-				maxIdx = idx
-			}
+			maxIdx = max(maxIdx, idx)
 		}
 	}
 	if maxIdx < 0 {

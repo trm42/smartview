@@ -100,13 +100,28 @@ func (v *fleetView) setFocused(focused bool) {
 	v.table.SetBorderColor(borderColor(focused))
 }
 
-// Draw re-renders on width change; width is only known here.
+// Draw re-renders on width change; width is only known here. The budget is the
+// table's inner width, which a Flex assigns only inside Flex.Draw, so it is
+// measured again afterwards — the first visible frame would otherwise render
+// with no width and drop every comparison column.
 func (v *fleetView) Draw(screen tcell.Screen) {
-	if _, _, w, _ := v.table.GetInnerRect(); w != v.lastWidth {
-		v.lastWidth = w
-		v.render()
-	}
+	v.syncWidth()
 	v.Flex.Draw(screen)
+	if v.syncWidth() {
+		v.Flex.Draw(screen)
+	}
+}
+
+// syncWidth re-renders against the table's current inner width, reporting
+// whether the width had in fact changed.
+func (v *fleetView) syncWidth() bool {
+	_, _, w, _ := v.table.GetInnerRect()
+	if w == v.lastWidth {
+		return false
+	}
+	v.lastWidth = w
+	v.render()
+	return true
 }
 
 // refresh applies the latest poll. Called on every poll, visible or not, so
@@ -366,7 +381,7 @@ func (v *fleetView) sectionCount() int { return len(v.shown) }
 // fittingColumns reports how many of a section's columns fit in width, and
 // how many are left over — measured from the cells actually rendered, so
 // whole columns drop (and are announced) instead of clipping silently.
-func fittingColumns(sec fleetSection, rows []fleetRow, identityCols, width int) (shown, dropped int) {
+func fittingColumns(sec fleetSection, rows []fleetRow, identityWidth, width int) (shown, dropped int) {
 	n := len(sec.columns)
 	if width <= 0 {
 		return n, 0
@@ -386,7 +401,7 @@ func fittingColumns(sec fleetSection, rows []fleetRow, identityCols, width int) 
 			}
 		}
 	}
-	avail := width - identityCols
+	avail := width - identityWidth
 	for i, w := range need {
 		if avail-w < 0 {
 			return i, n - i

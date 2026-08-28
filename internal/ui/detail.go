@@ -245,6 +245,14 @@ func (d *detail) selectTabID(id string) bool {
 	return false
 }
 
+// activeView returns the live view backing the active tab, or nil when none is
+// built (a placeholder is showing). Callers type-assert it to a concrete view
+// to ask a question only that view can answer — the tabView interface stays at
+// refresh alone, so a view that has nothing to say implements nothing.
+func (d *detail) activeView() tabView {
+	return d.views[d.activeID()]
+}
+
 // content returns the currently visible tab primitive, for focus handling.
 func (d *detail) content() tview.Primitive {
 	if name, prim := d.pages.GetFrontPage(); name != "" {

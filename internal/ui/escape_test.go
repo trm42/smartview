@@ -51,3 +51,32 @@ func TestIdentityTextEscapesDriveFields(t *testing.T) {
 		t.Fatalf("identityText emitted %d live [green] tags from drive data; got:\n%s", n, out)
 	}
 }
+
+// TestEscFoldsControlCharacters guards the second way a drive-controlled field
+// can forge structure: every caller writes the escaped value into a line of its
+// own, so a newline inside a model name would add free-standing lines to the
+// identity panel that look like real key/value rows (a fake "SMART
+// self-assessment: PASSED" under the genuine FAILED verdict). Whether a raw
+// control character survives smartctl's JSON encoder is unverified — this is
+// defence in depth, and it also keeps tabs and stray C1 bytes out of the column
+// arithmetic.
+func TestEscFoldsControlCharacters(t *testing.T) {
+	got := esc("Disk\nSMART self-assessment: PASSED")
+	if strings.ContainsAny(got, "\n\r\t") {
+		t.Fatalf("esc passed a control character through: %q", got)
+	}
+	if !strings.Contains(got, "SMART self-assessment: PASSED") {
+		t.Fatalf("esc dropped the literal text: %q", got)
+	}
+	for _, r := range []rune{0x00, 0x07, 0x0b, 0x1b, 0x7f, 0x85, 0x9b} {
+		if out := esc("a" + string(r) + "b"); out != "a b" {
+			t.Errorf("esc(%q) = %q, want %q", r, out, "a b")
+		}
+	}
+	// Printable text — multi-byte runes included — is untouched.
+	for _, in := range []string{"Samsung SSD 990 PRO 2TB", "温度 37°C", ""} {
+		if got := esc(in); got != in {
+			t.Errorf("esc(%q) = %q, want it unchanged", in, got)
+		}
+	}
+}

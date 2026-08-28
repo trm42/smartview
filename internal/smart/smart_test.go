@@ -3,9 +3,12 @@
 package smart
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -270,5 +273,89 @@ func TestSeverityClassification(t *testing.T) {
 				t.Errorf("Severity() = %v, want %v", got, c.want)
 			}
 		})
+	}
+}
+
+func TestVersionAtLeast(t *testing.T) {
+	cases := []struct {
+		name string
+		v    []int
+		want bool
+	}{
+		{"exact-floor", []int{7, 0}, true},
+		{"newer-minor", []int{7, 5, 2025}, true},
+		{"newer-major", []int{8, 0}, true},
+		{"older-minor", []int{6, 6}, false},
+		{"older-major", []int{5, 43}, false},
+		// An undeterminable version must not block startup.
+		{"empty", nil, true},
+		{"major-only", []int{7}, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := versionAtLeast(c.v, minSmartctlVersion); got != c.want {
+				t.Errorf("versionAtLeast(%v) = %v, want %v", c.v, got, c.want)
+			}
+		})
+	}
+}
+
+func TestFormatVersion(t *testing.T) {
+	if got := formatVersion([]int{7, 4}); got != "7.4" {
+		t.Errorf("formatVersion = %q, want 7.4", got)
+	}
+	if got := formatVersion(nil); got == "" {
+		t.Error("formatVersion(nil) = empty, want a placeholder")
+	}
+}
+
+// smartctl's stderr is the only place the real complaint appears (ExitError
+// says just "exit status N"), so it is folded into the error — bounded, and on
+// one line.
+func TestStderrDetail(t *testing.T) {
+	if got := stderrDetail(nil); got != "" {
+		t.Errorf("empty stderr = %q, want \"\"", got)
+	}
+	if got := stderrDetail([]byte("  \n\t ")); got != "" {
+		t.Errorf("blank stderr = %q, want \"\"", got)
+	}
+	got := stderrDetail([]byte("Unknown option\nSmartctl: please specify a device\n"))
+	want := ": Unknown option Smartctl: please specify a device"
+	if got != want {
+		t.Errorf("stderrDetail = %q, want %q", got, want)
+	}
+	long := stderrDetail([]byte(strings.Repeat("x", 4096)))
+	if len(long) > maxStderrDetail+8 {
+		t.Errorf("long stderr not truncated: %d bytes", len(long))
+	}
+}
+
+// A cancelled or expired context kills the child process; run must report the
+// context cause rather than exec's "signal: killed", so callers can match with
+// errors.Is.
+func TestRunReportsContextCause(t *testing.T) {
+	if !Available() {
+		t.Skip("smartctl not installed")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := run(ctx, "-j", "-V"); !errors.Is(err, context.Canceled) {
+		t.Errorf("run on cancelled context = %v, want context.Canceled", err)
+	}
+}
+
+func TestVersionAndPreflight(t *testing.T) {
+	if !Available() {
+		t.Skip("smartctl not installed")
+	}
+	v, err := Version(t.Context())
+	if err != nil {
+		t.Fatalf("Version: %v", err)
+	}
+	if len(v) == 0 {
+		t.Fatal("Version returned no components")
+	}
+	if err := Preflight(t.Context()); err != nil {
+		t.Errorf("Preflight: %v", err)
 	}
 }

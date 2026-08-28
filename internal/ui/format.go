@@ -16,8 +16,24 @@ import (
 // names) before it reaches markup-interpreting widgets — otherwise a hostile
 // drive can inject colour tags and spoof the health display. Escape only the
 // data, not the surrounding intentional tags.
+//
+// Control characters are folded to spaces as well: callers write the value into
+// a line of its own, so an embedded newline would forge extra key/value rows.
 func esc(s string) string {
-	return tview.Escape(s)
+	return tview.Escape(stripControl(s))
+}
+
+// stripControl replaces C0 controls, DEL and the C1 range with a space. A space
+// is the benign substitution here: control characters carry no display meaning,
+// and the widths every panel is laid out against stay right. strings.Map returns
+// the original string when nothing changes, so the common case allocates nothing.
+func stripControl(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return ' '
+		}
+		return r
+	}, s)
 }
 
 // dash is defined in theme.go; it carries the active theme's muted colour.
@@ -47,12 +63,7 @@ func marginBar(value, worst, thresh int, sev smart.Severity) string {
 	if span > 0 {
 		frac = float64(value-thresh) / float64(span)
 	}
-	if frac < 0 {
-		frac = 0
-	}
-	if frac > 1 {
-		frac = 1
-	}
+	frac = min(max(frac, 0), 1)
 	filled := int(frac*float64(width) + 0.5)
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
 	return fmt.Sprintf("[%s]%s[-]", severityTag(sev), bar)
@@ -258,13 +269,19 @@ func driveKind(r *smart.Report) string {
 	case r.IsATA():
 		return "SATA SSD"
 	default:
-		return r.Device.Protocol
+		// Device.Protocol is smartctl's own enum, not free text, but shortKind
+		// escapes it at the same kind of sink; keep the two consistent.
+		return esc(r.Device.Protocol)
 	}
 }
 
 // hangingIndent re-wraps over-long lines so overflow hangs under the value
 // column; tview's own wrapping would break a value back to column 0, so
 // callers disable it and pre-wrap here.
+//
+// valueCol is a display column, so the key is cut with splitAtWidth and the
+// value re-wrapped by tview.WordWrap — both measure cells and treat style tags
+// as zero-width.
 func hangingIndent(text string, valueCol, innerW int) string {
 	valueW := innerW - valueCol
 	if valueW <= 8 || text == "" {
@@ -276,49 +293,51 @@ func hangingIndent(text string, valueCol, innerW int) string {
 		if i > 0 {
 			out.WriteByte('\n')
 		}
-		if tview.TaggedStringWidth(line) <= innerW || len(line) <= valueCol {
+		if tview.TaggedStringWidth(line) <= innerW {
 			out.WriteString(line)
 			continue
 		}
-		out.WriteString(line[:valueCol])
-		col := 0
-		for w, word := range strings.Fields(line[valueCol:]) {
-			width := tview.TaggedStringWidth(word)
-			switch {
-			case w == 0:
-			case col+1+width <= valueW:
-				out.WriteString(" ")
-				col++
-			default:
+		key, value := splitAtWidth(line, valueCol)
+		if value == "" { // narrower than the value column: nothing to hang
+			out.WriteString(line)
+			continue
+		}
+		out.WriteString(key)
+		// WordWrap breaks at the last opportunity that fits and hard-splits a
+		// token with none — a macOS IOService path is 150+ characters, and the
+		// caller's SetWrap(false) would simply cut it at the border.
+		for w, seg := range tview.WordWrap(value, valueW) {
+			if w > 0 {
 				out.WriteString("\n" + indent)
-				col = 0
 			}
-			// A single token (e.g. a macOS IOService path) can exceed the
-			// column; break it rather than emit a line SetWrap(false) will cut.
-			for _, chunk := range splitEvery(word, valueW) {
-				if col > 0 && col+len(chunk) > valueW {
-					out.WriteString("\n" + indent)
-					col = 0
-				}
-				out.WriteString(chunk)
-				col += tview.TaggedStringWidth(chunk)
-			}
+			out.WriteString(seg)
 		}
 	}
 	return out.String()
 }
 
-// splitEvery breaks s into runs of at most n runes, returning it whole when it
-// already fits.
-func splitEvery(s string, n int) []string {
-	r := []rune(s)
-	if n <= 0 || len(r) <= n {
-		return []string{s}
+// splitAtWidth cuts s at display column col: head is the shortest leading run
+// whose rendered width reaches col (zero-width style tags ride along with it),
+// tail is the remainder, byte-for-byte untouched. A string narrower than col
+// comes back whole with an empty tail.
+//
+// The cut has to land on a display column rather than a byte offset: "[::b]Model
+// [-:-:-] " is 27 bytes of which 12 are markup worth no cells at all, so a byte
+// slice at column 15 lands in the middle of the key. tview's width function is
+// the authority on what a tag is worth, so candidates are measured with it and
+// one that lands inside a tag (or inside an escaped "[[]" sequence) is rejected:
+// the halves then measure wider than the whole, because the severed fragment
+// stops being markup and starts counting as literal text.
+func splitAtWidth(s string, col int) (head, tail string) {
+	total := tview.TaggedStringWidth(s)
+	for i := range s {
+		w := tview.TaggedStringWidth(s[:i])
+		if w+tview.TaggedStringWidth(s[i:]) != total {
+			continue // the cut falls inside a tag
+		}
+		if w >= col {
+			return s[:i], s[i:]
+		}
 	}
-	var out []string
-	for len(r) > n {
-		out = append(out, string(r[:n]))
-		r = r[n:]
-	}
-	return append(out, string(r))
+	return s, ""
 }

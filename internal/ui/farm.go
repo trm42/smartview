@@ -4,6 +4,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -304,11 +305,10 @@ func farmHeadChart(title string, data []int, health bool) tview.Primitive {
 		return nil
 	}
 	vals := make([]float64, len(data))
-	worst := 0
 	for i, v := range data {
 		vals[i] = float64(v)
-		worst = max(worst, v)
 	}
+	worst := slices.Max(data)
 
 	color := activeTheme.BarHealthy
 	if health {
@@ -322,8 +322,7 @@ func farmHeadChart(title string, data []int, health bool) tview.Primitive {
 		setBars(vals, farmHeadPitch, "", farmHeadAxis(len(data))).
 		setColor(color)
 	c.SetBorder(true)
-	c.SetBorderPadding(0, 0, uiGutter, uiGutter)
-	c.SetTitle(fmt.Sprintf("%s— %d–%d ", title, minInts(data), worst))
+	c.SetTitle(fmt.Sprintf("%s— %d–%d ", title, slices.Min(data), worst))
 	return c
 }
 
@@ -334,7 +333,7 @@ const farmHeadPitch = 2
 func farmHeadSummary(title string, heads int) tview.Primitive {
 	tv := tview.NewTextView().SetDynamicColors(true)
 	tv.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(title)
-	tv.SetText(fmt.Sprintf("%snone on any of %d heads[-]", okTag(), heads))
+	tv.SetText(fmt.Sprintf("none on any of %d heads", heads))
 	return tv
 }
 
@@ -350,16 +349,4 @@ func farmHeadAxis(heads int) string {
 		fmt.Fprintf(&b, "%-*d", farmHeadPitch*step, i)
 	}
 	return strings.TrimRight(b.String(), " ")
-}
-
-// minInts is the smallest value in data, or 0 for an empty series.
-func minInts(data []int) int {
-	if len(data) == 0 {
-		return 0
-	}
-	lo := data[0]
-	for _, v := range data[1:] {
-		lo = min(lo, v)
-	}
-	return lo
 }

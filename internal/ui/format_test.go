@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 
 	"github.com/trm42/smartview/internal/smart"
 )
@@ -201,6 +202,121 @@ func TestShortDeviceKeepsDistinguishingPart(t *testing.T) {
 	// A name with no separators falls back to a tail trim.
 	if got := shortDevice(strings.Repeat("x", 50), 10); len([]rune(got)) != 10 {
 		t.Errorf("separator-less name = %q, want 10 runes", got)
+	}
+}
+
+// TestHangingIndentSplitsOnDisplayColumns pins the fix for a byte-vs-display
+// mix-up: valueCol is a display measure, so a key wrapped in zero-width style
+// tags must still be cut at its own column, and the value must survive the
+// re-wrap verbatim (padding, colour tags and multi-byte runes included).
+func TestHangingIndentSplitsOnDisplayColumns(t *testing.T) {
+	const valueCol = 15
+	// The Overview identity row: 12 bytes of markup around a 14-cell key.
+	key := "[::b]" + padRight("Device", 14) + "[-:-:-] "
+	if w := tview.TaggedStringWidth(key); w != valueCol {
+		t.Fatalf("test premise: key column is %d cells, want %d", w, valueCol)
+	}
+
+	t.Run("ioservice path", func(t *testing.T) {
+		const path = "IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@9600000/" +
+			"AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1"
+		got := hangingIndent(key+path, valueCol, 60)
+		lines := strings.Split(got, "\n")
+		if len(lines) < 3 {
+			t.Fatalf("a 150-character path should wrap, got:\n%s", got)
+		}
+		// The key stays whole on the first line, and every continuation hangs
+		// under the value column — the byte slice used to cut mid-key and the
+		// field re-join used to shift wrapped rows left of unwrapped ones.
+		if !strings.HasPrefix(lines[0], key) {
+			t.Errorf("first line lost the key column: %q", lines[0])
+		}
+		for _, l := range lines[1:] {
+			if n := len(l) - len(strings.TrimLeft(l, " ")); n != valueCol {
+				t.Errorf("continuation indent = %d, want %d: %q", n, valueCol, l)
+			}
+			if w := tview.TaggedStringWidth(l); w > 60 {
+				t.Errorf("line is %d cells wide, wider than the pane: %q", w, l)
+			}
+		}
+		if rejoined := strings.ReplaceAll(strings.Join(lines, ""), " ", ""); rejoined != strings.ReplaceAll(key+path, " ", "") {
+			t.Errorf("wrapping altered the text:\n%s", got)
+		}
+	})
+
+	t.Run("colour tags survive", func(t *testing.T) {
+		value := "193.6 TB " + cautionTag() + "(378186418521 sectors, checked twice)[-]"
+		got := hangingIndent(key+value, valueCol, 50)
+		if !strings.Contains(got, cautionTag()) || !strings.Contains(got, "[-]") {
+			t.Errorf("a colour tag was mangled by the re-wrap:\n%s", got)
+		}
+		// The reset tag is zero-width markup, not a word: it must not be moved,
+		// duplicated or dropped.
+		if n := strings.Count(got, "[-]"); n != 1 {
+			t.Errorf("reset tag appears %d times, want 1:\n%s", n, got)
+		}
+		for _, l := range strings.Split(got, "\n") {
+			if w := tview.TaggedStringWidth(l); w > 50 {
+				t.Errorf("line is %d cells wide: %q", w, l)
+			}
+		}
+	})
+
+	t.Run("multi-byte runes", func(t *testing.T) {
+		value := strings.Repeat("温度", 12) + " 37°C"
+		got := hangingIndent(key+value, valueCol, 40)
+		if !strings.Contains(got, "37°C") {
+			t.Errorf("multi-byte tail was lost:\n%s", got)
+		}
+		for _, l := range strings.Split(got, "\n") {
+			if w := tview.TaggedStringWidth(l); w > 40 {
+				t.Errorf("line is %d cells wide (wide runes count double): %q", w, l)
+			}
+			if strings.ContainsRune(l, '\uFFFD') {
+				t.Errorf("a rune was cut in half: %q", l)
+			}
+		}
+	})
+
+	t.Run("no wrap needed is byte-identical", func(t *testing.T) {
+		for _, line := range []string{
+			key + "/dev/sda",
+			key,
+			"[::b]Section[-:-:-]",
+			"",
+			key + "one\n" + key + "two",
+		} {
+			if got := hangingIndent(line, valueCol, 120); got != line {
+				t.Errorf("a line that fits was rewritten:\n%q\n%q", line, got)
+			}
+		}
+	})
+}
+
+// TestSplitAtWidth pins the display-column cut splitAtWidth exists for: markup
+// is worth no cells, an escaped bracket is worth its own, and a cut may not land
+// inside either.
+func TestSplitAtWidth(t *testing.T) {
+	head, tail := splitAtWidth("[::b]"+padRight("Model", 14)+"[-:-:-] Samsung", 15)
+	if tview.TaggedStringWidth(head) != 15 {
+		t.Errorf("head = %q, %d cells, want 15", head, tview.TaggedStringWidth(head))
+	}
+	if tail != "Samsung" {
+		t.Errorf("tail = %q, want %q", tail, "Samsung")
+	}
+	// An escaped tag from a hostile drive is literal text, and the cut must not
+	// land inside the "[]" that keeps it inert.
+	escaped := tview.Escape("[red]X[-]") // renders as the 9 literal cells "[red]X[-]"
+	head, tail = splitAtWidth(escaped+"tail", 4)
+	if head+tail != escaped+"tail" {
+		t.Errorf("split lost bytes: %q + %q", head, tail)
+	}
+	if tview.TaggedStringWidth(head)+tview.TaggedStringWidth(tail) != tview.TaggedStringWidth(escaped+"tail") {
+		t.Errorf("split severed an escape sequence: %q | %q", head, tail)
+	}
+	// Narrower than the column: returned whole, with nothing to hang.
+	if head, tail = splitAtWidth("short", 40); head != "short" || tail != "" {
+		t.Errorf("short split = %q, %q", head, tail)
 	}
 }
 

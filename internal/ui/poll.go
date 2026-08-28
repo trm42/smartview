@@ -14,10 +14,12 @@ const fetchTimeout = 15 * time.Second
 
 // pollLoop refreshes every drive on a ticker (and on demand via refreshCh):
 // smartctl runs off the UI goroutine, results apply through QueueUpdateDraw.
-func (a *App) pollLoop(ctx context.Context) {
+// The cadence is a parameter because a.interval is written on the event loop;
+// runtime changes arrive on intervalCh.
+func (a *App) pollLoop(ctx context.Context, interval time.Duration) {
 	a.fetchAndApply(ctx)
 
-	ticker := time.NewTicker(a.interval)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
