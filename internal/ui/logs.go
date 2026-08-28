@@ -174,7 +174,7 @@ func writeNVMeErrorEntries(b *strings.Builder, table []smart.NVMeErrorLogEntry) 
 		if status == "" {
 			status = fmt.Sprintf("0x%x", e.StatusField.Value)
 		}
-		fmt.Fprintf(b, nestIndent+cautionTag()+"#%d[-] %s %s(cmd %d)[-]\n", e.ErrorCount, colorResult(esc(status)), mutedTag(), e.CommandID)
+		fmt.Fprintf(b, nestIndent+cautionTag()+"#%d[-] %s %s(cmd %d)[-]\n", e.ErrorCount, colorResult(status), mutedTag(), e.CommandID)
 	}
 }
 
