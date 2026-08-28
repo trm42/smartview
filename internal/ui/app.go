@@ -725,7 +725,7 @@ func (a *App) Run(ctx context.Context) error {
 		a.app.Stop()
 	}()
 
-	go a.pollLoop(ctx)
+	go a.pollLoop(ctx, a.interval)
 	go a.animateSpinner(ctx)
 	return a.app.Run()
 }
