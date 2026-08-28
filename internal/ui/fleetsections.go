@@ -4,6 +4,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -318,9 +319,6 @@ func ageSection() fleetSection {
 // sparkWidth is the cell width of the temperature trend column.
 const sparkWidth = 16
 
-// sparkLevels are the eighth-block glyphs the trend column is drawn from.
-var sparkLevels = []rune("▁▂▃▄▅▆▇█")
-
 // cell is a plain left-aligned cell in the neutral text colour.
 func cell(text string) fleetCell {
 	return fleetCell{text: text, color: activeTheme.Neutral}
@@ -385,39 +383,19 @@ func sparkString(data []float64, width int) string {
 	if len(data) < 2 || width <= 0 {
 		return ""
 	}
-	n := min(width, len(data))
-	buckets := make([]float64, n)
-	for i := range buckets {
-		lo := i * len(data) / n
-		hi := (i + 1) * len(data) / n
-		if hi <= lo {
-			hi = lo + 1
-		}
-		var sum float64
-		for _, v := range data[lo:hi] {
-			sum += v
-		}
-		buckets[i] = sum / float64(hi-lo)
-	}
+	buckets := downsample(data, width)
+	n := len(buckets)
 
-	lo, hi := buckets[0], buckets[0]
-	for _, v := range buckets {
-		if v < lo {
-			lo = v
-		}
-		if v > hi {
-			hi = v
-		}
-	}
+	lo, hi := slices.Min(buckets), slices.Max(buckets)
 	out := make([]rune, n)
 	span := hi - lo
 	for i, v := range buckets {
 		// A flat series draws mid-height so it reads as steady.
-		level := len(sparkLevels) / 2
+		level := len(blockRamp) / 2
 		if span > 0 {
-			level = int((v-lo)/span*float64(len(sparkLevels)-1) + 0.5)
+			level = int((v-lo)/span*float64(len(blockRamp)-1) + 0.5)
 		}
-		out[i] = sparkLevels[level]
+		out[i] = blockRamp[level]
 	}
 	return string(out)
 }
