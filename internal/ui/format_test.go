@@ -129,15 +129,27 @@ func TestDriveKind(t *testing.T) {
 	}
 }
 
+// TestAttrTextColor pins "colour marks exceptions" for attribute rows: a
+// healthy row takes the body colour and only a row needing attention is tinted.
+// Asserted against the roles, not literals, so it holds in every theme.
 func TestAttrTextColor(t *testing.T) {
-	if attrTextColor(smart.SeverityOK) != tcell.ColorDefault {
-		t.Error("OK should be neutral (default)")
+	cases := []struct {
+		sev  smart.Severity
+		role string
+		want tcell.Color
+	}{
+		{smart.SeverityOK, "Neutral", activeTheme.Neutral},
+		{smart.SeverityCaution, "Caution", activeTheme.Caution},
+		{smart.SeverityFailing, "Failing", activeTheme.Failing},
 	}
-	if attrTextColor(smart.SeverityCaution) != tcell.ColorYellow {
-		t.Error("caution should be yellow")
+	for _, c := range cases {
+		if got := attrTextColor(c.sev); got != c.want {
+			t.Errorf("attrTextColor(%v) = %v, want %s (%v)", c.sev, got, c.role, c.want)
+		}
 	}
-	if attrTextColor(smart.SeverityFailing) != tcell.ColorRed {
-		t.Error("failing should be red")
+	if attrTextColor(smart.SeverityOK) == attrTextColor(smart.SeverityCaution) ||
+		attrTextColor(smart.SeverityOK) == attrTextColor(smart.SeverityFailing) {
+		t.Error("a healthy row is tinted the same as one needing attention")
 	}
 }
 

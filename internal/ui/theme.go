@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 )
 
 // Theme is smartview's colour palette as semantic roles. The tcell.Color is
@@ -14,7 +15,10 @@ import (
 // so they can't drift. activeTheme is touched only on the event-loop
 // goroutine (like App.reports), so no mutex.
 type Theme struct {
-	Name        string
+	Name string
+	// Background is the ground every widget paints on; ColorDefault inherits
+	// the terminal's own background.
+	Background  tcell.Color
 	Accent      tcell.Color // focused border, key hints, spinner, active tab, table header
 	Muted       tcell.Color // dash, "… N more", raw values, scanning glyph, unfocused border
 	OK          tcell.Color // SeverityOK
@@ -77,19 +81,44 @@ var dash string
 func setTheme(t Theme) {
 	activeTheme = t
 	dash = mutedTag() + "—[-]"
+	applyTviewStyles(t)
+}
+
+// applyTviewStyles maps the palette onto tview's package-level defaults, which
+// tview reads at widget construction: every widget built after this call is
+// born in the theme, and it is the only lever on tvxwidgets' gauge, which
+// re-reads the globals at draw time. Widgets that already exist keep the
+// colours they were built with (see App.repaintAll).
+func applyTviewStyles(t Theme) {
+	tview.Styles.PrimitiveBackgroundColor = t.Background
+	tview.Styles.ContrastBackgroundColor = t.SelectionBg
+	tview.Styles.MoreContrastBackgroundColor = t.SelectionBg
+	tview.Styles.BorderColor = t.Muted
+	// Neutral, not Accent: a box title is chrome, and accenting every one of
+	// them spends the colour that marks focus and exceptions.
+	tview.Styles.TitleColor = t.Neutral
+	tview.Styles.GraphicsColor = t.Muted
+	tview.Styles.PrimaryTextColor = t.Neutral
+	tview.Styles.SecondaryTextColor = t.Accent
+	tview.Styles.TertiaryTextColor = t.ListSecondary
+	tview.Styles.InverseTextColor = t.Inverse
+	tview.Styles.ContrastSecondaryTextColor = t.SelectionFg
 }
 
 func init() { setTheme(dark) }
 
 // dark reproduces the original hard-coded palette; theme_test.go pins each role.
 var dark = Theme{
-	Name:        "dark",
-	Accent:      tcell.ColorAqua,
-	Muted:       tcell.ColorGray,
-	OK:          tcell.ColorGreen,
-	Caution:     tcell.ColorYellow,
-	Failing:     tcell.ColorRed,
-	Neutral:     tcell.ColorDefault,
+	Name:       "dark",
+	Background: tcell.ColorBlack,
+	Accent:     tcell.ColorAqua,
+	Muted:      tcell.ColorGray,
+	OK:         tcell.ColorGreen,
+	Caution:    tcell.ColorYellow,
+	Failing:    tcell.ColorRed,
+	// Explicit, not ColorDefault: the ground is painted, so inherited text
+	// lands black on black in a light terminal.
+	Neutral:     tcell.ColorWhite,
 	Inverse:     tcell.ColorBlack,
 	SelectionBg: tcell.ColorDarkSlateGray,
 	SelectionFg: tcell.ColorWhite,
@@ -105,6 +134,7 @@ var dark = Theme{
 // survives only via the ● glyph and bold — an accepted limitation.
 var mono = Theme{
 	Name:          "mono",
+	Background:    tcell.ColorDefault,
 	Accent:        tcell.ColorDefault,
 	Muted:         tcell.ColorDefault,
 	OK:            tcell.ColorDefault,
@@ -124,6 +154,7 @@ var mono = Theme{
 // and red failing. All-hex so it renders identically across terminals.
 var electric = Theme{
 	Name:          "electric",
+	Background:    tcell.NewHexColor(0x050b14), // cold near-black navy
 	Accent:        tcell.NewHexColor(0x00b7ff), // bright azure-cyan: borders, headers, active tab, key hints
 	Muted:         tcell.NewHexColor(0x5f7184), // dark slate gray: dashes, unfocused border, raw values
 	OK:            tcell.NewHexColor(0x3ddc84), // healthy green (universal "good" cue)
@@ -142,9 +173,10 @@ var electric = Theme{
 // phosphor is the green-CRT palette: pure green only, severity read through
 // brightness plus the ● glyph and bold. All-hex.
 var phosphor = Theme{
-	Name:   "phosphor",
-	Accent: tcell.NewHexColor(0x33ff33), // pure neon CRT green: borders, headers, active tab, key hints
-	Muted:  tcell.NewHexColor(0x1f8f1f), // dim green: dashes, unfocused border, raw values
+	Name:       "phosphor",
+	Background: tcell.NewHexColor(0x001000), // green-black CRT ground
+	Accent:     tcell.NewHexColor(0x33ff33), // pure neon CRT green: borders, headers, active tab, key hints
+	Muted:      tcell.NewHexColor(0x1f8f1f), // dim green: dashes, unfocused border, raw values
 	// The severity ramp must escalate by getting brighter, not paler
 	// (theme_test.go pins Failing hotter than OK).
 	OK:            tcell.NewHexColor(0x2a9d2a), // steady green
@@ -164,6 +196,7 @@ var phosphor = Theme{
 // severity ramp. All-hex.
 var amber = Theme{
 	Name:          "amber",
+	Background:    tcell.NewHexColor(0x140a00), // brown-black monitor ground
 	Accent:        tcell.NewHexColor(0xffb000), // bright amber: borders, headers, active tab, key hints
 	Muted:         tcell.NewHexColor(0x8a5a10), // dim brown-amber: dashes, unfocused border, raw values
 	OK:            tcell.NewHexColor(0xffcc33), // gold-amber (healthy)
@@ -182,6 +215,7 @@ var amber = Theme{
 // cga draws every role from the authentic IBM CGA 16, nothing interpolated.
 var cga = Theme{
 	Name:          "cga",
+	Background:    tcell.NewHexColor(0x000000), // CGA black
 	Accent:        tcell.NewHexColor(0x55ffff), // light cyan: borders, headers, active tab, key hints
 	Muted:         tcell.NewHexColor(0xaaaaaa), // light gray: dashes, unfocused border, raw values
 	OK:            tcell.NewHexColor(0x55ff55), // light green
@@ -201,6 +235,7 @@ var cga = Theme{
 // bars, white text.
 var neon = Theme{
 	Name:          "neon",
+	Background:    tcell.NewHexColor(0x0a0a12), // near-black violet
 	Accent:        tcell.NewHexColor(0x22d3ff), // electric blue: borders, headers, active tab, key hints
 	Muted:         tcell.NewHexColor(0x6b7a99), // desaturated blue-gray: dashes, unfocused border, raw values
 	OK:            tcell.NewHexColor(0x39ff9e), // neon mint
@@ -218,9 +253,11 @@ var neon = Theme{
 
 // nord is the arctic blue-gray scheme: frost for chrome, aurora for severity.
 var nord = Theme{
-	Name:          "nord",
-	Accent:        tcell.NewHexColor(0x88c0d0), // frost cyan: borders, headers, active tab, key hints
-	Muted:         tcell.NewHexColor(0x616e88), // polar slate: dashes, unfocused border, raw values
+	Name:       "nord",
+	Background: tcell.NewHexColor(0x2e3440), // polar night
+	Accent:     tcell.NewHexColor(0x88c0d0), // frost cyan: borders, headers, active tab, key hints
+	// Off-palette slate: Nord's own grays fall under the 3:1 floor on nord0.
+	Muted:         tcell.NewHexColor(0x7b88a3),
 	OK:            tcell.NewHexColor(0xa3be8c), // aurora green
 	Caution:       tcell.NewHexColor(0xebcb8b), // aurora yellow
 	Failing:       tcell.NewHexColor(0xbf616a), // aurora red
@@ -238,6 +275,7 @@ var nord = Theme{
 // than its signature gold, which would read as a caution on every border.
 var gruvbox = Theme{
 	Name:          "gruvbox",
+	Background:    tcell.NewHexColor(0x282828), // dark0
 	Accent:        tcell.NewHexColor(0x83a598), // gruvbox blue: borders, headers, active tab, key hints
 	Muted:         tcell.NewHexColor(0x928374), // gray: dashes, unfocused border, raw values
 	OK:            tcell.NewHexColor(0xb8bb26), // bright green
@@ -258,6 +296,7 @@ var gruvbox = Theme{
 // three CVD types, with neutral chrome so no hue competes with it.
 var beacon = Theme{
 	Name:          "beacon",
+	Background:    tcell.NewHexColor(0x12161c), // near-black slate
 	Accent:        tcell.NewHexColor(0xd6dee8), // cool near-white: borders, headers, active tab, key hints
 	Muted:         tcell.NewHexColor(0x6b7785), // slate: dashes, unfocused border, raw values
 	OK:            tcell.NewHexColor(0x6cb4ee), // blue
@@ -273,44 +312,45 @@ var beacon = Theme{
 	ListSecondary: tcell.NewHexColor(0x8b97a5), // muted slate secondary line
 }
 
-// daylight is the cool light palette. Yellow is invisible on paper, so the
-// ramp is re-tuned for a light field: dark amber caution, darkened green OK.
-// Like parchment it assumes a light terminal background — Theme has no
-// background role, so the terminal supplies it.
+// daylight is the cool light palette, tuned against its own paper ground:
+// every foreground clears 4:1 on it, and the ramp trades yellow — invisible on
+// paper — for a burnt amber that darkens into crimson as it worsens.
 var daylight = Theme{
 	Name:          "daylight",
-	Accent:        tcell.NewHexColor(0x0b6fb4), // deep azure: borders, headers, active tab, key hints
-	Muted:         tcell.NewHexColor(0x7a8894), // slate: dashes, unfocused border, raw values
-	OK:            tcell.NewHexColor(0x1a7f37), // dark green (legible on paper)
-	Caution:       tcell.NewHexColor(0x9a6700), // dark amber
-	Failing:       tcell.NewHexColor(0xcf222e), // red
+	Background:    tcell.NewHexColor(0xfbfbfa), // cool paper
+	Accent:        tcell.NewHexColor(0x0a5f9e), // deep azure: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x6b7784), // slate: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x1a7f37), // dark green
+	Caution:       tcell.NewHexColor(0xa15c00), // burnt amber
+	Failing:       tcell.NewHexColor(0xc1121f), // crimson: darkest and most saturated of the ramp
 	Neutral:       tcell.NewHexColor(0x1f2328), // ink body text
 	Inverse:       tcell.NewHexColor(0xffffff), // white: text drawn on Accent / BannerBg
-	SelectionBg:   tcell.NewHexColor(0xdbe9f6), // pale blue selected-row bg
+	SelectionBg:   tcell.NewHexColor(0xc9e0f5), // pale blue selected-row band
 	SelectionFg:   tcell.NewHexColor(0x0b3a5c), // deep blue on selection
-	BannerBg:      tcell.NewHexColor(0xb35900), // dark orange banner (stands out from azure)
-	BarHealthy:    tcell.NewHexColor(0x2da44e), // green FARM healthy bar
-	ScrollArrow:   tcell.NewHexColor(0x0b6fb4), // azure arrows
-	ListSecondary: tcell.NewHexColor(0x6a737d), // gray secondary line
+	BannerBg:      tcell.NewHexColor(0xa15c00), // the root warning is a caution, so it takes Caution
+	BarHealthy:    tcell.NewHexColor(0x1e8a41), // green FARM healthy bar, one step lighter than OK
+	ScrollArrow:   tcell.NewHexColor(0x0a5f9e), // azure arrows
+	ListSecondary: tcell.NewHexColor(0x5b6672), // slate secondary line, darker than Muted: it carries data
 }
 
-// parchment is the warm light palette: cool teal chrome against a warm
-// severity ramp. Assumes a light terminal background, as daylight does.
+// parchment is the warm light palette: cool teal chrome against a warm ramp,
+// tuned against its own paper ground on the same 4:1 basis as daylight.
 var parchment = Theme{
 	Name:          "parchment",
-	Accent:        tcell.NewHexColor(0x1a6b62), // deep teal: borders, headers, active tab, key hints
-	Muted:         tcell.NewHexColor(0x93887a), // warm gray: dashes, unfocused border, raw values
-	OK:            tcell.NewHexColor(0x4a7a2c), // olive green
-	Caution:       tcell.NewHexColor(0xa86a00), // ochre
-	Failing:       tcell.NewHexColor(0xb3261e), // brick red
+	Background:    tcell.NewHexColor(0xf4eee1), // warm parchment
+	Accent:        tcell.NewHexColor(0x15615a), // deep teal: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x746a5b), // warm gray: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x3f6b25), // olive green
+	Caution:       tcell.NewHexColor(0x8f5300), // burnt ochre
+	Failing:       tcell.NewHexColor(0xa01f18), // brick red: darkest and most saturated of the ramp
 	Neutral:       tcell.NewHexColor(0x3a352d), // warm ink body text
 	Inverse:       tcell.NewHexColor(0xfbf7ee), // cream: text drawn on Accent / BannerBg
-	SelectionBg:   tcell.NewHexColor(0xe3d9c4), // warm sand selected-row bg
+	SelectionBg:   tcell.NewHexColor(0xded0b4), // warm sand selected-row band
 	SelectionFg:   tcell.NewHexColor(0x2c281f), // dark warm ink on selection
-	BannerBg:      tcell.NewHexColor(0xa86a00), // ochre banner (stands out from teal)
-	BarHealthy:    tcell.NewHexColor(0x5a8f34), // olive FARM healthy bar
-	ScrollArrow:   tcell.NewHexColor(0x1a6b62), // teal arrows
-	ListSecondary: tcell.NewHexColor(0x8c8172), // dim warm gray secondary line
+	BannerBg:      tcell.NewHexColor(0x8f5300), // the root warning is a caution, so it takes Caution
+	BarHealthy:    tcell.NewHexColor(0x4c7d2a), // olive FARM healthy bar, one step lighter than OK
+	ScrollArrow:   tcell.NewHexColor(0x15615a), // teal arrows
+	ListSecondary: tcell.NewHexColor(0x665d50), // warm gray secondary line, darker than Muted: it carries data
 }
 
 // themes is the registry of built-in palettes; themeCycle gives the stable

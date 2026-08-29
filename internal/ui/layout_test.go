@@ -4,10 +4,12 @@ package ui
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 
 	"github.com/trm42/smartview/internal/smart"
 )
@@ -249,5 +251,74 @@ func TestRailRepaintsAfterUpdate(t *testing.T) {
 	a.cycleTheme()
 	if got := a.rail.GetText(false); got == themed {
 		t.Errorf("rail markup unchanged after a theme cycle: %q", got)
+	}
+}
+
+// TestThemeCycleRegroundsPersistentWidgets guards the same class of miss
+// CLAUDE.md names for the banner: tview bakes the ground into a widget at
+// construction, and repaintAll rebuilds only the detail's tab views, so every
+// widget that outlives a theme change has to be re-grounded explicitly.
+func TestThemeCycleRegroundsPersistentWidgets(t *testing.T) {
+	a, _ := newSimApp(t, 120, 40)
+	for range themeCycle {
+		a.cycleTheme()
+		if activeTheme.Background != dark.Background {
+			break
+		}
+	}
+	if activeTheme.Background == dark.Background {
+		t.Fatal("no theme in the cycle grounds differently from dark; nothing is under test")
+	}
+
+	type grounded interface{ GetBackgroundColor() tcell.Color }
+	want := activeTheme.Background
+	for _, c := range []struct {
+		name string
+		w    grounded
+	}{
+		{"list", a.list},
+		{"status", a.status},
+		{"banner", a.banner},
+		{"rail", a.rail},
+		{"body", a.body},
+		{"bodyPages", a.bodyPages},
+		{"root", a.root},
+		{"detail", a.detail},
+		{"detail.barRow", a.detail.barRow},
+		{"detail.bar", a.detail.bar},
+		{"detail.spinner", a.detail.spinner},
+		{"detail.pages", a.detail.pages},
+		{"fleet", a.fleet},
+		{"fleet.bar", a.fleet.bar},
+		{"fleet.table", a.fleet.table},
+		{"fleet.legend", a.fleet.legend},
+	} {
+		if got := c.w.GetBackgroundColor(); got != want {
+			t.Errorf("%s ground = %v after a theme cycle, want %v", c.name, got, want)
+		}
+	}
+}
+
+// TestThemeCycleKeepsThePlaceholderMessage: with no drives the detail holds a
+// placeholder, and repaintAll has to rebuild it in the new theme without
+// changing what it says — "No drives found" is the actionable one and nothing
+// ever sets it a second time.
+func TestThemeCycleKeepsThePlaceholderMessage(t *testing.T) {
+	a, _ := newSimApp(t, 120, 40)
+	const msg = "No drives found. Try running with sudo."
+	a.detail.showPlaceholder(msg)
+
+	a.cycleTheme()
+
+	name, page := a.detail.pages.GetFrontPage()
+	if name != "placeholder" {
+		t.Fatalf("front page after a theme cycle = %q, want %q", name, "placeholder")
+	}
+	tv, ok := page.(*tview.TextView)
+	if !ok {
+		t.Fatalf("placeholder page is %T, want *tview.TextView", page)
+	}
+	if got := tv.GetText(true); !strings.Contains(got, msg) {
+		t.Errorf("placeholder after a theme cycle = %q, want it to still say %q", got, msg)
 	}
 }

@@ -9,16 +9,19 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-// TestDarkThemeUnchanged pins every dark-theme role to its pre-theming colour,
-// with one deliberate exception: ListSecondary moved off green (it equalled OK).
+// TestDarkThemeUnchanged pins every dark-theme role. Three are not the
+// pre-theming colour: ListSecondary moved off green (it equalled OK), and
+// Background/Neutral are explicit because a painted ground cannot be paired
+// with text inherited from the terminal.
 func TestDarkThemeUnchanged(t *testing.T) {
 	want := map[string]tcell.Color{
+		"Background":    tcell.ColorBlack,
 		"Accent":        tcell.ColorAqua,
 		"Muted":         tcell.ColorGray,
 		"OK":            tcell.ColorGreen,
 		"Caution":       tcell.ColorYellow,
 		"Failing":       tcell.ColorRed,
-		"Neutral":       tcell.ColorDefault,
+		"Neutral":       tcell.ColorWhite,
 		"Inverse":       tcell.ColorBlack,
 		"SelectionBg":   tcell.ColorDarkSlateGray,
 		"SelectionFg":   tcell.ColorWhite,
@@ -27,20 +30,9 @@ func TestDarkThemeUnchanged(t *testing.T) {
 		"ScrollArrow":   tcell.ColorWhite,
 		"ListSecondary": tcell.ColorGray,
 	}
-	got := map[string]tcell.Color{
-		"Accent":        dark.Accent,
-		"Muted":         dark.Muted,
-		"OK":            dark.OK,
-		"Caution":       dark.Caution,
-		"Failing":       dark.Failing,
-		"Neutral":       dark.Neutral,
-		"Inverse":       dark.Inverse,
-		"SelectionBg":   dark.SelectionBg,
-		"SelectionFg":   dark.SelectionFg,
-		"BannerBg":      dark.BannerBg,
-		"BarHealthy":    dark.BarHealthy,
-		"ScrollArrow":   dark.ScrollArrow,
-		"ListSecondary": dark.ListSecondary,
+	got := themeRoles(dark)
+	if len(want) != len(got) {
+		t.Fatalf("dark has %d roles but %d are pinned; pin the new one here", len(got), len(want))
 	}
 	for role, w := range want {
 		if got[role] != w {
@@ -52,26 +44,31 @@ func TestDarkThemeUnchanged(t *testing.T) {
 	}
 }
 
-// TestThemesComplete asserts every theme names itself and assigns every role.
-// ColorDefault is allowed only for mono (all roles) and Neutral (anywhere).
-func TestThemesComplete(t *testing.T) {
-	roles := func(th Theme) map[string]tcell.Color {
-		return map[string]tcell.Color{
-			"Accent":        th.Accent,
-			"Muted":         th.Muted,
-			"OK":            th.OK,
-			"Caution":       th.Caution,
-			"Failing":       th.Failing,
-			"Inverse":       th.Inverse,
-			"SelectionBg":   th.SelectionBg,
-			"SelectionFg":   th.SelectionFg,
-			"BannerBg":      th.BannerBg,
-			"BarHealthy":    th.BarHealthy,
-			"ScrollArrow":   th.ScrollArrow,
-			"ListSecondary": th.ListSecondary,
-			// Neutral is intentionally omitted: ColorDefault is a valid value for it.
-		}
+// themeRoles lists a theme's colour roles by name, so the palette tests below
+// cover a new role automatically.
+func themeRoles(th Theme) map[string]tcell.Color {
+	return map[string]tcell.Color{
+		"Background":    th.Background,
+		"Accent":        th.Accent,
+		"Muted":         th.Muted,
+		"OK":            th.OK,
+		"Caution":       th.Caution,
+		"Failing":       th.Failing,
+		"Neutral":       th.Neutral,
+		"Inverse":       th.Inverse,
+		"SelectionBg":   th.SelectionBg,
+		"SelectionFg":   th.SelectionFg,
+		"BannerBg":      th.BannerBg,
+		"BarHealthy":    th.BarHealthy,
+		"ScrollArrow":   th.ScrollArrow,
+		"ListSecondary": th.ListSecondary,
 	}
+}
+
+// TestThemesComplete asserts every theme names itself and assigns every role.
+// ColorDefault is allowed only in mono, which defers to the terminal wholesale:
+// a palette that paints its own ground has to paint every foreground too.
+func TestThemesComplete(t *testing.T) {
 	for name, th := range themes {
 		if th.Name == "" {
 			t.Errorf("theme %q has empty Name", name)
@@ -82,7 +79,7 @@ func TestThemesComplete(t *testing.T) {
 		if name == "mono" {
 			continue // mono is intentionally all-default
 		}
-		for role, c := range roles(th) {
+		for role, c := range themeRoles(th) {
 			if c == tcell.ColorDefault {
 				t.Errorf("theme %q role %s is ColorDefault (only mono may degrade)", name, role)
 			}
@@ -307,5 +304,132 @@ func TestBeaconSurvivesColourBlindness(t *testing.T) {
 	if got := dist(dark.OK, dark.Failing); got >= minDist {
 		t.Errorf("dark OK vs Failing: simulated distance %.3f is above the %.2f "+
 			"threshold — the test no longer proves beacon does anything", got, minDist)
+	}
+}
+
+// TestMonoInheritsTheTerminal pins mono's contract: every role, the ground
+// included, defers to the terminal.
+func TestMonoInheritsTheTerminal(t *testing.T) {
+	for role, c := range themeRoles(mono) {
+		if c != tcell.ColorDefault {
+			t.Errorf("mono role %s is %v, want ColorDefault", role, c)
+		}
+	}
+}
+
+// TestForegroundsAreLegibleOnTheirBackground: every role that renders as text
+// or glyphs sits on Background, so a palette that picks one carelessly is
+// unreadable. 3:1 is the floor TestInverseIsLegibleOnItsFields already uses.
+func TestForegroundsAreLegibleOnTheirBackground(t *testing.T) {
+	const minRatio = 3.0
+	on := []string{"Accent", "Muted", "OK", "Caution", "Failing", "Neutral",
+		"ListSecondary", "BarHealthy", "ScrollArrow"}
+	for name, th := range themes {
+		roles := themeRoles(th)
+		for _, role := range on {
+			// A ColorDefault on either side resolves only in the terminal, so
+			// there is no ratio to measure.
+			if roles[role] == tcell.ColorDefault || th.Background == tcell.ColorDefault {
+				continue
+			}
+			if got := contrastRatio(roles[role], th.Background); got < minRatio {
+				t.Errorf("theme %q: %s on Background has contrast %.2f, want >= %.1f",
+					name, role, got, minRatio)
+			}
+		}
+	}
+}
+
+// TestSelectionIsVisibleOnBackground: the selected row is marked by its
+// background alone, so the band must lift off the ground — subtly, since it is
+// meant to tint a row rather than repaint it — while SelectionFg, the pin for
+// rows whose own foreground is ColorDefault, stays plainly readable on it.
+func TestSelectionIsVisibleOnBackground(t *testing.T) {
+	const minBand, maxBand, minPin = 1.15, 3.0, 4.5
+	for name, th := range themes {
+		if th.Background == tcell.ColorDefault {
+			continue // mono drops all colour by design
+		}
+		band := contrastRatio(th.SelectionBg, th.Background)
+		if band < minBand {
+			t.Errorf("theme %q: SelectionBg is %.2f against Background, want >= %.2f; "+
+				"the selected row would be invisible", name, band, minBand)
+		}
+		if band > maxBand {
+			t.Errorf("theme %q: SelectionBg is %.2f against Background, want <= %.1f; "+
+				"the band repaints the row instead of tinting it", name, band, maxBand)
+		}
+		if got := contrastRatio(th.SelectionFg, th.SelectionBg); got < minPin {
+			t.Errorf("theme %q: SelectionFg on SelectionBg has contrast %.2f, want >= %.1f",
+				name, got, minPin)
+		}
+	}
+}
+
+// TestMutedIsDimmerThanNeutral: Muted is the recessive voice — dashes, raw
+// values, unfocused borders — so it has to read as quieter than body text
+// while staying legible on the ground.
+func TestMutedIsDimmerThanNeutral(t *testing.T) {
+	const minGap = 1.8
+	for name, th := range themes {
+		if th.Neutral == tcell.ColorDefault || th.Background == tcell.ColorDefault {
+			continue // one side resolves only in the terminal; no ratio to measure
+		}
+		neutral := contrastRatio(th.Neutral, th.Background)
+		muted := contrastRatio(th.Muted, th.Background)
+		if neutral < muted*minGap {
+			t.Errorf("theme %q: Neutral is %.2f and Muted %.2f against Background; "+
+				"Muted must be at least %.1fx quieter to read as recessive",
+				name, neutral, muted, minGap)
+		}
+	}
+}
+
+// darkGroundMax and lightGroundMin bound the two bands a ground may sit in.
+// The gap between them is the point: TestGroundsAreDecisivelyDarkOrLight keeps
+// palettes out of it, so none can be mid-tone and dodge the light-ground floor.
+const darkGroundMax, lightGroundMin = 0.15, 0.5
+
+// TestGroundsAreDecisivelyDarkOrLight: the higher contrast floor below is keyed
+// off the ground's luminance, so a ground that commits to neither ink nor paper
+// would silently take the lower one.
+func TestGroundsAreDecisivelyDarkOrLight(t *testing.T) {
+	for name, th := range themes {
+		if th.Background == tcell.ColorDefault {
+			continue // mono inherits the terminal's, whatever it is
+		}
+		l := relLuminance(th.Background)
+		if l > darkGroundMax && l < lightGroundMin {
+			t.Errorf("theme %q: Background luminance %.3f is mid-tone (want <= %.2f or >= %.2f); "+
+				"pick a ground that is plainly ink or plainly paper", name, l, darkGroundMax, lightGroundMin)
+		}
+	}
+}
+
+// TestLightGroundsClearAHigherFloor: on a light ground the 3:1 UI floor is not
+// enough. Dark ink on a bright field loses to glare, and a light palette has no
+// terminal default to fall back on — every role is one the palette itself
+// picked.
+func TestLightGroundsClearAHigherFloor(t *testing.T) {
+	const minRatio = 4.0
+	on := []string{"Accent", "Muted", "OK", "Caution", "Failing", "Neutral",
+		"ListSecondary", "BarHealthy", "ScrollArrow"}
+	light := 0
+	for name, th := range themes {
+		if th.Background == tcell.ColorDefault || relLuminance(th.Background) < lightGroundMin {
+			continue
+		}
+		light++
+		roles := themeRoles(th)
+		for _, role := range on {
+			if got := contrastRatio(roles[role], th.Background); got < minRatio {
+				t.Errorf("theme %q: %s on its light Background has contrast %.2f, want >= %.1f",
+					name, role, got, minRatio)
+			}
+		}
+	}
+	if light != 2 {
+		t.Errorf("found %d light-ground themes, want 2 (daylight, parchment); "+
+			"a new one must be tuned to this floor too", light)
 	}
 }

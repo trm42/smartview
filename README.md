@@ -192,8 +192,8 @@ then the light pair, with `mono` last.
 | `nord`      | Arctic blue-grey — frost for chrome, aurora for severity                 |
 | `gruvbox`   | Warm retro earth; chrome takes gruvbox blue, not its signature gold      |
 | `beacon`    | Colour-vision-safe: blue → yellow → rose, neutral chrome                 |
-| `daylight`  | Light, cool paper with azure chrome                                      |
-| `parchment` | Light, warm paper with deep teal chrome                                  |
+| `daylight`  | Light: cool paper, azure chrome, burnt-amber → crimson severity          |
+| `parchment` | Light: warm paper, deep teal chrome, ochre → brick-red severity          |
 | `mono`      | No colour at all — the `●` glyph and bold carry severity alone           |
 
 `beacon` exists because green/red is the pair that collapses under
@@ -201,8 +201,11 @@ deuteranopia, and severity is smartview's core signal; its ramp is Paul Tol's
 high-contrast set, and a test simulates a deuteranope's vision to prove the
 three stay separable.
 
-`daylight` and `parchment` need a light terminal background: a theme sets
-foregrounds only, so the terminal supplies the background.
+A theme paints its own background, so `daylight` and `parchment` read the same
+in a dark terminal as in a light one, and their palettes are tuned against that
+paper rather than against whatever the terminal happens to use. `mono` is the
+deliberate exception: it sets no colour at all, background included, and
+inherits the terminal's.
 
 ### Keys
 
