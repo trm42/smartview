@@ -176,7 +176,10 @@ func (b *tabBar) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, func(
 // tab set is recomputed from each report, so absent sections show no tab.
 type detail struct {
 	*tview.Flex
-	bar     *tabBar
+	bar *tabBar
+	// barRow holds bar and spinner; it is built once, so repaintAll has to be
+	// able to reach it.
+	barRow  *tview.Flex
 	spinner *inertTextView
 	pages   *tview.Pages
 	tabs    []tab
@@ -184,6 +187,9 @@ type detail struct {
 
 	device string             // current drive name, to detect device switches
 	views  map[string]tabView // live view per visible tab id
+	// placeholder is the last message showPlaceholder rendered, so a theme
+	// repaint can re-show it instead of guessing one.
+	placeholder string
 
 	selfTest selfTestActions // callbacks for the interactive Tests tab
 	// onTabClick receives the tab a click landed on; the bar forwards the
@@ -207,10 +213,10 @@ func newDetail() *detail {
 	}
 	// Tab strip and refresh spinner share one row; the spinner gets a fixed
 	// 2-col cell flush right.
-	barRow := tview.NewFlex().
+	d.barRow = tview.NewFlex().
 		AddItem(d.bar, 0, 1, false).
 		AddItem(d.spinner, 2, 0, false)
-	d.AddItem(barRow, 1, 0, false)
+	d.AddItem(d.barRow, 1, 0, false)
 	d.AddItem(d.pages, 0, 1, true)
 	d.showPlaceholder("Scanning for drives…")
 	return d
@@ -218,6 +224,7 @@ func newDetail() *detail {
 
 // showPlaceholder displays a message when no drive is selected yet.
 func (d *detail) showPlaceholder(msg string) {
+	d.placeholder = msg
 	d.tabs = nil
 	d.device = ""
 	d.views = nil

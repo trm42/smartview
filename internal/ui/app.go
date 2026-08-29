@@ -20,7 +20,7 @@ import (
 // App is the smartview terminal application.
 type App struct {
 	app    *tview.Application
-	root   tview.Primitive // main layout, restored when a modal closes
+	root   *tview.Flex // main layout, restored when a modal closes
 	list   *tview.List
 	detail *detail
 	// status, banner and the rail below carry no key binding, so they decline
@@ -190,6 +190,12 @@ func (a *App) build() {
 	a.app.SetInputCapture(a.onKey)
 	// Width is only known at draw time, so the layout choice lives here.
 	a.app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
+		// tview clears the screen with its default style before this hook runs,
+		// so SetStyle alone would first show one frame of the old ground, and a
+		// non-fullscreen modal root leaves the cleared area unpainted.
+		ground := tcell.StyleDefault.Background(activeTheme.Background)
+		screen.SetStyle(ground)
+		screen.Fill(' ', ground)
 		w, _ := screen.Size()
 		if w != a.lastWidth {
 			a.lastWidth = w
@@ -414,8 +420,18 @@ func (a *App) cycleTheme() {
 func (a *App) repaintAll() {
 	a.detail.device = "" // invalidate cache so update() takes the rebuild branch
 	a.showSelected()
+	if len(a.devices) == 0 {
+		// showDevice returns before the placeholder when there is nothing to
+		// show, and the message in place is the one the app last chose.
+		a.detail.showPlaceholder(a.detail.placeholder)
+	}
 	styleList(a.list)
 	a.populateList()
+	// Widgets built once are not recreated by the rebuild, so they keep the
+	// ground tview baked in at construction until they are told again.
+	applyBackground(a.root, a.body, a.bodyPages, a.status, a.banner, a.rail,
+		a.detail, a.detail.barRow, a.detail.bar, a.detail.spinner, a.detail.pages,
+		a.fleet, a.fleet.bar, a.fleet.table, a.fleet.legend)
 	// The fleet table bakes a colour into every cell, same miss as the banner.
 	a.fleet.refresh(a.devices, a.reports, a.history)
 	a.refreshChrome()
@@ -974,16 +990,32 @@ func (a *App) runSmartctl(action string, fn func(context.Context) error, onSucce
 	}()
 }
 
+// styleModal grounds a modal in the active theme. tview builds one from its own
+// contrast palette, and Modal.SetBackgroundColor reaches the inner form and
+// frame but not the surrounding box, so both are set here.
+func styleModal(m *tview.Modal) *tview.Modal {
+	m.SetBackgroundColor(activeTheme.Background)
+	m.Box.SetBackgroundColor(activeTheme.Background)
+	m.SetBorderColor(activeTheme.Accent)
+	m.SetTextColor(activeTheme.Neutral)
+	m.SetButtonBackgroundColor(activeTheme.SelectionBg)
+	m.SetButtonTextColor(activeTheme.SelectionFg)
+	// Accent, not OK: the affirmative may be destructive, and OK stays
+	// reserved for healthy/go semantics. Bold carries the focus under mono,
+	// where every colour collapses to the terminal default.
+	m.SetButtonActivatedStyle(tcell.StyleDefault.
+		Background(activeTheme.Accent).
+		Foreground(activeTheme.Inverse).
+		Attributes(tcell.AttrBold))
+	return m
+}
+
 // confirm shows a two-button confirmation modal; onYes runs when the user picks
 // the affirmative label.
 func (a *App) confirm(text, yesLabel string, onYes func()) {
-	modal := tview.NewModal().
+	modal := styleModal(tview.NewModal()).
 		SetText(text).
 		AddButtons([]string{yesLabel, "Back"}).
-		// Accent, not OK: the affirmative may be destructive, and OK stays
-		// reserved for healthy/go semantics.
-		SetButtonActivatedStyle(tcell.StyleDefault.
-			Background(activeTheme.Accent).Foreground(activeTheme.Inverse)).
 		SetDoneFunc(func(_ int, label string) {
 			a.popModal()
 			if label == yesLabel {
@@ -1021,7 +1053,7 @@ const keysText = "Keys\n\n" +
 // showKeys lists every binding in a dismissable modal; the narrow hint bar
 // points here, so nothing is merely hidden.
 func (a *App) showKeys() {
-	modal := tview.NewModal().
+	modal := styleModal(tview.NewModal()).
 		SetText(keysText).
 		AddButtons([]string{"Close"}).
 		SetDoneFunc(func(int, string) { a.popModal() })
@@ -1031,7 +1063,7 @@ func (a *App) showKeys() {
 // showError displays a smartctl failure in a dismissable modal; action names
 // the operation that failed.
 func (a *App) showError(action string, err error) {
-	modal := tview.NewModal().
+	modal := styleModal(tview.NewModal()).
 		SetText(fmt.Sprintf("Could not %s:\n%s", action, err)).
 		AddButtons([]string{"OK"}).
 		SetDoneFunc(func(int, string) { a.popModal() })

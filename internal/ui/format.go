@@ -153,8 +153,30 @@ func selectedRowStyle(fg tcell.Color) tcell.Style {
 // selection through selectedRowStyle so list and table selections match.
 // Re-call after a theme change.
 func styleList(l *tview.List) {
-	l.SetSecondaryTextColor(activeTheme.ListSecondary)
+	bg := activeTheme.Background
+	l.SetBackgroundColor(bg)
+	// A List prints its rows without maintaining the background underneath, so
+	// the ground has to be pinned in each row style; the SetXTextColor setters
+	// reach only the foreground.
+	l.SetMainTextStyle(tcell.StyleDefault.Foreground(activeTheme.Neutral).Background(bg))
+	l.SetSecondaryTextStyle(tcell.StyleDefault.Foreground(activeTheme.ListSecondary).Background(bg))
+	l.SetShortcutStyle(tcell.StyleDefault.Foreground(activeTheme.Accent).Background(bg))
 	l.SetSelectedStyle(selectedRowStyle(activeTheme.SelectionFg))
+}
+
+// backgrounder is any widget whose ground can be re-set; Box, Flex, Pages,
+// Table, List and TextView all satisfy it.
+type backgrounder interface {
+	SetBackgroundColor(tcell.Color) *tview.Box
+}
+
+// applyBackground grounds widgets in the active theme. tview bakes
+// Styles.PrimitiveBackgroundColor in at construction, so every widget that
+// outlives a theme change has to be told again.
+func applyBackground(ws ...backgrounder) {
+	for _, w := range ws {
+		w.SetBackgroundColor(activeTheme.Background)
+	}
 }
 
 // attrTextColor colours attribute row text: neutral when healthy, so only

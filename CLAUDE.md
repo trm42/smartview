@@ -210,17 +210,20 @@ goroutine (`setNarrow` in app.go is the pattern).
   populated error log. NVMe `num_err_log_entries` is deliberately excluded — it
   increments for benign reasons, so it is surfaced as a count, not a verdict.
 - **Colour theming** (`theme.go`). All colour flows through a package-level
-  `var activeTheme Theme` of semantic roles (`Accent`, `Muted`, `OK`/`Caution`/
-  `Failing`, `Inverse`, `SelectionBg/Fg`, `BannerBg`, `BarHealthy`,
-  `ScrollArrow`, `ListSecondary` — the drive-list secondary line device ·
-  capacity · temp); `setTheme` swaps it (read/written only on the event-loop
-  goroutine, so no mutex — same as `App.reports`). Never write a raw `[aqua]`/
+  `var activeTheme Theme` of semantic roles (`Background`, `Accent`, `Muted`,
+  `OK`/`Caution`/`Failing`, `Inverse`, `SelectionBg/Fg`, `BannerBg`,
+  `BarHealthy`, `ScrollArrow`, `ListSecondary` — the drive-list secondary line
+  device · capacity · temp); `setTheme` swaps it (read/written only on the
+  event-loop goroutine, so no mutex — same as `App.reports`). Never write a raw `[aqua]`/
   `[gray]`/`tcell.ColorRed` literal: use the tag helpers (`accentTag()`,
   `mutedTag()`, `okTag()`, `severityTag()`, `fgbgTag(fg,bg)`) for markup or read
   `activeTheme.X` for a `tcell.Color`. The `dark` theme reproduces the original
-  palette (pinned by `theme_test.go`) apart from `ListSecondary`, which moved off
-  green because it equalled `OK` and painted a failing drive's metadata line the
-  healthy colour;
+  palette (pinned by `theme_test.go`) apart from three roles: `ListSecondary`,
+  which moved off green because it equalled `OK` and painted a failing drive's
+  metadata line the healthy colour, and `Background`/`Neutral`, which are
+  explicit black and white because painting a ground and inheriting the text
+  colour puts black on black in a light terminal — a palette that grounds itself
+  owns every foreground too, which is what `TestThemesComplete` enforces;
   `electric` (an "elite BBS" palette in blue/cyan/white/gray — bright azure-cyan
   borders, white body text, amber caution + red failing for legibility),
   `phosphor` (the classic monochrome green-CRT palette — *pure green only*, no
@@ -238,12 +241,21 @@ goroutine (`setNarrow` in app.go is the pattern).
   collapses; `theme_test.go` simulates a deuteranope and pins that beacon's
   three stay separable *and* that dark's green/red does not, so the test can't
   quietly stop proving anything), `daylight` and `parchment` (light, cool and
-  warm — they re-tune the ramp for a light field, since yellow caution vanishes
-  on paper, and they need a light terminal background because a Theme sets
-  foregrounds only), and `mono` are the alternates. Two invariants hold across
-  every palette and are pinned by tests: `ListSecondary` never equals `OK`, and
-  `Inverse` clears 3:1 contrast on both fields it is drawn on (`Accent` for the
-  active-tab pill, `BannerBg` for the root warning).
+  warm — every role is tuned against the palette's own paper `Background`, not a
+  terminal's: yellow caution vanishes on paper, so the ramp runs burnt
+  amber/ochre → crimson/brick, darkening as it worsens), and `mono` are the
+  alternates. Five invariants hold across every palette but `mono` (which has no
+  colour to measure) and are pinned by tests: `ListSecondary` never equals `OK`;
+  `Inverse` clears 3:1 on both fields it is drawn on (`Accent` for the active-tab
+  pill, `BannerBg` for the root warning); `Muted` reads at least 1.8x quieter
+  than `Neutral` on the ground, so the recessive voice stays recessive;
+  `SelectionBg` sits in a 1.15–3:1 band against the ground — enough to tint the
+  row, not enough to repaint it — with `SelectionFg`, the selected-row
+  foreground, clearing 4.5:1 (WCAG AA body text) on it; and a `Background` is
+  plainly ink (luminance ≤ 0.15) or plainly paper (≥ 0.5), never between, since
+  the light floor is keyed off that split and a mid-tone ground would silently
+  take the lower one. Foregrounds clear 3:1 on the ground everywhere and 4:1 on
+  a light one, where ink loses to glare and nothing falls back to the terminal.
   `--theme NAME` selects at startup, the `T` key cycles live
   (`cycleTheme`→`repaintAll`, which forces a detail rebuild so widgets that baked
   colour in at build time get re-coloured — the one-shot root-warning banner is
@@ -254,6 +266,20 @@ goroutine (`setNarrow` in app.go is the pattern).
   routes selection through `selectedRowStyle` so list and table selections match.
   Known limit: `mono` drops all our colour (severity and the selected row survive
   via the `●` glyph + bold).
+- **The ground is `Theme.Background`, and it reaches widgets three ways.**
+  (1) `applyTviewStyles` (theme.go) writes `tview.Styles` — tview reads those
+  globals *at construction*, so everything built afterwards is born in the
+  theme, and it is the only lever on tvxwidgets' gauge, which re-reads them at
+  draw time. (2) Widgets that outlive a theme cycle keep the ground they were
+  built with, so `repaintAll` re-grounds an explicit list of them through
+  `applyBackground` (format.go); `layout_test.go` pins that list — extend both
+  together, the banner-class miss again. (3) Direct `screen.SetContent` calls
+  carry a ground themselves: `scroll.go`'s viewport clear and its scroll arrows
+  both take it from the widget they paint into (never from `activeTheme`, or the
+  arrow disagrees with its own panel), and the before-draw hook fills the screen
+  so a non-fullscreen modal root has no unpainted margin. `ColorDefault` is
+  legal here and means "inherit the terminal" — that is `mono`'s whole
+  contract, and it is the only palette allowed it.
 - **Colour marks exceptions, not membership.** A value renders in the
   surrounding colour while it is in band and takes caution/failing only when it
   leaves it (`tempMarkup` in format.go is the model). Green is reserved for the
