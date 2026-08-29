@@ -121,8 +121,10 @@ goroutine (`setNarrow` in app.go is the pattern).
   keys it rebinds while letting the rest fall through to the shared bindings.
   Selection is tracked by **device name**, not row index — the focus-metric sort
   reorders rows on every poll. Note `tview.List.SetCurrentItem` fires its
-  changed-func *before* storing the new index, so `openDrive` must call
-  `showSelected` itself.
+  changed-func *before* storing the new index, so the changed-func must render
+  the index it is handed (`showDevice`) and never `GetCurrentItem()`; `openDrive`
+  and `stepDrive` still render themselves, since no changed-func fires when the
+  index is unchanged.
 - **Cross-protocol readings live in `internal/smart/metrics.go`**, not in
   rendering code: `PowerOnHours`, `PowerCycles`, `LifeUsedPercent`, `SparePercent`,
   `TempRange`, `DataWritten`, `ErrorCounts`. Each resolves a fallback chain across
@@ -162,6 +164,24 @@ goroutine (`setNarrow` in app.go is the pattern).
   constants) are invisible to that scan and are pinned by a hand-kept list in
   the same test — extend it when a handler matches a new one. The README key
   table is written from it.
+- **Mouse handlers run on the event-loop goroutine with no draw lock held** —
+  the mirror image of the draw-hook rule above. `Application.SetFocus` and direct
+  widget mutation are correct there; `QueueUpdate(Draw)` self-deadlocks, since the
+  loop is inside `fireMouseActions` and cannot drain its queue. Return
+  `consumed = true` or tview will not redraw, and always return a nil capture
+  primitive. tview's default `TextView.MouseHandler` focuses the view on a left
+  press, which is wrong for anything that handles no key: the tab bar
+  (`tabBar.MouseHandler`, detail.go) drops the `setFocus` closure and a click on a
+  pill goes through `App.openTab`, the same path as `1`-`9`, while every piece of
+  chrome that carries no binding — spinner, rail, banner, status bar, the fleet's
+  section strip and legend — is wrapped in `inertTextView` and declines the mouse
+  outright. Wrap a new keyless widget the same way: the rail, banner and status
+  bar sit outside `a.detail`, so `poll.go`'s re-focus never rescues focus parked
+  on one. `tabBar` records each pill's column span in the pass that emits it, so
+  the hit test cannot drift from the render; `tabPills` drops inactive titles when
+  the strip would not fit, because a pill drawn past the edge is also unclickable.
+  The compacted six-tab strip still needs ~43 columns, but the narrow hint bar
+  needs ~67, so the strip is never the first thing to overflow.
 - **Scroll arrows are a shared affordance** (`scroll.go`): every tab that can
   overflow shows the same cyan ▲/▼ off-screen cue via `drawScrollArrows`. The
   `scrollView` container (FARM, Overview's whole layout uses widget composition)

@@ -215,6 +215,7 @@ foregrounds only, so the terminal supplies the background.
 | `←` / `→`                  | Move between panes and step through detail tabs (no wrap)     |
 | `Tab`                      | Toggle focus between the drive list and the detail pane       |
 | `1`–`9`                    | Switch detail tab by number                                   |
+| Click a tab                | Switch detail tab with the mouse                              |
 | `t`                        | Jump straight to the **Tests** tab                            |
 | `c`                        | Toggle the **Fleet** comparison (all drives side by side)     |
 | `r`                        | Refresh now                                                   |
@@ -234,9 +235,14 @@ list on screen for them to scroll. `?` shows the authoritative list: a test
 parses the key handlers for the runes they match, and pins the named keys
 alongside, so a binding cannot go undocumented.
 
-Mouse is partly supported: click a drive in the list, and scroll any pane with
-the wheel. Switching tabs by clicking the tab bar is not implemented — use
-`←` / `→` or `1`–`9`.
+Mouse is supported: click a tab in the detail strip, click a drive in the list,
+and scroll any pane with the wheel. A tab click behaves exactly like `1`–`9` —
+it selects the tab and moves keyboard focus to its body — and the tab bar itself
+never takes focus. Below the width the full strip needs, inactive tabs shrink to
+their numbers so every tab stays visible and clickable. The wheel over the tab
+strip does nothing, and neither does a click on chrome that carries no keys (the
+rail, the banner, the hint bar, the fleet's section strip) — it leaves the
+keyboard where it was rather than stranding it.
 
 ### Dev / fixture mode
 

@@ -4,7 +4,9 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
 	"github.com/trm42/smartview/internal/smart"
@@ -34,12 +36,148 @@ type focusChromer interface {
 	setFocused(focused bool)
 }
 
+// tabSpan is a pill's column range within the tab bar's inner rect, half-open.
+type tabSpan struct{ start, end int }
+
+// inertTextView is a TextView that ignores the mouse: tview's default handler
+// focuses the view on a left press, and these views handle no key.
+type inertTextView struct{ *tview.TextView }
+
+// MouseHandler declines every mouse event, leaving focus where it was.
+func (v *inertTextView) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, func(tview.Primitive)) (bool, tview.Primitive) {
+	return func(tview.MouseAction, *tcell.EventMouse, func(tview.Primitive)) (bool, tview.Primitive) {
+		return false, nil
+	}
+}
+
+// tabBar is the detail's tab strip: it emits the pills and records their column
+// spans in the same pass, so a click maps to a tab without a second model of the
+// layout. render is the only writer of the text — a bare SetText would leave the
+// spans describing a strip that is no longer drawn.
+type tabBar struct {
+	*tview.TextView
+	tabs      []tab
+	active    int
+	spans     []tabSpan
+	lastWidth int
+	onClick   func(i int)
+}
+
+func newTabBar() *tabBar {
+	// Wrapping is off because the strip is one row: a wrapped pill would be
+	// pushed onto a line the box never shows.
+	b := &tabBar{TextView: tview.NewTextView().SetDynamicColors(true).SetWrap(false)}
+	b.SetBorderPadding(0, 0, uiGutter, uiGutter)
+	return b
+}
+
+// render draws the strip for a tab set and records where each pill landed.
+func (b *tabBar) render(tabs []tab, active int) {
+	b.tabs = tabs
+	b.active = active
+	b.layout()
+}
+
+// Draw relays out when the width changed, the pattern the other width-aware
+// panels use; lastWidth is 0 before the first draw, which tabPills reads as
+// unconstrained.
+func (b *tabBar) Draw(screen tcell.Screen) {
+	if _, _, w, _ := b.GetInnerRect(); w != b.lastWidth {
+		b.lastWidth = w
+		b.layout()
+	}
+	b.TextView.Draw(screen)
+}
+
+// layout emits the pills and the spans together.
+func (b *tabBar) layout() {
+	var s strings.Builder
+	pills := tabPills(b.tabs, b.active, b.lastWidth)
+	spans := make([]tabSpan, 0, len(pills))
+	col := 0
+	for i, pill := range pills {
+		if i == b.active {
+			// activeTabTag falls back to black-on-white so the pill survives mono.
+			fmt.Fprintf(&s, " %s%s[-:-:-] ", activeTabTag(), pill)
+		} else {
+			fmt.Fprintf(&s, " %s%s[-] ", accentTag(), pill)
+		}
+		// The span covers the separator spaces too, so pills are contiguous and
+		// no column between them is dead.
+		w := 2 + tview.TaggedStringWidth(pill)
+		spans = append(spans, tabSpan{col, col + w})
+		col += w
+	}
+	b.spans = spans
+	b.SetText(s.String())
+}
+
+// tabPills returns the plain text core of each pill, dropping the titles of
+// inactive tabs when the full strip would not fit; width <= 0 is unconstrained.
+func tabPills(tabs []tab, active, width int) []string {
+	if len(tabs) == 0 {
+		return nil
+	}
+	pills := make([]string, len(tabs))
+	total := 0
+	for i, t := range tabs {
+		pills[i] = fmt.Sprintf(" %d %s ", i+1, t.title)
+		total += 2 + tview.TaggedStringWidth(pills[i])
+	}
+	if width <= 0 || total <= width {
+		return pills
+	}
+	// The number stays on every tab, so the 1-9 keys remain discoverable.
+	for i := range pills {
+		if i != active {
+			pills[i] = fmt.Sprintf(" %d ", i+1)
+		}
+	}
+	return pills
+}
+
+// tabAt returns the tab under a screen cell.
+func (b *tabBar) tabAt(x, y int) (int, bool) {
+	if !b.InInnerRect(x, y) {
+		return 0, false
+	}
+	ix, _, _, _ := b.GetInnerRect()
+	for i, s := range b.spans {
+		if x-ix >= s.start && x-ix < s.end {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// MouseHandler activates the tab a click lands on. The setFocus closure is
+// discarded: focusing the bar would strand every key, since it handles none and
+// tview routes keys only to the focused primitive.
+func (b *tabBar) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, func(tview.Primitive)) (bool, tview.Primitive) {
+	return b.WrapMouseHandler(func(action tview.MouseAction, event *tcell.EventMouse, _ func(tview.Primitive)) (bool, tview.Primitive) {
+		switch action {
+		// A second click within DoubleClickInterval arrives as a double click.
+		case tview.MouseLeftClick, tview.MouseLeftDoubleClick:
+		default:
+			return false, nil
+		}
+		i, ok := b.tabAt(event.Position())
+		if !ok {
+			return false, nil
+		}
+		if b.onClick != nil {
+			b.onClick(i)
+		}
+		return true, nil
+	})
+}
+
 // detail is the right-hand pane: a tab bar above a Pages content area. The
 // tab set is recomputed from each report, so absent sections show no tab.
 type detail struct {
 	*tview.Flex
-	bar     *tview.TextView
-	spinner *tview.TextView
+	bar     *tabBar
+	spinner *inertTextView
 	pages   *tview.Pages
 	tabs    []tab
 	active  int
@@ -48,16 +186,25 @@ type detail struct {
 	views  map[string]tabView // live view per visible tab id
 
 	selfTest selfTestActions // callbacks for the interactive Tests tab
+	// onTabClick receives the tab a click landed on; the bar forwards the
+	// intent and the App owns the focus move and the chrome resync.
+	onTabClick func(i int)
 }
 
 func newDetail() *detail {
 	d := &detail{
-		Flex:    tview.NewFlex().SetDirection(tview.FlexRow),
-		bar:     tview.NewTextView().SetDynamicColors(true).SetRegions(true),
-		spinner: tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight),
-		pages:   tview.NewPages(),
+		Flex: tview.NewFlex().SetDirection(tview.FlexRow),
+		bar:  newTabBar(),
+		spinner: &inertTextView{
+			tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight)},
+		pages: tview.NewPages(),
 	}
-	d.bar.SetBorderPadding(0, 0, uiGutter, uiGutter)
+	// The indirection keeps the wiring valid: build() assigns onTabClick later.
+	d.bar.onClick = func(i int) {
+		if d.onTabClick != nil {
+			d.onTabClick(i)
+		}
+	}
 	// Tab strip and refresh spinner share one row; the spinner gets a fixed
 	// 2-col cell flush right.
 	barRow := tview.NewFlex().
@@ -74,7 +221,7 @@ func (d *detail) showPlaceholder(msg string) {
 	d.tabs = nil
 	d.device = ""
 	d.views = nil
-	d.bar.SetText("")
+	d.bar.render(nil, 0)
 	d.pages.RemovePage("placeholder")
 	d.pages.AddPage("placeholder", centeredNote(msg), true, true)
 }
@@ -191,21 +338,7 @@ func (d *detail) selectActive() {
 		return
 	}
 	d.pages.SwitchToPage(d.tabs[d.active].id)
-	d.renderBar()
-}
-
-// renderBar draws the tab strip with the active tab highlighted.
-func (d *detail) renderBar() {
-	s := ""
-	for i, t := range d.tabs {
-		if i == d.active {
-			// activeTabTag falls back to black-on-white so the pill survives mono.
-			s += fmt.Sprintf(" %s %d %s [-:-:-] ", activeTabTag(), i+1, t.title)
-		} else {
-			s += fmt.Sprintf(" %s %d %s [-] ", accentTag(), i+1, t.title)
-		}
-	}
-	d.bar.SetText(s)
+	d.bar.render(d.tabs, d.active)
 }
 
 // stepTab moves the active tab by delta, clamped (no wrap), reporting whether

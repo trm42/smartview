@@ -72,9 +72,6 @@ for drive health via smartmontools.
 
 ## Nice to have
 
-- [ ] Mouse-driven tab switching. tview mouse is enabled and clicking a drive in the
-      list already works, but the tab bar emits no region tags and nothing calls
-      `Highlight`, so the `SetRegions(true)` on it is currently inert.
 - [ ] Wire `smart.Preflight` into startup. It checks smartctl is on PATH *and* at
       least smartmontools 7.0, but `main.go` still gates on `Available()` alone, so
       an old smartctl fails later with a parse error instead of a clear message.
