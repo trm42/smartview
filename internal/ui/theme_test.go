@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"math"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
@@ -212,5 +213,99 @@ func TestSeverityRampEscalates(t *testing.T) {
 					name, h, r, b, g)
 			}
 		}
+	}
+}
+
+// relLuminance is the WCAG relative luminance of a colour.
+func relLuminance(c tcell.Color) float64 {
+	h := c.TrueColor().Hex()
+	lin := func(v int32) float64 {
+		s := float64(v) / 255
+		if s <= 0.03928 {
+			return s / 12.92
+		}
+		return math.Pow((s+0.055)/1.055, 2.4)
+	}
+	return 0.2126*lin((h>>16)&0xff) + 0.7152*lin((h>>8)&0xff) + 0.0722*lin(h&0xff)
+}
+
+// contrastRatio is the WCAG contrast ratio between two colours.
+func contrastRatio(a, b tcell.Color) float64 {
+	la, lb := relLuminance(a), relLuminance(b)
+	if la < lb {
+		la, lb = lb, la
+	}
+	return (la + 0.05) / (lb + 0.05)
+}
+
+// TestInverseIsLegibleOnItsFields: Inverse is the only foreground drawn on
+// Accent (the active-tab pill) and on BannerBg (the root warning), so a palette
+// that picks it carelessly renders both unreadable. 3:1 is the WCAG floor for
+// this kind of large/UI text.
+func TestInverseIsLegibleOnItsFields(t *testing.T) {
+	const minRatio = 3.0
+	for name, th := range themes {
+		if th.Inverse == tcell.ColorDefault {
+			continue // mono drops all colour by design
+		}
+		for _, f := range []struct {
+			role string
+			bg   tcell.Color
+		}{{"Accent", th.Accent}, {"BannerBg", th.BannerBg}} {
+			if got := contrastRatio(th.Inverse, f.bg); got < minRatio {
+				t.Errorf("theme %q: Inverse on %s has contrast %.2f, want >= %.1f",
+					name, f.role, got, minRatio)
+			}
+		}
+	}
+}
+
+// simulateDeuteranopia approximates how a deuteranope sees a colour (Viénot,
+// Brettel & Mollon 1999), for TestBeaconSurvivesColourBlindness.
+func simulateDeuteranopia(c tcell.Color) (float64, float64, float64) {
+	h := c.TrueColor().Hex()
+	lin := func(v int32) float64 { return math.Pow(float64(v)/255, 2.2) }
+	r, g, b := lin((h>>16)&0xff), lin((h>>8)&0xff), lin(h&0xff)
+	// RGB → LMS.
+	l := 17.8824*r + 43.5161*g + 4.11935*b
+	s := 0.0299566*r + 0.184309*g + 1.46709*b
+	// The M cone is dropped entirely: it is reconstructed from L and S.
+	m := 0.494207*l + 1.24827*s
+	// LMS → RGB.
+	return 0.080944*l - 0.130504*m + 0.116721*s,
+		-0.0102485*l + 0.0540194*m - 0.113615*s,
+		-0.000365294*l - 0.00412163*m + 0.693513*s
+}
+
+// TestBeaconSurvivesColourBlindness is the point of the beacon palette: its
+// severity ramp must stay separable for a deuteranope, where dark's green/red
+// pair collapses. The threshold is calibrated to reject that pair.
+func TestBeaconSurvivesColourBlindness(t *testing.T) {
+	const minDist = 0.25
+	dist := func(a, b tcell.Color) float64 {
+		ar, ag, ab := simulateDeuteranopia(a)
+		br, bg, bb := simulateDeuteranopia(b)
+		return math.Sqrt((ar-br)*(ar-br) + (ag-bg)*(ag-bg) + (ab-bb)*(ab-bb))
+	}
+	pairs := []struct {
+		a, b string
+		ca   tcell.Color
+		cb   tcell.Color
+	}{
+		{"OK", "Caution", beacon.OK, beacon.Caution},
+		{"Caution", "Failing", beacon.Caution, beacon.Failing},
+		{"OK", "Failing", beacon.OK, beacon.Failing},
+	}
+	for _, p := range pairs {
+		if got := dist(p.ca, p.cb); got < minDist {
+			t.Errorf("beacon %s vs %s: simulated deuteranope distance %.3f, want >= %.2f",
+				p.a, p.b, got, minDist)
+		}
+	}
+	// Calibration: the default palette's green/red pair is what beacon exists
+	// to fix, so it must fall below the threshold this test enforces.
+	if got := dist(dark.OK, dark.Failing); got >= minDist {
+		t.Errorf("dark OK vs Failing: simulated distance %.3f is above the %.2f "+
+			"threshold — the test no longer proves beacon does anything", got, minDist)
 	}
 }

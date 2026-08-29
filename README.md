@@ -177,12 +177,32 @@ sudo smartview               # if attributes require root
 The refresh interval can also be changed at runtime with the `+` / `-` keys (see
 below) — `--interval` only sets the starting cadence.
 
-Five colour themes ship: `dark` (the default), `electric`, `phosphor`, `amber`
-and `mono`. `--theme` picks the starting one and `T` cycles them live, in that
-order. `phosphor` is a green-CRT palette in pure green, where severity reads as
-brightness plus the `●` glyph rather than as hue; `amber` is a Hercules
-amber-monitor palette with an amber → orange → red severity ramp; `mono` drops
-colour entirely and leans on the glyph and bold alone.
+Twelve colour themes ship. `--theme` picks the starting one and `T` cycles them
+live, in the order below — retro hardware first, then the modern dark schemes,
+then the light pair, with `mono` last.
+
+| Theme       | Palette                                                                  |
+| ----------- | ------------------------------------------------------------------------ |
+| `dark`      | The default: aqua chrome, green → yellow → red severity                  |
+| `electric`  | "Elite BBS" azure-cyan and white, amber caution                          |
+| `phosphor`  | Green-CRT, pure green — severity reads as brightness plus the `●` glyph  |
+| `amber`     | Hercules amber monitor, amber → orange → red severity                    |
+| `cga`       | The authentic IBM CGA 16, nothing interpolated                          |
+| `neon`      | Cyberpunk: electric blue chrome, magenta banner and bars, white text     |
+| `nord`      | Arctic blue-grey — frost for chrome, aurora for severity                 |
+| `gruvbox`   | Warm retro earth; chrome takes gruvbox blue, not its signature gold      |
+| `beacon`    | Colour-vision-safe: blue → yellow → rose, neutral chrome                 |
+| `daylight`  | Light, cool paper with azure chrome                                      |
+| `parchment` | Light, warm paper with deep teal chrome                                  |
+| `mono`      | No colour at all — the `●` glyph and bold carry severity alone           |
+
+`beacon` exists because green/red is the pair that collapses under
+deuteranopia, and severity is smartview's core signal; its ramp is Paul Tol's
+high-contrast set, and a test simulates a deuteranope's vision to prove the
+three stay separable.
+
+`daylight` and `parchment` need a light terminal background: a theme sets
+foregrounds only, so the terminal supplies the background.
 
 ### Keys
 
