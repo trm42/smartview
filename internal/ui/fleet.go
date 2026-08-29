@@ -20,9 +20,9 @@ import (
 // section's focus metric, so the question asked is answered at the top.
 type fleetView struct {
 	*tview.Flex
-	bar    *tview.TextView // section strip, same pill idiom as the detail tab bar
+	bar    *inertTextView // section strip, same pill idiom as the detail tab bar
 	table  *scrollTable
-	legend *tview.TextView
+	legend *inertTextView
 
 	sections []fleetSection // every section, in display order
 	shown    []fleetSection // those the current fleet can actually fill
@@ -51,9 +51,9 @@ const fleetLegendHeight = 2
 func newFleetView(onOpen func(device string)) *fleetView {
 	v := &fleetView{
 		Flex:     tview.NewFlex().SetDirection(tview.FlexRow),
-		bar:      tview.NewTextView().SetDynamicColors(true),
+		bar:      &inertTextView{tview.NewTextView().SetDynamicColors(true)},
 		table:    newScrollTable(),
-		legend:   tview.NewTextView().SetDynamicColors(true).SetWrap(true),
+		legend:   &inertTextView{tview.NewTextView().SetDynamicColors(true).SetWrap(true)},
 		sections: fleetSections(),
 		onOpen:   onOpen,
 	}
@@ -340,7 +340,8 @@ func (v *fleetView) restoreSelection() {
 	v.selected = v.ordered[target-1].dev.Name
 }
 
-// renderBar draws the section strip, mirroring detail.renderBar's pill idiom.
+// renderBar draws the section strip, mirroring the detail tab bar's pill idiom
+// (tabBar.layout).
 func (v *fleetView) renderBar() {
 	active := v.activeIndex()
 	s := ""

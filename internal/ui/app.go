@@ -23,8 +23,10 @@ type App struct {
 	root   tview.Primitive // main layout, restored when a modal closes
 	list   *tview.List
 	detail *detail
-	status *tview.TextView
-	banner *tview.TextView
+	// status, banner and the rail below carry no key binding, so they decline
+	// the mouse rather than let a click strand focus on them (inertTextView).
+	status *inertTextView
+	banner *inertTextView
 
 	// bodyPages swaps the body between the per-drive view and the fleet
 	// comparison; it sits inside root so banner/status/modals are shared.
@@ -33,7 +35,7 @@ type App struct {
 
 	// rail is the narrow-layout drive selector; narrow/lastWidth make the
 	// layout swap happen only when the width crosses the breakpoint.
-	rail      *tview.TextView
+	rail      *inertTextView
 	body      *tview.Flex
 	narrow    bool
 	lastWidth int
@@ -126,9 +128,9 @@ func New(interval time.Duration, themeName string) *App {
 		app:          tview.NewApplication(),
 		list:         tview.NewList(),
 		detail:       newDetail(),
-		status:       tview.NewTextView().SetDynamicColors(true),
-		banner:       tview.NewTextView().SetDynamicColors(true),
-		rail:         tview.NewTextView().SetDynamicColors(true),
+		status:       &inertTextView{tview.NewTextView().SetDynamicColors(true)},
+		banner:       &inertTextView{tview.NewTextView().SetDynamicColors(true)},
+		rail:         &inertTextView{tview.NewTextView().SetDynamicColors(true)},
 		lastWidth:    -1,
 		interval:     interval,
 		themeName:    themeName,
@@ -147,7 +149,11 @@ func (a *App) build() {
 	a.list.ShowSecondaryText(true).SetHighlightFullLine(true)
 	styleList(a.list)
 	a.list.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Drives ")
-	a.list.SetChangedFunc(func(int, string, string, rune) { a.showSelected() })
+	// The index tview passes is the new one; GetCurrentItem() is not yet.
+	a.list.SetChangedFunc(func(i int, _, _ string, _ rune) {
+		a.showDevice(i)
+		a.refreshChrome()
+	})
 
 	a.banner.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	a.status.SetBorderPadding(0, 0, uiGutter, uiGutter)
@@ -177,6 +183,7 @@ func (a *App) build() {
 		cancel:  a.onSelfTestCancel,
 		started: a.selfTestStarted,
 	}
+	a.detail.onTabClick = a.openTab
 
 	a.root = root
 	a.app.SetRoot(root, true).EnableMouse(true)
@@ -232,7 +239,7 @@ func (a *App) applyLayout(narrow bool) {
 		a.body.SetDirection(tview.FlexRow).
 			AddItem(a.rail, 1, 0, false).
 			AddItem(a.detail, 0, 1, true)
-		a.renderRail()
+		a.renderRail(a.list.GetCurrentItem())
 		return
 	}
 	a.body.AddItem(a.list, driveListWidth, 0, true).
@@ -243,12 +250,12 @@ func (a *App) applyLayout(narrow bool) {
 const driveListWidth = 38
 
 // renderRail draws the narrow drive selector: one row of severity glyphs and
-// short names, selection highlighted, plus an attention count.
-func (a *App) renderRail() {
+// short names, the drive at cur highlighted, plus an attention count. cur is
+// passed in because the list's changed-func runs before the new index is stored.
+func (a *App) renderRail(cur int) {
 	if !a.narrow {
 		return
 	}
-	cur := a.list.GetCurrentItem()
 	var b strings.Builder
 	fmt.Fprintf(&b, "%sDrives[-] ", mutedTag())
 	alerts := 0
@@ -481,9 +488,7 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 			a.cycleTheme()
 			return nil
 		case '1', '2', '3', '4', '5', '6', '7', '8', '9':
-			a.detail.selectTab(int(r - '1'))
-			a.app.SetFocus(a.detail.content())
-			a.refreshChrome()
+			a.openTab(int(r - '1'))
 			return nil
 		}
 	}
@@ -571,10 +576,19 @@ func (a *App) openDrive(name string) {
 			break
 		}
 	}
-	// SetCurrentItem fires the changed-func *before* storing the new index, so
-	// its showSelected rendered the previous drive; render again here.
+	// SetCurrentItem does not fire the changed-func when the index is unchanged;
+	// render unconditionally.
 	a.showSelected()
 	a.exitFleet(true)
+}
+
+// openTab activates a tab and moves focus to its body; the 1-9 keys and a tab
+// click share it. From a mouse handler the event loop holds no draw lock, so
+// SetFocus is safe here where QueueUpdateDraw would deadlock.
+func (a *App) openTab(i int) {
+	a.detail.selectTab(i)
+	a.app.SetFocus(a.detail.content())
+	a.refreshChrome()
 }
 
 // toggleFocus moves focus between the drive list and the detail content. In the
@@ -655,21 +669,24 @@ func (a *App) stepDrive(delta int) {
 		return
 	}
 	a.list.SetCurrentItem(next)
-	// SetCurrentItem fires the changed-func *before* storing the new index (see
-	// openDrive), so render again now that it is current.
+	// SetCurrentItem does not fire the changed-func when the index is unchanged;
+	// render unconditionally.
 	a.showSelected()
 	a.refreshChrome()
 }
 
 // showSelected renders the cached report for the highlighted drive.
-func (a *App) showSelected() {
+func (a *App) showSelected() { a.showDevice(a.list.GetCurrentItem()) }
+
+// showDevice renders the cached report for the drive at index i.
+func (a *App) showDevice(i int) {
 	// The rail is the narrow layout's drive list, and the selection marker it
 	// carries has to follow the selection like the list's highlight does.
-	a.renderRail()
-	dev, ok := a.selectedDevice()
-	if !ok {
+	a.renderRail(i)
+	if i < 0 || i >= len(a.devices) {
 		return
 	}
+	dev := a.devices[i]
 	if rep, ok := a.reports[dev.Name]; ok {
 		a.observeSelfTest(dev.Name, rep)
 		a.detail.update(rep, a.history[dev.Name])
@@ -725,7 +742,7 @@ func (a *App) populateList() {
 	// The rail renders the same rows in one line, so it is repainted wherever
 	// the list is — otherwise its glyphs, alert count and theme colours freeze
 	// at the moment the narrow layout was installed. No-op when not narrow.
-	defer a.renderRail()
+	defer func() { a.renderRail(a.list.GetCurrentItem()) }()
 	if a.list.GetItemCount() != len(a.devices) {
 		cur := a.list.GetCurrentItem()
 		a.list.Clear()
@@ -983,6 +1000,7 @@ const keysText = "Keys\n\n" +
 	"↑/↓        select / scroll\n" +
 	"←/→        prev / next tab\n" +
 	"1-9        jump to tab\n" +
+	"Click      switch tab\n" +
 	"Tab        move focus\n" +
 	"j / k      scroll content\n" +
 	"PgUp/PgDn ^B/^F  page\n" +
