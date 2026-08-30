@@ -311,16 +311,7 @@ func (v *fleetView) setRow(rowIdx int, row fleetRow, sec fleetSection, n int) {
 
 	// No column expands: the comparison reads best packed left.
 	for c, cl := range cells {
-		// Right-aligned (numeric) cells take a leading pad only; tview already
-		// spaces columns, and double padding costs real width across eight columns.
-		text := " " + cl.text + " "
-		if cl.align == tview.AlignRight {
-			text = " " + cl.text
-		}
-		v.table.SetCell(rowIdx, c, tview.NewTableCell(text).
-			SetTextColor(cl.color).
-			SetAlign(cl.align).
-			SetSelectedStyle(selectedRowStyle(cl.color)))
+		v.table.SetCell(rowIdx, c, bodyCell(cl.text, cl.color, cl.align))
 	}
 }
 

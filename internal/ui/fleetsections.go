@@ -135,7 +135,7 @@ func healthSection() fleetSection {
 			r := row.rep
 			sev := r.Overall()
 			verdict := fleetCell{
-				text:  fmt.Sprintf("[%s::b]%s[-:-:-]", severityTag(sev), verdictWord(sev)),
+				text:  sevBold(sev, verdictWord(sev)),
 				color: activeTheme.Neutral,
 			}
 			e := r.ErrorCounts()

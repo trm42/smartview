@@ -284,7 +284,7 @@ func farmRow(b *strings.Builder, k, v string) {
 func farmCount(b *strings.Builder, k string, v int64, sevWhenSet smart.Severity) {
 	val := fmt.Sprintf("%d", v)
 	if v > 0 {
-		val = fmt.Sprintf("[%s]%d[-]", severityTag(sevWhenSet), v)
+		val = sevText(sevWhenSet, fmt.Sprintf("%d", v))
 	}
 	farmRow(b, k, val)
 }

@@ -212,20 +212,18 @@ func (v *attributesView) renderRows() {
 // neutral.
 func (v *attributesView) setAttrRow(row int, a smart.ATAAttribute) {
 	color := attrTextColor(a.Severity())
-	sel := selectedRowStyle(color)
 	put := func(col int, text string, align int) {
-		v.table.SetCell(row, col, tview.NewTableCell(" "+text+" ").
-			SetTextColor(color).SetAlign(align).SetSelectedStyle(sel))
+		v.table.SetCell(row, col, bodyCell(text, color, align))
 	}
 	// Name and reading are drive-controlled: esc() blocks markup injection.
 	put(0, fmt.Sprintf("%3d", a.ID), tview.AlignLeft)
-	v.table.SetCell(row, 1, tview.NewTableCell(" "+esc(truncateRunes(humanAttrName(a.Name), attrNameWidth))+" ").
-		SetTextColor(color).SetSelectedStyle(sel))
+	put(1, esc(truncateRunes(humanAttrName(a.Name), attrNameWidth)), tview.AlignLeft)
 	put(2, attrKind(a), tview.AlignLeft)
 	put(3, attrState(a), tview.AlignLeft)
-	// Margin carries its own colour tags (a green bar even on a neutral row).
-	v.table.SetCell(row, 4, tview.NewTableCell(" "+marginCell(a)+" ").
-		SetSelectedStyle(sel))
+	// Margin carries its own colour tags (a green bar even on a neutral row), so
+	// it takes no text colour of its own.
+	v.table.SetCell(row, 4, tview.NewTableCell(cellPad(marginCell(a), tview.AlignLeft)).
+		SetSelectedStyle(selectedRowStyle(color)))
 	// decodeReading returns "" when the drive reports no raw value; the themed
 	// dash is substituted here, after escaping, as marginCell's cell does.
 	put(5, orDash(esc(decodeReading(a))), tview.AlignRight)
@@ -310,7 +308,7 @@ func (v *attributesView) updateFooter(row int) {
 		accentTag(), a.ID, esc(humanAttrName(a.Name)),
 		mutedTag(), attrKind(a), attrLimits(a), a.Worst, esc(a.Raw.String))
 	if verdict := attrVerdict(a); verdict != "" {
-		fmt.Fprintf(&b, "[%s]%s[-]\n", severityTag(a.Severity()), verdict)
+		fmt.Fprintf(&b, "%s\n", sevText(a.Severity(), verdict))
 	}
 	fmt.Fprintf(&b, "%s", desc)
 	v.footer.SetText(b.String())
@@ -430,10 +428,8 @@ func (v *nvmeAttributesView) setRows(h *smart.NVMeHealth) {
 	v.table.SetCell(0, 0, headerCell("Field"))
 	v.table.SetCell(0, 1, headerCell("Value"))
 	for i, r := range v.rows {
-		v.table.SetCell(i+1, 0, tview.NewTableCell(" "+r.k+" ").
-			SetTextColor(activeTheme.Neutral).SetSelectedStyle(selectedRowStyle(activeTheme.Neutral)))
-		v.table.SetCell(i+1, 1, tview.NewTableCell(" "+r.v+" ").
-			SetTextColor(severityColor(r.sev)).SetSelectedStyle(selectedRowStyle(severityColor(r.sev))))
+		v.table.SetCell(i+1, 0, bodyCell(r.k, activeTheme.Neutral, tview.AlignLeft))
+		v.table.SetCell(i+1, 1, bodyCell(r.v, severityColor(r.sev), tview.AlignLeft))
 	}
 }
 
@@ -520,18 +516,33 @@ func headerCell(s string) *tview.TableCell {
 	return headerCellAligned(s, tview.AlignLeft)
 }
 
-// headerCellAligned is headerCell with an explicit alignment; a right-aligned
-// header takes a leading pad only, matching the numeric cells beneath it.
-func headerCellAligned(s string, align int) *tview.TableCell {
-	text := " " + s + " "
+// cellPad applies the table's one padding rule: a cell is padded both sides,
+// except a right-aligned one, which takes a leading pad only. tview already
+// spaces columns, and a trailing pad on a right-aligned cell pushes the value
+// off its own edge — and costs real width across eight fleet columns.
+func cellPad(s string, align int) string {
 	if align == tview.AlignRight {
-		text = " " + s
+		return " " + s
 	}
-	return tview.NewTableCell(text).
+	return " " + s + " "
+}
+
+// headerCellAligned is headerCell with an explicit alignment.
+func headerCellAligned(s string, align int) *tview.TableCell {
+	return tview.NewTableCell(cellPad(s, align)).
 		SetTextColor(activeTheme.Accent).
 		SetAttributes(tcell.AttrBold).
 		SetAlign(align).
 		SetSelectable(false)
+}
+
+// bodyCell is headerCellAligned's counterpart for data rows: same padding
+// rule, the row's own colour, and a selection style that keeps that colour.
+func bodyCell(text string, color tcell.Color, align int) *tview.TableCell {
+	return tview.NewTableCell(cellPad(text, align)).
+		SetTextColor(color).
+		SetAlign(align).
+		SetSelectedStyle(selectedRowStyle(color))
 }
 
 // centeredNote is a placeholder primitive for empty/unsupported sections.

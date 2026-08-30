@@ -64,7 +64,7 @@ func buildLogsText(r *smart.Report) string {
 
 // writeSCTErc renders the SCT Error Recovery Control (TLER/ERC) time limits.
 func writeSCTErc(b *strings.Builder, e *smart.ATASCTErc) {
-	fmt.Fprintln(b, "[::b]SCT Error Recovery Control (TLER)[-:-:-]")
+	sectionHeader(b, "SCT Error Recovery Control (TLER)")
 	fmt.Fprintf(b, nestIndent+"%-6s %s\n", "Read", ercTimerString(e.Read))
 	fmt.Fprintf(b, nestIndent+"%-6s %s\n", "Write", ercTimerString(e.Write))
 }
@@ -89,7 +89,7 @@ func selfTestDurations(r *smart.Report) string {
 
 // writePhyCounters summarises the SATA PHY event counters.
 func writePhyCounters(b *strings.Builder, e *smart.SATAPhyEvents) {
-	fmt.Fprintln(b, "[::b]SATA link health[-:-:-]")
+	sectionHeader(b, "SATA link health")
 	nonzero := 0
 	for _, c := range e.Table {
 		if c.Value == 0 {
@@ -124,7 +124,7 @@ func phyCounterConcerning(name string) bool {
 // writeErrorLog summarises the drive's logged command errors with the most
 // recent decoded entries.
 func writeErrorLog(b *strings.Builder, r *smart.Report) {
-	fmt.Fprintln(b, "[::b]Error log[-:-:-]")
+	sectionHeader(b, "Error log")
 	switch {
 	case r.NVMeErrorLog != nil:
 		writeNVMeErrorCount(b, r.NVMeErrorLog)
@@ -261,7 +261,7 @@ func writeSelfTestSummary(b *strings.Builder, r *smart.Report, tbl []smart.ATASe
 
 // writeSelfTestLog renders the self-test history for either protocol.
 func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
-	fmt.Fprintln(b, "[::b]Self-test history[-:-:-]")
+	sectionHeader(b, "Self-test history")
 	switch {
 	case r.NVMeSelfTestLog != nil:
 		if op := r.NVMeSelfTestLog.CurrentSelfTestOperation; op != nil && op.String != "" {

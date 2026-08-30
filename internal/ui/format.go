@@ -45,6 +45,14 @@ const uiGutter = 1
 // nestIndent is the leading whitespace for a line under an in-box header.
 const nestIndent = "  "
 
+// sectionHeader writes a top-level section heading. Bold, not accented: the
+// accent marks focus and exceptions, and a heading is neither. Overview's
+// panel headings are accented on purpose — they are sub-headings inside one
+// box, a different thing from these.
+func sectionHeader(b *strings.Builder, title string) {
+	fmt.Fprintf(b, "[::b]%s[-:-:-]\n", title)
+}
+
 // titledBox applies the package's standard frame: a border, the uniform
 // horizontal gutter, and a title. uiGutter's rule is "every text/table/list
 // box"; this is where that is actually applied rather than re-typed.
@@ -71,7 +79,7 @@ func marginBar(value, worst, thresh int, sev smart.Severity) string {
 	}
 	frac = min(max(frac, 0), 1)
 	full, empty := barGlyphs(int(frac*float64(width)+0.5), width)
-	return fmt.Sprintf("[%s]%s%s[-]", severityTag(sev), full, empty)
+	return sevText(sev, full+empty)
 }
 
 // pctBarWidth is the cell width of every bar in the UI.
@@ -91,7 +99,7 @@ func barGlyphs(filled, width int) (full, empty string) {
 // use pctBarUsed so opposite polarities never share a colour.
 func pctBar(pct int, sev smart.Severity) string {
 	full, empty := barGlyphs((clampPct(pct)*pctBarWidth+50)/100, pctBarWidth)
-	return fmt.Sprintf("[%s]%s%s[-] %d%%", severityTag(sev), full, empty, pct)
+	return fmt.Sprintf("%s %d%%", sevText(sev, full+empty), pct)
 }
 
 // pctBarUsed renders a CONSUMED percentage: the bar drains as the drive wears
@@ -99,7 +107,7 @@ func pctBar(pct int, sev smart.Severity) string {
 func pctBarUsed(pct int, sev smart.Severity) string {
 	used := clampPct(pct)
 	full, empty := barGlyphs(((100-used)*pctBarWidth+50)/100, pctBarWidth)
-	return fmt.Sprintf("[%s]%s%s[-] %d%%", severityTag(sev), full, empty, used)
+	return fmt.Sprintf("%s %d%%", sevText(sev, full+empty), used)
 }
 
 // tempSeverity grades a temperature for display colouring only; health never
@@ -117,7 +125,7 @@ func tempSeverity(celsius int) smart.Severity {
 
 // healthGlyph is the coloured status dot shown beside each drive.
 func healthGlyph(s smart.Severity) string {
-	return fmt.Sprintf("[%s]●[-]", severityTag(s))
+	return sevText(s, "●")
 }
 
 // humanBytes renders a byte count as a human-readable capacity.
@@ -194,7 +202,7 @@ func tempMarkup(celsius int) string {
 	if sev == smart.SeverityOK {
 		return s
 	}
-	return fmt.Sprintf("[%s::b]%s[-:-:-]", severityTag(sev), s)
+	return sevBold(sev, s)
 }
 
 // tempCell is tempMarkup for a whole report, dash when unreported.

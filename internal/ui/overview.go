@@ -145,6 +145,8 @@ func identityText(r *smart.Report, cols int) string {
 			continue
 		}
 		b.WriteByte('\n')
+		// Accented, not bold like sectionHeader: these are sub-headings inside
+		// the one Drive panel, not top-level sections of their own.
 		fmt.Fprintf(&b, "%s%s[-]\n", accentTag(), sec.title)
 		writeFields(&b, sec.fields, cols)
 	}

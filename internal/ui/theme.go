@@ -96,6 +96,18 @@ func severityTag(s smart.Severity) string {
 	return tag(severityColor(s))
 }
 
+// sevText wraps text in a severity's colour. severityTag returns the bare
+// token, unlike accentTag and its siblings, so every caller that just wanted
+// coloured text was hand-writing the brackets; this is that.
+func sevText(sev smart.Severity, text string) string {
+	return fmt.Sprintf("[%s]%s[-]", severityTag(sev), text)
+}
+
+// sevBold is sevText in bold, for the health verdict.
+func sevBold(sev smart.Severity, text string) string {
+	return fmt.Sprintf("[%s::b]%s[-:-:-]", severityTag(sev), text)
+}
+
 // selectedRowStyle is the selected-row highlight: an explicit background that
 // keeps the cell's own foreground (tview's default inversion makes neutral
 // rows vanish).

@@ -69,7 +69,7 @@ func buildStatisticsText(r *smart.Report) string {
 			b.WriteByte('\n')
 		}
 		first = false
-		fmt.Fprintf(&b, "[::b]%s[-:-:-]\n", orDash(esc(p.Name)))
+		sectionHeader(&b, orDash(esc(p.Name)))
 		for _, e := range valid {
 			fmt.Fprintf(&b, nestIndent+"%-*s %s\n", statLabelWidth, esc(e.Name), statValue(p, e, sectorBytes))
 		}
@@ -110,7 +110,7 @@ func statValue(p smart.ATAStatPage, e smart.ATAStatEntry, sectorBytes int64) str
 		val = fmt.Sprintf("%d", e.Value)
 	}
 	if sev := statSeverity(e); sev != smart.SeverityOK && e.Value > 0 {
-		return fmt.Sprintf("[%s]%s[-]", severityTag(sev), val)
+		return sevText(sev, val)
 	}
 	return val
 }
