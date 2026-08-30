@@ -8,6 +8,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"github.com/trm42/smartview/internal/smart"
 )
 
 // Theme is smartview's colour palette as semantic roles. The tcell.Color is
@@ -67,6 +69,139 @@ func activeTabTag() string {
 		fg, bg = tcell.ColorBlack, tcell.ColorWhite
 	}
 	return "[" + tag(fg) + ":" + tag(bg) + ":b]"
+}
+
+// borderColor returns the accent colour for a focused pane, muted otherwise.
+func borderColor(focused bool) tcell.Color {
+	if focused {
+		return activeTheme.Accent
+	}
+	return activeTheme.Muted
+}
+
+// severityColor maps a health severity to its display colour.
+func severityColor(s smart.Severity) tcell.Color {
+	switch s {
+	case smart.SeverityFailing:
+		return activeTheme.Failing
+	case smart.SeverityCaution:
+		return activeTheme.Caution
+	default:
+		return activeTheme.OK
+	}
+}
+
+// severityTag returns the bare colour token, for callers interpolating into "[%s]".
+func severityTag(s smart.Severity) string {
+	return tag(severityColor(s))
+}
+
+// sevText wraps text in a severity's colour. severityTag returns the bare
+// token, unlike accentTag and its siblings, so every caller that just wanted
+// coloured text was hand-writing the brackets; this is that.
+func sevText(sev smart.Severity, text string) string {
+	return fmt.Sprintf("[%s]%s[-]", severityTag(sev), text)
+}
+
+// sevBold is sevText in bold, for the health verdict.
+func sevBold(sev smart.Severity, text string) string {
+	return fmt.Sprintf("[%s::b]%s[-:-:-]", severityTag(sev), text)
+}
+
+// selectedRowStyle is the selected-row highlight: an explicit background that
+// keeps the cell's own foreground (tview's default inversion makes neutral
+// rows vanish).
+func selectedRowStyle(fg tcell.Color) tcell.Style {
+	// Pin ColorDefault to SelectionFg — the terminal default can be illegible
+	// on the highlight.
+	if fg == tcell.ColorDefault {
+		fg = activeTheme.SelectionFg
+	}
+	return tcell.StyleDefault.
+		Background(activeTheme.SelectionBg).
+		Foreground(fg).
+		Attributes(tcell.AttrBold)
+}
+
+// styleList applies the theme to a List: pins the secondary-text colour
+// (tview defaults it to a green that leaks into every theme) and routes
+// selection through selectedRowStyle so list and table selections match.
+// Re-call after a theme change.
+func styleList(l *tview.List) {
+	bg := activeTheme.Background
+	l.SetBackgroundColor(bg)
+	// A List prints its rows without maintaining the background underneath, so
+	// the ground has to be pinned in each row style; the SetXTextColor setters
+	// reach only the foreground.
+	l.SetMainTextStyle(tcell.StyleDefault.Foreground(activeTheme.Neutral).Background(bg))
+	l.SetSecondaryTextStyle(tcell.StyleDefault.Foreground(activeTheme.ListSecondary).Background(bg))
+	l.SetShortcutStyle(tcell.StyleDefault.Foreground(activeTheme.Accent).Background(bg))
+	l.SetSelectedStyle(selectedRowStyle(activeTheme.SelectionFg))
+}
+
+// backgrounder is any widget whose ground can be re-set; Box, Flex, Pages,
+// Table, List and TextView all satisfy it.
+type backgrounder interface {
+	SetBackgroundColor(tcell.Color) *tview.Box
+}
+
+// applyBackground grounds widgets in the active theme. tview bakes
+// Styles.PrimitiveBackgroundColor in at construction, so every widget that
+// outlives a theme change has to be told again.
+func applyBackground(ws ...backgrounder) {
+	for _, w := range ws {
+		w.SetBackgroundColor(activeTheme.Background)
+	}
+}
+
+// childHaver and pageHaver are the two ways a tview container holds children.
+// Both are satisfied by promotion, so *detail, *fleetView and the tab views
+// are walked as their embedded Flex.
+type childHaver interface {
+	GetItemCount() int
+	GetItem(int) tview.Primitive
+}
+
+type pageHaver interface {
+	GetPageNames(bool) []string
+	GetPage(string) tview.Primitive
+}
+
+// groundTree re-grounds root and everything under it. This replaces a
+// hand-listed set of widgets, which is the miss CLAUDE.md names for the
+// banner: a widget added to the layout was themed only if someone remembered
+// to add it to the list too. Hidden pages are included (GetPageNames(false)),
+// so the fleet is re-grounded while off-screen.
+//
+// It reaches only what is *in* the tree: the narrow and wide layouts swap
+// which drive selector is mounted, so the other one is passed separately by
+// the caller.
+func groundTree(root tview.Primitive) {
+	if root == nil {
+		return
+	}
+	if b, ok := root.(backgrounder); ok {
+		b.SetBackgroundColor(activeTheme.Background)
+	}
+	switch c := root.(type) {
+	case pageHaver:
+		for _, name := range c.GetPageNames(false) {
+			groundTree(c.GetPage(name))
+		}
+	case childHaver:
+		for i := range c.GetItemCount() {
+			groundTree(c.GetItem(i))
+		}
+	}
+}
+
+// attrTextColor colours attribute row text: neutral when healthy, so only
+// rows needing attention are tinted. Colour marks exceptions, not membership.
+func attrTextColor(s smart.Severity) tcell.Color {
+	if s == smart.SeverityOK {
+		return activeTheme.Neutral
+	}
+	return severityColor(s)
 }
 
 // activeTheme is the live palette every colour helper reads.

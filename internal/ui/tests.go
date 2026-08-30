@@ -58,7 +58,7 @@ func newTestsView(r *smart.Report, actions selfTestActions) *testsView {
 	}
 	v.list.ShowSecondaryText(true)
 	v.info.SetDynamicColors(true).SetScrollable(true)
-	v.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Tests ")
+	titledBox(v.Box, " Tests ")
 	v.list.SetHighlightFullLine(true)
 	styleList(v.list.List) // theme secondary text + selection (else tview leaks green)
 
@@ -163,11 +163,8 @@ const barWidth = 24
 // marginBar, so it survives mono.
 func progressBar(pct int) string {
 	pct = clampPct(pct)
-	filled := pct * barWidth / 100
-	return fmt.Sprintf("%s%s[-]%s%s[-]  %d%%",
-		okTag(), strings.Repeat("█", filled),
-		mutedTag(), strings.Repeat("░", barWidth-filled),
-		pct)
+	full, empty := barGlyphs(pct*barWidth/100, barWidth)
+	return fmt.Sprintf("%s%s[-]%s%s[-]  %d%%", okTag(), full, mutedTag(), empty, pct)
 }
 
 // startedType returns the self-test type the App recorded for this drive, or ""

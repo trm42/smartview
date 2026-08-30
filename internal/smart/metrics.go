@@ -61,13 +61,41 @@ func (r *Report) deviceStat(name string) (int64, bool) {
 	return 0, false
 }
 
-// sectorBytes is the logical block size (default 512 B), the unit of the
+// SectorBytes is the logical block size (default 512 B), the unit of the
 // "Logical Sectors *" counters.
-func (r *Report) sectorBytes() int64 {
+func (r *Report) SectorBytes() int64 {
 	if r.LogicalBlockSize != nil && *r.LogicalBlockSize > 0 {
 		return int64(*r.LogicalBlockSize)
 	}
 	return 512
+}
+
+// DataUnitBytes converts an NVMe data-units count to bytes: the spec counts
+// thousands of 512-byte units. The one place that rule lives.
+func DataUnitBytes(units int64) int64 { return units * 512 * 1000 }
+
+// CapacityBytes returns the drive's usable size: user_capacity, else the NVMe
+// total capacity (Apple internal SSDs report only the latter).
+func (r *Report) CapacityBytes() (int64, bool) {
+	if r.UserCapacity != nil && r.UserCapacity.Bytes > 0 {
+		return r.UserCapacity.Bytes, true
+	}
+	if r.NVMeTotalCapacity != nil && *r.NVMeTotalCapacity > 0 {
+		return *r.NVMeTotalCapacity, true
+	}
+	return 0, false
+}
+
+// CurrentTemp returns the current Celsius reading, falling back from the
+// generic block to the NVMe health log.
+func (r *Report) CurrentTemp() (int, bool) {
+	if r.Temperature != nil && r.Temperature.Current != nil {
+		return *r.Temperature.Current, true
+	}
+	if r.NVMeHealth != nil && r.NVMeHealth.Temperature != nil {
+		return *r.NVMeHealth.Temperature, true
+	}
+	return 0, false
 }
 
 // PowerOnHours returns the accumulated power-on time in hours.
@@ -166,10 +194,10 @@ func (w WriteTotal) Approximate() bool { return w.Source == WriteSourceAttribute
 // attribute 241 is the last resort and flagged approximate.
 func (r *Report) DataWritten() (WriteTotal, bool) {
 	if r.NVMeHealth != nil {
-		return WriteTotal{Bytes: r.NVMeHealth.DataUnitsWritten * 512 * 1000, Source: WriteSourceNVMe}, true
+		return WriteTotal{Bytes: DataUnitBytes(r.NVMeHealth.DataUnitsWritten), Source: WriteSourceNVMe}, true
 	}
 	if v, ok := r.deviceStat("Logical Sectors Written"); ok {
-		return WriteTotal{Bytes: v * r.sectorBytes(), Source: WriteSourceDeviceStats}, true
+		return WriteTotal{Bytes: v * r.SectorBytes(), Source: WriteSourceDeviceStats}, true
 	}
 	if v, ok := r.attrRaw(241); ok {
 		return WriteTotal{Bytes: v * 512, Source: WriteSourceAttribute}, true

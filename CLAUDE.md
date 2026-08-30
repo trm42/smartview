@@ -71,6 +71,12 @@ and has no tview dependency**; **`internal/ui` is the presentation layer**.
 top-level screens — the per-drive view (drive list + tabbed detail) and the
 fleet comparison — swapped by `App.bodyPages`.
 
+`App` itself is spread over four files by topic: `app.go` (the struct, `build`,
+`Run`, layout, chrome, `repaintAll`), `keys.go` (key dispatch and the
+navigation it drives), `modals.go` (the overlay stack and its consumers) and
+`selftest.go` (the App's only smartctl-action path). The `App` receiver is
+shared across all four, so a method moves between them freely.
+
 ### Data flow
 
 `ui.App.pollLoop` (poll.go) runs a ticker on a background goroutine →
@@ -126,20 +132,23 @@ goroutine (`setNarrow` in app.go is the pattern).
   and `stepDrive` still render themselves, since no changed-func fires when the
   index is unchanged.
 - **Cross-protocol readings live in `internal/smart/metrics.go`**, not in
-  rendering code: `PowerOnHours`, `PowerCycles`, `LifeUsedPercent`, `SparePercent`,
-  `TempRange`, `DataWritten`, `ErrorCounts`. Each resolves a fallback chain across
-  the sparse schema and **reports presence rather than substituting a zero** — on
-  this schema "not reported" and "reported as zero" are different answers, so
-  `ErrorCounts` fields are pointers and a comparison that shows 0 for an absent
-  counter is a bug. `DataWritten` also returns its `WriteSource`: only ATA
-  attribute 241 has vendor-defined units, so it is flagged `Approximate()` and the
-  UI marks it `~` with a legend caveat. Put new shared readings here — they get
-  fixture-backed tests against real captured drive JSON, which rendering code
-  only reaches indirectly. Rendering code must then consume what the accessor
-  resolved rather than re-resolving it: `spareSeverityPct` takes the
-  `(pct, threshold)` pair `SparePercent` returns, because `SparePercent` also
-  answers from `Report.SpareAvailable` and a grader that re-reads `NVMeHealth`
-  both drifts from the value beside it and dereferences nil.
+  rendering code: `PowerOnHours`, `PowerCycles`, `LifeUsedPercent`,
+  `SparePercent`, `TempRange`, `CurrentTemp`, `CapacityBytes`, `SectorBytes`,
+  `DataWritten`, `ErrorCounts`, plus `DataUnitBytes` (the NVMe "thousands of
+  512-byte units" rule). Each resolves a fallback chain across the sparse
+  schema and **reports presence rather than substituting a zero** — on this
+  schema "not reported" and "reported as zero" are different answers, so
+  `ErrorCounts` fields are pointers and a comparison that shows 0 for an
+  absent counter is a bug. `DataWritten` also returns its `WriteSource`: only
+  ATA attribute 241 has vendor-defined units, so it is flagged `Approximate()`
+  and the UI marks it `~` with a legend caveat. Put new shared readings here —
+  they get fixture-backed tests against real captured drive JSON, which
+  rendering code only reaches indirectly. Rendering code must then consume
+  what the accessor resolved rather than re-resolving it: `spareSeverityPct`
+  takes the `(pct, threshold)` pair `SparePercent` returns, because
+  `SparePercent` also answers from `Report.SpareAvailable` and a grader that
+  re-reads `NVMeHealth` both drifts from the value beside it and dereferences
+  nil.
 - **Capability-driven tabs** (detail.go `visibleTabs`): a tab only appears when
   its source data exists (the Logs tab hides for drives with no error/self-test
   log; the Tests tab hides unless `Report.SupportsSelfTest()`). When adding a
@@ -214,72 +223,80 @@ goroutine (`setNarrow` in app.go is the pattern).
   `OK`/`Caution`/`Failing`, `Inverse`, `SelectionBg/Fg`, `BannerBg`,
   `BarHealthy`, `ScrollArrow`, `ListSecondary` — the drive-list secondary line
   device · capacity · temp); `setTheme` swaps it (read/written only on the
-  event-loop goroutine, so no mutex — same as `App.reports`). Never write a raw `[aqua]`/
-  `[gray]`/`tcell.ColorRed` literal: use the tag helpers (`accentTag()`,
-  `mutedTag()`, `okTag()`, `severityTag()`, `fgbgTag(fg,bg)`) for markup or read
-  `activeTheme.X` for a `tcell.Color`. The `dark` theme reproduces the original
-  palette (pinned by `theme_test.go`) apart from three roles: `ListSecondary`,
-  which moved off green because it equalled `OK` and painted a failing drive's
-  metadata line the healthy colour, and `Background`/`Neutral`, which are
-  explicit black and white because painting a ground and inheriting the text
-  colour puts black on black in a light terminal — a palette that grounds itself
-  owns every foreground too, which is what `TestThemesComplete` enforces;
-  `electric` (an "elite BBS" palette in blue/cyan/white/gray — bright azure-cyan
-  borders, white body text, amber caution + red failing for legibility),
-  `phosphor` (the classic monochrome green-CRT palette — *pure green only*, no
-  amber/red; severity reads via green intensity + the `●` glyph + bold, and the
-  ramp must escalate — `theme_test.go` pins that Failing is hotter than OK, not
-  paler),
-  `amber` (a Hercules monochrome amber-monitor palette — warm amber accent/text
-  with a warm amber→orange→red severity ramp),
-  `cga` (the authentic IBM CGA 16 — every role is one of those colours, none
-  interpolated), `neon` (cyberpunk: electric-blue chrome, magenta banner/bars,
-  white text), `nord` and `gruvbox` (the editor schemes; gruvbox takes its blue
-  rather than its signature gold for chrome, since a gold border reads as a
-  caution), `beacon` (colour-vision-safe: Paul Tol's blue→yellow→rose ramp with
-  deliberately neutral chrome, since green/red is exactly the pair deuteranopia
-  collapses; `theme_test.go` simulates a deuteranope and pins that beacon's
-  three stay separable *and* that dark's green/red does not, so the test can't
-  quietly stop proving anything), `daylight` and `parchment` (light, cool and
-  warm — every role is tuned against the palette's own paper `Background`, not a
+  event-loop goroutine, so no mutex — same as `App.reports`). Never write a
+  raw `[aqua]`/ `[gray]`/`tcell.ColorRed` literal: use the tag helpers
+  (`accentTag()`, `mutedTag()`, `okTag()`, `sevText(sev,s)`/`sevBold(sev,s)`,
+  `fgbgTag(fg,bg)`) for markup — `severityTag()` returns the bare token, for
+  compound formats only — or read `activeTheme.X` for a `tcell.Color`. The
+  `dark` theme reproduces the original palette (pinned by `theme_test.go`)
+  apart from three roles: `ListSecondary`, which moved off green because it
+  equalled `OK` and painted a failing drive's metadata line the healthy
+  colour, and `Background`/`Neutral`, which are explicit black and white
+  because painting a ground and inheriting the text colour puts black on black
+  in a light terminal — a palette that grounds itself owns every foreground
+  too, which is what `TestThemesComplete` enforces; `electric` (an "elite BBS"
+  palette in blue/cyan/white/gray — bright azure-cyan borders, white body
+  text, amber caution + red failing for legibility), `phosphor` (the classic
+  monochrome green-CRT palette — *pure green only*, no amber/red; severity
+  reads via green intensity + the `●` glyph + bold, and the ramp must escalate
+  — `theme_test.go` pins that Failing is hotter than OK, not paler), `amber`
+  (a Hercules monochrome amber-monitor palette — warm amber accent/text with a
+  warm amber→orange→red severity ramp), `cga` (the authentic IBM CGA 16 —
+  every role is one of those colours, none interpolated), `neon` (cyberpunk:
+  electric-blue chrome, magenta banner/bars, white text), `nord` and `gruvbox`
+  (the editor schemes; gruvbox takes its blue rather than its signature gold
+  for chrome, since a gold border reads as a caution), `beacon`
+  (colour-vision-safe: Paul Tol's blue→yellow→rose ramp with deliberately
+  neutral chrome, since green/red is exactly the pair deuteranopia collapses;
+  `theme_test.go` simulates a deuteranope and pins that beacon's three stay
+  separable *and* that dark's green/red does not, so the test can't quietly
+  stop proving anything), `daylight` and `parchment` (light, cool and warm —
+  every role is tuned against the palette's own paper `Background`, not a
   terminal's: yellow caution vanishes on paper, so the ramp runs burnt
   amber/ochre → crimson/brick, darkening as it worsens), and `mono` are the
-  alternates. Five invariants hold across every palette but `mono` (which has no
-  colour to measure) and are pinned by tests: `ListSecondary` never equals `OK`;
-  `Inverse` clears 3:1 on both fields it is drawn on (`Accent` for the active-tab
-  pill, `BannerBg` for the root warning); `Muted` reads at least 1.8x quieter
-  than `Neutral` on the ground, so the recessive voice stays recessive;
-  `SelectionBg` sits in a 1.15–3:1 band against the ground — enough to tint the
-  row, not enough to repaint it — with `SelectionFg`, the selected-row
-  foreground, clearing 4.5:1 (WCAG AA body text) on it; and a `Background` is
-  plainly ink (luminance ≤ 0.15) or plainly paper (≥ 0.5), never between, since
-  the light floor is keyed off that split and a mid-tone ground would silently
-  take the lower one. Foregrounds clear 3:1 on the ground everywhere and 4:1 on
-  a light one, where ink loses to glare and nothing falls back to the terminal.
-  `--theme NAME` selects at startup, the `T` key cycles live
-  (`cycleTheme`→`repaintAll`, which forces a detail rebuild so widgets that baked
-  colour in at build time get re-coloured — the one-shot root-warning banner is
-  the easy miss, hence `refreshBanner`). List widgets (drive list, Tests-tab
-  selector) must be themed via `styleList` (format.go) at build **and** in
-  `repaintAll`: it pins the secondary-text colour (tview Lists default it to
-  `Styles.TertiaryTextColor`, a green that otherwise leaks into every theme) and
-  routes selection through `selectedRowStyle` so list and table selections match.
-  Known limit: `mono` drops all our colour (severity and the selected row survive
-  via the `●` glyph + bold).
-- **The ground is `Theme.Background`, and it reaches widgets three ways.**
-  (1) `applyTviewStyles` (theme.go) writes `tview.Styles` — tview reads those
+  alternates. Five invariants hold across every palette but `mono` (which has
+  no colour to measure) and are pinned by tests: `ListSecondary` never equals
+  `OK`; `Inverse` clears 3:1 on both fields it is drawn on (`Accent` for the
+  active-tab pill, `BannerBg` for the root warning); `Muted` reads at least
+  1.8x quieter than `Neutral` on the ground, so the recessive voice stays
+  recessive; `SelectionBg` sits in a 1.15–3:1 band against the ground — enough
+  to tint the row, not enough to repaint it — with `SelectionFg`, the
+  selected-row foreground, clearing 4.5:1 (WCAG AA body text) on it; and a
+  `Background` is plainly ink (luminance ≤ 0.15) or plainly paper (≥ 0.5),
+  never between, since the light floor is keyed off that split and a mid-tone
+  ground would silently take the lower one. Foregrounds clear 3:1 on the
+  ground everywhere and 4:1 on a light one, where ink loses to glare and
+  nothing falls back to the terminal. `--theme NAME` selects at startup, the
+  `T` key cycles live (`cycleTheme`→`repaintAll`, which forces a detail
+  rebuild so widgets that baked colour in at build time get re-coloured — the
+  one-shot root-warning banner is the easy miss, hence `refreshBanner`). List
+  widgets (drive list, Tests-tab selector) must be themed via `styleList`
+  (theme.go) at build **and** in `repaintAll`: it pins the secondary-text
+  colour (tview Lists default it to `Styles.TertiaryTextColor`, a green that
+  otherwise leaks into every theme) and routes selection through
+  `selectedRowStyle` so list and table selections match. Known limit: `mono`
+  drops all our colour (severity and the selected row survive via the `●`
+  glyph + bold).
+- **The ground is `Theme.Background`, and it reaches widgets three ways.** (1)
+  `applyTviewStyles` (theme.go) writes `tview.Styles` — tview reads those
   globals *at construction*, so everything built afterwards is born in the
   theme, and it is the only lever on tvxwidgets' gauge, which re-reads them at
   draw time. (2) Widgets that outlive a theme cycle keep the ground they were
-  built with, so `repaintAll` re-grounds an explicit list of them through
-  `applyBackground` (format.go); `layout_test.go` pins that list — extend both
-  together, the banner-class miss again. (3) Direct `screen.SetContent` calls
-  carry a ground themselves: `scroll.go`'s viewport clear and its scroll arrows
-  both take it from the widget they paint into (never from `activeTheme`, or the
-  arrow disagrees with its own panel), and the before-draw hook fills the screen
-  so a non-fullscreen modal root has no unpainted margin. `ColorDefault` is
-  legal here and means "inherit the terminal" — that is `mono`'s whole
-  contract, and it is the only palette allowed it.
+  built with, so `repaintAll` re-grounds them by walking the mounted widget
+  tree with `groundTree` (theme.go). The walk reaches only what is *mounted*,
+  so the off-tree remainder is re-grounded by hand beside it through
+  `applyBackground` (theme.go): the list or the rail (`applyLayout` mounts one,
+  never both) and the banner (`build` mounts it only when we are not root).
+  `layout_test.go` enumerates the persistent widgets by hand on purpose — a
+  list derived from the walk would assert nothing — so extend it when one is
+  added; the banner-class miss again. (3) Direct `screen.SetContent` calls
+  carry a ground themselves: `scroll.go`'s viewport clear and its scroll
+  arrows both take it from the widget they paint into (never from
+  `activeTheme`, or the arrow disagrees with its own panel), and the
+  before-draw hook fills the screen so a non-fullscreen modal root has no
+  unpainted margin. `ColorDefault` is legal here and means "inherit the
+  terminal" — that is `mono`'s whole contract, and it is the only palette
+  allowed it.
 - **Colour marks exceptions, not membership.** A value renders in the
   surrounding colour while it is in band and takes caution/failing only when it
   leaves it (`tempMarkup` in format.go is the model). Green is reserved for the
@@ -324,14 +341,14 @@ goroutine (`setNarrow` in app.go is the pattern).
   runtime ring buffer (`App.history`, capped at `maxHistory`) across polls — it
   only appears after ≥2 samples.
 - **Padding/gutters (TUI UX).** Every text/table/list box gets a uniform
-  horizontal gutter via `SetBorderPadding(0, 0, uiGutter, uiGutter)` (`uiGutter`
-  in `format.go`); never bake a left margin into format strings. Vertical
-  padding stays 0 for density. Nest a line under an in-box header with
-  `nestIndent` (2 spaces), not a custom amount. Two things are intentionally
-  exempt and must keep their spaces: table cell padding (`" "+val+" "`) and the
-  tab-bar highlight pills. Graphical widgets (gauges, sparkline, bar charts) opt
-  out of the gutter to stay full-width. Record new TUI spacing/UX conventions in
-  this bullet so they don't drift.
+  horizontal gutter via `SetBorderPadding(0, 0, uiGutter, uiGutter)`
+  (`uiGutter` in `format.go`); never bake a left margin into format strings.
+  Vertical padding stays 0 for density. Nest a line under an in-box header
+  with `nestIndent` (2 spaces), not a custom amount. Two things are
+  intentionally exempt and must keep their spaces: table cell padding (`"
+  "+val+" "`) and the tab-bar highlight pills. Graphical widgets (gauges,
+  sparkline, bar charts) opt out of the gutter to stay full-width. Record new
+  TUI spacing/UX conventions in this bullet so they don't drift.
 
 ## Tests
 

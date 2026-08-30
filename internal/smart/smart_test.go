@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -357,5 +358,40 @@ func TestVersionAndPreflight(t *testing.T) {
 	}
 	if err := Preflight(t.Context()); err != nil {
 		t.Errorf("Preflight: %v", err)
+	}
+}
+
+// smartctl exiting 0 with no output must say so plainly. Every entry point
+// funnels through runJSON for this; before it did, Scan alone fell through to
+// json.Unmarshal(nil) and reported "unexpected end of JSON input" instead.
+func TestEmptyOutputIsReportedPlainly(t *testing.T) {
+	if _, err := exec.LookPath("true"); err != nil {
+		t.Skip("no true(1) to stand in for smartctl")
+	}
+	orig := binary
+	binary = "true" // exits 0, prints nothing
+	t.Cleanup(func() { binary = orig })
+
+	const want = "smartctl produced no output"
+	for _, c := range []struct {
+		name string
+		call func() error
+	}{
+		{"Scan", func() error { _, err := Scan(t.Context()); return err }},
+		{"Info", func() error { _, err := Info(t.Context(), "/dev/sda"); return err }},
+		{"Version", func() error { _, err := Version(t.Context()); return err }},
+		{"FarmLog", func() error { _, err := FarmLog(t.Context(), "/dev/sda"); return err }},
+		{"RunSelfTest", func() error { return RunSelfTest(t.Context(), "/dev/sda", SelfTestShort) }},
+		{"AbortSelfTest", func() error { return AbortSelfTest(t.Context(), "/dev/sda") }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			err := c.call()
+			if err == nil {
+				t.Fatalf("%s on empty output = nil, want %q", c.name, want)
+			}
+			if err.Error() != want {
+				t.Errorf("%s on empty output = %q, want %q", c.name, err, want)
+			}
+		})
 	}
 }

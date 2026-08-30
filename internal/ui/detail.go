@@ -4,6 +4,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -42,6 +43,13 @@ type tabSpan struct{ start, end int }
 // inertTextView is a TextView that ignores the mouse: tview's default handler
 // focuses the view on a left press, and these views handle no key.
 type inertTextView struct{ *tview.TextView }
+
+// newInertTextView builds a mouse-declining TextView with markup enabled —
+// the shape every piece of keyless chrome wants. Wrap a new keyless widget
+// this way or a click on it strands focus where no key is handled.
+func newInertTextView() *inertTextView {
+	return &inertTextView{tview.NewTextView().SetDynamicColors(true)}
+}
 
 // MouseHandler declines every mouse event, leaving focus where it was.
 func (v *inertTextView) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, func(tview.Primitive)) (bool, tview.Primitive) {
@@ -199,12 +207,12 @@ type detail struct {
 
 func newDetail() *detail {
 	d := &detail{
-		Flex: tview.NewFlex().SetDirection(tview.FlexRow),
-		bar:  newTabBar(),
-		spinner: &inertTextView{
-			tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight)},
-		pages: tview.NewPages(),
+		Flex:    tview.NewFlex().SetDirection(tview.FlexRow),
+		bar:     newTabBar(),
+		spinner: newInertTextView(),
+		pages:   tview.NewPages(),
 	}
+	d.spinner.SetTextAlign(tview.AlignRight)
 	// The indirection keeps the wiring valid: build() assigns onTabClick later.
 	d.bar.onClick = func(i int) {
 		if d.onTabClick != nil {
@@ -275,15 +283,7 @@ func (d *detail) update(r *smart.Report, tempHistory []float64) {
 
 // sameTabIDs reports whether two tab slices have identical ids in the same order.
 func sameTabIDs(a, b []tab) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i].id != b[i].id {
-			return false
-		}
-	}
-	return true
+	return slices.EqualFunc(a, b, func(x, y tab) bool { return x.id == y.id })
 }
 
 // visibleTabs returns the tabs applicable to the report, in display order.

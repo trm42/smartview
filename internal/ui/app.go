@@ -75,50 +75,12 @@ type App struct {
 	bannerShown bool
 }
 
-// startedTest records the self-test type smartview asked a drive to run, plus
-// whether the drive has since been seen running it (see observeSelfTest).
-type startedTest struct {
-	typ  smart.SelfTestType
-	seen bool
-}
-
 // maxHistory bounds the temperature ring buffer backing the NVMe sparkline
 // (~60 min at the default 30s poll; a rough trend, not a fixed-time axis).
 const maxHistory = 120
 
 // spinnerInterval is the refresh spinner animation cadence.
 const spinnerInterval = 120 * time.Millisecond
-
-// intervalPresets is the ladder the +/- keys walk to change poll cadence.
-var intervalPresets = []time.Duration{
-	2 * time.Second,
-	5 * time.Second,
-	10 * time.Second,
-	30 * time.Second,
-	time.Minute,
-	5 * time.Minute,
-}
-
-// nextInterval returns the adjacent preset, clamped at the ends. It walks by
-// value, not index, so an off-ladder --interval snaps to a neighbour.
-func nextInterval(cur time.Duration, faster bool) time.Duration {
-	if faster {
-		next := intervalPresets[0]
-		for _, p := range intervalPresets {
-			if p < cur {
-				next = p
-			}
-		}
-		return next
-	}
-	next := intervalPresets[len(intervalPresets)-1]
-	for i := len(intervalPresets) - 1; i >= 0; i-- {
-		if intervalPresets[i] > cur {
-			next = intervalPresets[i]
-		}
-	}
-	return next
-}
 
 // New constructs the application. themeName must be valid (caller checks
 // HasTheme); the theme installs before build so widgets get its colours.
@@ -128,9 +90,9 @@ func New(interval time.Duration, themeName string) *App {
 		app:          tview.NewApplication(),
 		list:         tview.NewList(),
 		detail:       newDetail(),
-		status:       &inertTextView{tview.NewTextView().SetDynamicColors(true)},
-		banner:       &inertTextView{tview.NewTextView().SetDynamicColors(true)},
-		rail:         &inertTextView{tview.NewTextView().SetDynamicColors(true)},
+		status:       newInertTextView(),
+		banner:       newInertTextView(),
+		rail:         newInertTextView(),
 		lastWidth:    -1,
 		interval:     interval,
 		themeName:    themeName,
@@ -148,7 +110,7 @@ func New(interval time.Duration, themeName string) *App {
 func (a *App) build() {
 	a.list.ShowSecondaryText(true).SetHighlightFullLine(true)
 	styleList(a.list)
-	a.list.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Drives ")
+	titledBox(a.list.Box, " Drives ")
 	// The index tview passes is the new one; GetCurrentItem() is not yet.
 	a.list.SetChangedFunc(func(i int, _, _ string, _ rune) {
 		a.showDevice(i)
@@ -229,10 +191,7 @@ func (a *App) setNarrow(narrow bool) {
 	// is required too: QueueUpdate blocks until the event loop runs the closure,
 	// which cannot happen until this draw returns.
 	if narrow && a.list.HasFocus() {
-		go a.app.QueueUpdateDraw(func() {
-			a.app.SetFocus(a.detail.content())
-			a.refreshChrome()
-		})
+		go a.app.QueueUpdateDraw(a.focusDetail)
 	}
 }
 
@@ -429,86 +388,15 @@ func (a *App) repaintAll() {
 	a.populateList()
 	// Widgets built once are not recreated by the rebuild, so they keep the
 	// ground tview baked in at construction until they are told again.
-	applyBackground(a.root, a.body, a.bodyPages, a.status, a.banner, a.rail,
-		a.detail, a.detail.barRow, a.detail.bar, a.detail.spinner, a.detail.pages,
-		a.fleet, a.fleet.bar, a.fleet.table, a.fleet.legend)
+	groundTree(a.root)
+	// The off-tree half: applyLayout mounts the list or the rail, never both, so
+	// the walk above can only have reached one of them, and build() mounts the
+	// banner only when we are not root.
+	applyBackground(a.list, a.rail, a.banner)
 	// The fleet table bakes a colour into every cell, same miss as the banner.
 	a.fleet.refresh(a.devices, a.reports, a.history)
 	a.refreshChrome()
 	a.refreshBanner()
-}
-
-// onKey is the global key handler.
-func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
-	if a.inModal {
-		return ev // let the modal handle all input
-	}
-	// Keys the fleet view doesn't claim fall through to the shared bindings.
-	if a.fleetMode && a.onFleetKey(ev) {
-		return nil
-	}
-	switch ev.Key() {
-	case tcell.KeyEscape:
-		a.app.Stop()
-		return nil
-	case tcell.KeyTab:
-		a.toggleFocus()
-		return nil
-	case tcell.KeyUp, tcell.KeyDown:
-		// Wide leaves the arrows to the focused widget (the drive list, or the
-		// detail body it scrolls). Narrow has no list on screen for them to
-		// reach, so the drive selection is stepped from here — the narrow hint
-		// bar advertises "↑/↓ drive" and it has to be true. Line-scrolling the
-		// detail there is j/k, paging is PgUp/PgDn. Fleet mode is exempt: its
-		// table is focused and owns them (see onFleetKey).
-		if !a.narrow || a.fleetMode {
-			return ev
-		}
-		delta := 1
-		if ev.Key() == tcell.KeyUp {
-			delta = -1
-		}
-		a.stepDrive(delta)
-		return nil
-	case tcell.KeyLeft:
-		a.focusLeft()
-		return nil
-	case tcell.KeyRight:
-		a.focusRight()
-		return nil
-	case tcell.KeyRune:
-		switch r := ev.Rune(); r {
-		case 'q':
-			a.app.Stop()
-			return nil
-		case 'r':
-			a.triggerRefresh()
-			return nil
-		case '+', '-':
-			a.setInterval(nextInterval(a.interval, r == '-'))
-			return nil
-		case 't':
-			if a.detail.selectTabID("tests") {
-				a.app.SetFocus(a.detail.content())
-				a.refreshChrome()
-			}
-			return nil
-		case 'c':
-			a.toggleFleet()
-			return nil
-		case '?':
-			a.showKeys()
-			return nil
-		case 'T':
-			// Uppercase cycles the theme; lowercase t (above) is the Tests tab.
-			a.cycleTheme()
-			return nil
-		case '1', '2', '3', '4', '5', '6', '7', '8', '9':
-			a.openTab(int(r - '1'))
-			return nil
-		}
-	}
-	return ev
 }
 
 // Page names for bodyPages.
@@ -516,180 +404,6 @@ const (
 	pageDrives = "drives"
 	pageFleet  = "fleet"
 )
-
-// onFleetKey handles the keys the fleet view claims, reporting whether it
-// consumed the event. Up/Down, Enter and 's' are deliberately absent — they
-// belong to the focused table itself.
-func (a *App) onFleetKey(ev *tcell.EventKey) bool {
-	switch ev.Key() {
-	case tcell.KeyEscape:
-		// Esc is "back" here, not "quit"; q still quits.
-		a.exitFleet(false)
-		return true
-	case tcell.KeyTab:
-		return true // swallow rather than orphan focus
-	case tcell.KeyLeft:
-		a.stepFleetSection(-1)
-		return true
-	case tcell.KeyRight:
-		a.stepFleetSection(1)
-		return true
-	case tcell.KeyRune:
-		switch r := ev.Rune(); {
-		case r == 't':
-			return true // no drive on screen for the Tests tab to address
-		case r >= '1' && r <= '9':
-			a.fleet.selectSection(int(r - '1'))
-			a.refreshChrome()
-			return true
-		}
-	}
-	return false
-}
-
-// stepFleetSection moves the focus metric and resyncs the hint bar.
-func (a *App) stepFleetSection(delta int) {
-	if a.fleet.stepSection(delta) {
-		a.refreshChrome()
-	}
-}
-
-// toggleFleet switches between the per-drive view and the fleet comparison.
-func (a *App) toggleFleet() {
-	if a.fleetMode {
-		a.exitFleet(false)
-		return
-	}
-	a.fleetMode = true
-	// Render from the cache so entry doesn't wait for the next poll.
-	a.fleet.refresh(a.devices, a.reports, a.history)
-	a.bodyPages.SwitchToPage(pageFleet)
-	a.app.SetFocus(a.fleet.table)
-	a.refreshChrome()
-}
-
-// exitFleet returns to the per-drive view; focusDetail focuses the detail
-// pane (opening a drive) instead of the list (plain "back").
-func (a *App) exitFleet(focusDetail bool) {
-	a.fleetMode = false
-	a.bodyPages.SwitchToPage(pageDrives)
-	// Narrow keeps focus on the detail either way: the list is not in that
-	// layout, and focus on an off-tree primitive reaches nothing.
-	if focusDetail || a.narrow {
-		a.app.SetFocus(a.detail.content())
-	} else {
-		a.app.SetFocus(a.list)
-	}
-	a.refreshChrome()
-}
-
-// openDrive selects a drive by device name and leaves the fleet view for its
-// detail.
-func (a *App) openDrive(name string) {
-	for i, d := range a.devices {
-		if d.Name == name {
-			a.list.SetCurrentItem(i)
-			break
-		}
-	}
-	// SetCurrentItem does not fire the changed-func when the index is unchanged;
-	// render unconditionally.
-	a.showSelected()
-	a.exitFleet(true)
-}
-
-// openTab activates a tab and moves focus to its body; the 1-9 keys and a tab
-// click share it. From a mouse handler the event loop holds no draw lock, so
-// SetFocus is safe here where QueueUpdateDraw would deadlock.
-func (a *App) openTab(i int) {
-	a.detail.selectTab(i)
-	a.app.SetFocus(a.detail.content())
-	a.refreshChrome()
-}
-
-// toggleFocus moves focus between the drive list and the detail content. In the
-// narrow layout there is nothing to toggle — the list is not in the widget tree,
-// so focusing it would park focus off-tree and tview would forward no key at all.
-func (a *App) toggleFocus() {
-	if a.narrow {
-		a.app.SetFocus(a.detail.content())
-		a.refreshChrome()
-		return
-	}
-	if a.list.HasFocus() {
-		a.app.SetFocus(a.detail.content())
-	} else {
-		a.app.SetFocus(a.list)
-	}
-	a.refreshChrome()
-}
-
-// focusRight advances along the chain list → tab0 → … → tabN (no wrap).
-func (a *App) focusRight() {
-	if a.list.HasFocus() {
-		a.app.SetFocus(a.detail.content())
-		a.refreshChrome()
-		return
-	}
-	if a.detail.stepTab(1) {
-		a.app.SetFocus(a.detail.content())
-		a.refreshChrome()
-	}
-}
-
-// focusLeft is the reverse of focusRight, falling through to the drive list.
-// The narrow layout has no list to fall through to, so it stops at the first tab.
-func (a *App) focusLeft() {
-	if a.list.HasFocus() {
-		return
-	}
-	if a.detail.active == 0 {
-		if a.narrow {
-			return
-		}
-		a.app.SetFocus(a.list)
-		a.refreshChrome()
-		return
-	}
-	a.detail.stepTab(-1)
-	a.app.SetFocus(a.detail.content())
-	a.refreshChrome()
-}
-
-// triggerRefresh asks the poll loop to fetch immediately (non-blocking).
-func (a *App) triggerRefresh() {
-	select {
-	case a.refreshCh <- struct{}{}:
-	default:
-	}
-}
-
-// setInterval changes the poll cadence at runtime: updates a.interval,
-// signals the poll loop to reset its ticker, refreshes the status bar.
-func (a *App) setInterval(d time.Duration) {
-	a.interval = d
-	select {
-	case a.intervalCh <- d:
-	default:
-	}
-	a.refreshChrome()
-}
-
-// stepDrive moves the drive selection by delta, clamped at both ends. It is the
-// narrow layout's stand-in for arrowing the drive list, which is not on screen
-// there; the wide layout never needs it because the list handles its own keys.
-func (a *App) stepDrive(delta int) {
-	cur := a.list.GetCurrentItem()
-	next := cur + delta
-	if next < 0 || next >= a.list.GetItemCount() {
-		return
-	}
-	a.list.SetCurrentItem(next)
-	// SetCurrentItem does not fire the changed-func when the index is unchanged;
-	// render unconditionally.
-	a.showSelected()
-	a.refreshChrome()
-}
 
 // showSelected renders the cached report for the highlighted drive.
 func (a *App) showSelected() { a.showDevice(a.list.GetCurrentItem()) }
@@ -718,37 +432,6 @@ func (a *App) selectedDevice() (smart.Device, bool) {
 		return smart.Device{}, false
 	}
 	return a.devices[i], true
-}
-
-// selfTestStarted reports the self-test type smartview started on the selected
-// drive, or "" when unknown: the drive reports progress but not what is running.
-func (a *App) selfTestStarted() smart.SelfTestType {
-	dev, ok := a.selectedDevice()
-	if !ok {
-		return ""
-	}
-	return a.startedTests[dev.Name].typ
-}
-
-// observeSelfTest ages out the recorded type for a device. The record is dropped
-// only after the drive has been seen running the test: dropping it on the first
-// idle report would race the refresh that follows a start, and never dropping it
-// would let a stale type label a test another tool began.
-func (a *App) observeSelfTest(name string, rep *smart.Report) {
-	st, ok := a.startedTests[name]
-	if !ok {
-		return
-	}
-	if _, _, running := rep.SelfTestProgress(); running {
-		if !st.seen {
-			st.seen = true
-			a.startedTests[name] = st
-		}
-		return
-	}
-	if st.seen {
-		delete(a.startedTests, name)
-	}
 }
 
 // populateList fills the drive list from cached reports. Existing rows are
@@ -888,184 +571,4 @@ func shortDevice(name string, n int) string {
 	}
 	r := []rune(name)
 	return "…" + string(r[len(r)-(n-1):])
-}
-
-// pushModal shows a modal overlay, suspending the normal key-handler logic.
-func (a *App) pushModal(m tview.Primitive) {
-	a.inModal = true
-	a.app.SetRoot(m, false)
-}
-
-// popModal removes the modal overlay and restores the main layout, returning
-// focus to the detail content so the Tests tab stays interactive.
-func (a *App) popModal() {
-	a.inModal = false
-	a.app.SetRoot(a.root, true)
-	if a.fleetMode {
-		a.app.SetFocus(a.fleet.table)
-	} else {
-		a.app.SetFocus(a.detail.content())
-	}
-	a.refreshChrome()
-}
-
-// testLabel renders a friendly self-test name for prompts.
-func testLabel(testType smart.SelfTestType) string {
-	if testType == smart.SelfTestLong {
-		return "long (extended)"
-	}
-	return string(testType)
-}
-
-// onSelfTestRun confirms, then starts a self-test on the selected drive.
-func (a *App) onSelfTestRun(testType smart.SelfTestType) {
-	dev, ok := a.selectedDevice()
-	if !ok {
-		return
-	}
-	a.confirm(
-		fmt.Sprintf("Run %s self-test on %s?\n(Requires root; the drive stays usable.)",
-			testLabel(testType), shortName(dev)),
-		"Run",
-		func() {
-			a.status.SetText(cautionTag() + "⟳[-] Starting " + testLabel(testType) +
-				" self-test on " + shortName(dev) + "…")
-			a.runSmartctl(
-				fmt.Sprintf("start the %s self-test on %s", testLabel(testType), shortName(dev)),
-				func(ctx context.Context) error {
-					return smart.RunSelfTest(ctx, dev.Name, testType)
-				},
-				// Recorded only on success, and only here: the type is what the
-				// Tests tab times the run against, and the drive never reports it.
-				func() { a.startedTests[dev.Name] = startedTest{typ: testType} })
-		},
-	)
-}
-
-// onSelfTestCancel confirms, then aborts the running self-test on the selected
-// drive.
-func (a *App) onSelfTestCancel() {
-	dev, ok := a.selectedDevice()
-	if !ok {
-		return
-	}
-	a.confirm(
-		fmt.Sprintf("Cancel the running self-test on %s?", shortName(dev)),
-		"Cancel test",
-		func() {
-			a.status.SetText(cautionTag() + "⟳[-] Cancelling self-test on " + shortName(dev) + "…")
-			a.runSmartctl(
-				fmt.Sprintf("cancel the self-test on %s", shortName(dev)),
-				func(ctx context.Context) error {
-					return smart.AbortSelfTest(ctx, dev.Name)
-				},
-				func() { delete(a.startedTests, dev.Name) })
-		},
-	)
-}
-
-// runSmartctl runs a self-test control call off the event loop, then either
-// surfaces the error or triggers an immediate refresh. onSuccess (optional) runs
-// on the event loop only after a call the drive accepted.
-func (a *App) runSmartctl(action string, fn func(context.Context) error, onSuccess func()) {
-	parent := a.rootCtx
-	if parent == nil {
-		parent = context.Background()
-	}
-	go func() {
-		ctx, cancel := context.WithTimeout(parent, fetchTimeout)
-		defer cancel()
-		err := fn(ctx)
-		a.app.QueueUpdateDraw(func() {
-			a.status.SetText(a.statusText())
-			if err != nil {
-				a.showError(action, err)
-				return
-			}
-			if onSuccess != nil {
-				onSuccess()
-			}
-			a.triggerRefresh()
-		})
-	}()
-}
-
-// styleModal grounds a modal in the active theme. tview builds one from its own
-// contrast palette, and Modal.SetBackgroundColor reaches the inner form and
-// frame but not the surrounding box, so both are set here.
-func styleModal(m *tview.Modal) *tview.Modal {
-	m.SetBackgroundColor(activeTheme.Background)
-	m.Box.SetBackgroundColor(activeTheme.Background)
-	m.SetBorderColor(activeTheme.Accent)
-	m.SetTextColor(activeTheme.Neutral)
-	m.SetButtonBackgroundColor(activeTheme.SelectionBg)
-	m.SetButtonTextColor(activeTheme.SelectionFg)
-	// Accent, not OK: the affirmative may be destructive, and OK stays
-	// reserved for healthy/go semantics. Bold carries the focus under mono,
-	// where every colour collapses to the terminal default.
-	m.SetButtonActivatedStyle(tcell.StyleDefault.
-		Background(activeTheme.Accent).
-		Foreground(activeTheme.Inverse).
-		Attributes(tcell.AttrBold))
-	return m
-}
-
-// confirm shows a two-button confirmation modal; onYes runs when the user picks
-// the affirmative label.
-func (a *App) confirm(text, yesLabel string, onYes func()) {
-	modal := styleModal(tview.NewModal()).
-		SetText(text).
-		AddButtons([]string{yesLabel, "Back"}).
-		SetDoneFunc(func(_ int, label string) {
-			a.popModal()
-			if label == yesLabel {
-				onYes()
-			}
-		})
-	a.pushModal(modal)
-}
-
-// keysText is the body of the '?' modal. Every line stays under 26 columns:
-// tview.Modal wraps at a third of the screen width, so a longer line splits at
-// the 80-column floor. keys_test.go fails if a bound rune is missing here.
-const keysText = "Keys\n\n" +
-	"↑/↓        select / scroll\n" +
-	"←/→        prev / next tab\n" +
-	"1-9        jump to tab\n" +
-	"Click      switch tab\n" +
-	"Tab        move focus\n" +
-	"j / k      scroll content\n" +
-	"PgUp/PgDn ^B/^F  page\n" +
-	"g/G Home/End  top/bottom\n" +
-	"s / f      sort / filter\n" +
-	"t          Tests tab\n" +
-	"Enter      start test\n" +
-	"x          cancel test\n" +
-	"c          fleet compare\n" +
-	"Enter      open drive\n" +
-	"Esc        back\n" +
-	"r          refresh now\n" +
-	"+ / -      refresh rate\n" +
-	"T          colour theme\n" +
-	"?          this list\n" +
-	"q          quit"
-
-// showKeys lists every binding in a dismissable modal; the narrow hint bar
-// points here, so nothing is merely hidden.
-func (a *App) showKeys() {
-	modal := styleModal(tview.NewModal()).
-		SetText(keysText).
-		AddButtons([]string{"Close"}).
-		SetDoneFunc(func(int, string) { a.popModal() })
-	a.pushModal(modal)
-}
-
-// showError displays a smartctl failure in a dismissable modal; action names
-// the operation that failed.
-func (a *App) showError(action string, err error) {
-	modal := styleModal(tview.NewModal()).
-		SetText(fmt.Sprintf("Could not %s:\n%s", action, err)).
-		AddButtons([]string{"OK"}).
-		SetDoneFunc(func(int, string) { a.popModal() })
-	a.pushModal(modal)
 }

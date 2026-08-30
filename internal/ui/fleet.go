@@ -51,19 +51,20 @@ const fleetLegendHeight = 2
 func newFleetView(onOpen func(device string)) *fleetView {
 	v := &fleetView{
 		Flex:     tview.NewFlex().SetDirection(tview.FlexRow),
-		bar:      &inertTextView{tview.NewTextView().SetDynamicColors(true)},
+		bar:      newInertTextView(),
 		table:    newScrollTable(),
-		legend:   &inertTextView{tview.NewTextView().SetDynamicColors(true).SetWrap(true)},
+		legend:   newInertTextView(),
 		sections: fleetSections(),
 		onOpen:   onOpen,
 	}
 	v.activeID = v.sections[0].id
 
+	v.legend.SetWrap(true)
 	v.bar.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	v.legend.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	v.table.SetBorders(false).SetFixed(1, 0)
 	v.table.SetSelectable(true, false)
-	v.table.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter)
+	titledBox(v.table.Box, "")
 
 	v.table.SetSelectionChangedFunc(func(row, _ int) {
 		if v.renderer {
@@ -310,16 +311,7 @@ func (v *fleetView) setRow(rowIdx int, row fleetRow, sec fleetSection, n int) {
 
 	// No column expands: the comparison reads best packed left.
 	for c, cl := range cells {
-		// Right-aligned (numeric) cells take a leading pad only; tview already
-		// spaces columns, and double padding costs real width across eight columns.
-		text := " " + cl.text + " "
-		if cl.align == tview.AlignRight {
-			text = " " + cl.text
-		}
-		v.table.SetCell(rowIdx, c, tview.NewTableCell(text).
-			SetTextColor(cl.color).
-			SetAlign(cl.align).
-			SetSelectedStyle(selectedRowStyle(cl.color)))
+		v.table.SetCell(rowIdx, c, bodyCell(cl.text, cl.color, cl.align))
 	}
 }
 

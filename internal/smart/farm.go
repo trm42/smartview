@@ -22,7 +22,16 @@ func (r *Report) SupportsFARM() bool {
 }
 
 // HasFARM reports whether a parsed, supported FARM log is attached.
-func (r *Report) HasFARM() bool { return r.FARM != nil && r.FARM.Supported }
+func (r *Report) HasFARM() bool { return supportedFarm(r.FARM) != nil }
+
+// supportedFarm returns f only when present and Supported — the one place
+// "this FARM log is usable" is decided.
+func supportedFarm(f *FARM) *FARM {
+	if f == nil || !f.Supported {
+		return nil
+	}
+	return f
+}
 
 // FARM is a curated view of the Seagate Field Accessible Reliability Metrics
 // log; only the fields smartview visualizes are modelled.
