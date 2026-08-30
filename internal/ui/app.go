@@ -18,7 +18,6 @@ import (
 )
 
 // App is the smartview terminal application.
-
 type App struct {
 	app    *tview.Application
 	root   *tview.Flex // main layout, restored when a modal closes
@@ -390,9 +389,10 @@ func (a *App) repaintAll() {
 	// Widgets built once are not recreated by the rebuild, so they keep the
 	// ground tview baked in at construction until they are told again.
 	groundTree(a.root)
-	// The layout's off-tree half: applyLayout mounts the list or the rail, never
-	// both, so the walk above can only have reached one of them.
-	applyBackground(a.list, a.rail)
+	// The off-tree half: applyLayout mounts the list or the rail, never both, so
+	// the walk above can only have reached one of them, and build() mounts the
+	// banner only when we are not root.
+	applyBackground(a.list, a.rail, a.banner)
 	// The fleet table bakes a colour into every cell, same miss as the banner.
 	a.fleet.refresh(a.devices, a.reports, a.history)
 	a.refreshChrome()

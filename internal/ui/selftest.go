@@ -12,9 +12,6 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// The App's only smartctl-action path: starting and cancelling self-tests, and
-// remembering which type smartview itself started.
-
 // startedTest records the self-test type smartview asked a drive to run, plus
 // whether the drive has since been seen running it (see observeSelfTest).
 type startedTest struct {

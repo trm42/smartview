@@ -282,9 +282,14 @@ goroutine (`setNarrow` in app.go is the pattern).
   globals *at construction*, so everything built afterwards is born in the
   theme, and it is the only lever on tvxwidgets' gauge, which re-reads them at
   draw time. (2) Widgets that outlive a theme cycle keep the ground they were
-  built with, so `repaintAll` re-grounds an explicit list of them through
-  `applyBackground` (format.go); `layout_test.go` pins that list — extend both
-  together, the banner-class miss again. (3) Direct `screen.SetContent` calls
+  built with, so `repaintAll` re-grounds them by walking the mounted widget
+  tree with `groundTree` (theme.go). The walk reaches only what is *mounted*,
+  so the off-tree remainder is re-grounded by hand beside it through
+  `applyBackground` (theme.go): the list or the rail (`applyLayout` mounts one,
+  never both) and the banner (`build` mounts it only when we are not root).
+  `layout_test.go` enumerates the persistent widgets by hand on purpose — a
+  list derived from the walk would assert nothing — so extend it when one is
+  added; the banner-class miss again. (3) Direct `screen.SetContent` calls
   carry a ground themselves: `scroll.go`'s viewport clear and its scroll
   arrows both take it from the widget they paint into (never from
   `activeTheme`, or the arrow disagrees with its own panel), and the

@@ -121,8 +121,14 @@ type NamedValue struct {
 
 // InterfaceSpeed reports the negotiated vs maximum SATA link speed.
 type InterfaceSpeed struct {
-	Max     *StringValue `json:"max"`
-	Current *StringValue `json:"current"`
+	Max     *LinkSpeed `json:"max"`
+	Current *LinkSpeed `json:"current"`
+}
+
+// LinkSpeed is one interface-speed reading (e.g. "6.0 Gb/s"). Not StringValue:
+// smartctl keys the number here as "sata_value", so that Value would be 0.
+type LinkSpeed struct {
+	String string `json:"string"`
 }
 
 // Trim reports SSD TRIM/UNMAP support.

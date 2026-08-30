@@ -69,7 +69,6 @@ func (a *App) confirm(text, yesLabel string, onYes func()) {
 // tview.Modal wraps at a third of the screen width, so a longer line splits at
 // the 80-column floor. keys_test.go fails if a bound rune is missing here.
 const keysText = "Keys\n\n" +
-
 	"↑/↓        select / scroll\n" +
 	"←/→        prev / next tab\n" +
 	"1-9        jump to tab\n" +
