@@ -304,6 +304,53 @@ func TestThemeCycleRegroundsPersistentWidgets(t *testing.T) {
 	}
 }
 
+// The root-warning banner is mounted only when euid != 0, so under sudo it is
+// not in the widget tree at all and groundTree cannot reach it. Tests run
+// non-root, where it *is* mounted — which is exactly why a walk-only repaint
+// looked correct here while leaving the banner stale for anyone running under
+// sudo. Unmount it to stand in for that layout and pin that repaintAll grounds
+// it anyway. The same holds for whichever of list/rail the layout left out.
+func TestThemeCycleRegroundsWidgetsTheWalkCannotReach(t *testing.T) {
+	a, _ := newSimApp(t, 120, 40)
+	a.build()
+
+	// Stand in for the euid == 0 layout: build() would never have added it.
+	a.root.RemoveItem(a.banner)
+
+	offTree := []struct {
+		name string
+		w    interface {
+			GetBackgroundColor() tcell.Color
+			SetBackgroundColor(tcell.Color) *tview.Box
+		}
+	}{
+		{"banner", a.banner},
+		{"rail", a.rail}, // never mounted in the wide layout
+	}
+	// A ground nothing in the theme uses, so "still stale" is unmistakable.
+	for _, c := range offTree {
+		c.w.SetBackgroundColor(tcell.ColorFuchsia)
+	}
+
+	for range themeCycle {
+		a.cycleTheme()
+		if activeTheme.Background != dark.Background {
+			break
+		}
+	}
+	if activeTheme.Background == dark.Background {
+		t.Fatal("no theme in the cycle grounds differently from dark; nothing is under test")
+	}
+
+	for _, c := range offTree {
+		if got := c.w.GetBackgroundColor(); got != activeTheme.Background {
+			t.Errorf("%s ground = %v after a theme cycle, want %v — it is not in the "+
+				"widget tree, so repaintAll has to ground it explicitly",
+				c.name, got, activeTheme.Background)
+		}
+	}
+}
+
 // TestThemeCycleKeepsThePlaceholderMessage: with no drives the detail holds a
 // placeholder, and repaintAll has to rebuild it in the new theme without
 // changing what it says — "No drives found" is the actionable one and nothing
