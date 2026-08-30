@@ -10,6 +10,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 
 	"github.com/trm42/smartview/internal/config"
+	"github.com/trm42/smartview/internal/smart"
 )
 
 // recordingApp is a sim App whose saver records instead of writing: no test
@@ -87,6 +88,61 @@ func TestApplySettingsAppliesEverySetting(t *testing.T) {
 	}
 	if (*saved)[0] != want {
 		t.Errorf("saved %+v, want %+v", (*saved)[0], want)
+	}
+}
+
+// TestApplySettingsAppliesTabsAlongsideATheme is the ordering trap: repaintAll
+// rebuilds the detail from showAllTabs, so a theme change that repaints before
+// the flag is set leaves the old tab set on screen — and the "repaintAll
+// already did it" shortcut then skips the rebuild that would have fixed it.
+func TestApplySettingsAppliesTabsAlongsideATheme(t *testing.T) {
+	a, _ := recordingApp(t, config.Default())
+	t.Cleanup(func() { setTheme(themes["dark"]) })
+	r := sparseReport("/dev/sdb")
+	a.devices = []smart.Device{r.Device}
+	a.reports = map[string]*smart.Report{r.Device.Name: r}
+	a.populateList()
+	a.showSelected()
+	before := a.detail.tabCount()
+	if before >= len(allTabs) {
+		t.Fatalf("this report is not sparse enough to test: %d tabs", before)
+	}
+
+	cfg := a.currentConfig()
+	cfg.Theme = "phosphor"
+	cfg.ShowUnavailableTabs = true
+	a.applySettings(cfg)
+
+	if got := a.detail.tabCount(); got != len(allTabs) {
+		t.Errorf("tab strip has %d tabs after the change, want all %d", got, len(allTabs))
+	}
+}
+
+// TestApplySettingsKeepsFocusOnTheDetail: the rebuild destroys the page
+// primitive focus points at, and nothing else re-homes it — the poll loop only
+// restores focus it can still see on the detail. Left unfixed, every
+// focused-content key lands on an off-tree widget until the user hits Tab.
+func TestApplySettingsKeepsFocusOnTheDetail(t *testing.T) {
+	a, _ := recordingApp(t, config.Default())
+	t.Cleanup(func() { setTheme(themes["dark"]) })
+	r := sparseReport("/dev/sdb")
+	a.devices = []smart.Device{r.Device}
+	a.reports = map[string]*smart.Report{r.Device.Name: r}
+	a.populateList()
+	a.showSelected()
+
+	a.showSettings()
+	a.popModal() // as the Save button does, before applying
+	if !a.detail.HasFocus() {
+		t.Fatal("popModal did not leave focus on the detail")
+	}
+
+	cfg := a.currentConfig()
+	cfg.ShowUnavailableTabs = true
+	a.applySettings(cfg)
+
+	if !a.detail.HasFocus() {
+		t.Error("focus was stranded off-tree by the detail rebuild")
 	}
 }
 

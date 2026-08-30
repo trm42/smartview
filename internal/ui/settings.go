@@ -102,22 +102,24 @@ func (a *App) showSettings() {
 func (a *App) applySettings(cfg config.Config) {
 	old := a.currentConfig()
 
-	if cfg.Theme != old.Theme {
+	// Every field lands before anything repaints: repaintAll rebuilds the
+	// detail from showAllTabs, so setting the flag afterwards would leave the
+	// old tab set on screen until the next poll.
+	a.standbyAware.Store(cfg.StandbyAware)
+	a.detail.showAllTabs = cfg.ShowUnavailableTabs
+	a.startView = cfg.StartView // consulted only by Run
+
+	switch {
+	case cfg.Theme != old.Theme:
 		a.themeName = cfg.Theme
 		setTheme(themes[cfg.Theme])
-		a.repaintAll() // also rebuilds the detail
+		a.repaintAll() // also rebuilds the detail, so the tab set follows
+	case cfg.ShowUnavailableTabs != old.ShowUnavailableTabs:
+		a.rebuildDetail()
 	}
 	if d := cfg.RefreshInterval.Duration(); d != a.interval {
 		a.setInterval(d) // signals intervalCh; the ticker resets live
 	}
-	a.standbyAware.Store(cfg.StandbyAware)
-	if cfg.ShowUnavailableTabs != old.ShowUnavailableTabs {
-		a.detail.showAllTabs = cfg.ShowUnavailableTabs
-		if cfg.Theme == old.Theme {
-			a.rebuildDetail() // repaintAll already did it otherwise
-		}
-	}
-	a.startView = cfg.StartView // consulted only by Run
 
 	// A write failure does not discard the settings: honouring the intent and
 	// reporting the disk problem separately beats losing both.
@@ -167,38 +169,59 @@ func indexOr[S ~[]E, E comparable](s S, v E, fallback int) int {
 // margin around the box is already grounded.
 type centeredBox struct {
 	*tview.Flex
+	column        *tview.Flex // the row holding p, resized to the screen
+	inner         tview.Primitive
+	width, height int
 }
 
-// Draw claims the whole screen, then lets the Flex centre its child in it.
+// Draw claims the whole screen, then lets the Flex centre its child in it. The
+// box is clamped to the screen first: a Flex asked for a fixed size larger than
+// it has gives its gap items a negative share, which walks the box off the left
+// edge and clips the labels rather than the margin.
 func (c *centeredBox) Draw(screen tcell.Screen) {
 	w, h := screen.Size()
 	c.SetRect(0, 0, w, h)
+	c.ResizeItem(c.column, min(c.width, w), 1)
+	c.column.ResizeItem(c.inner, min(c.height, h), 1)
 	c.Flex.Draw(screen)
 }
 
 // centeredModal wraps p in a screen-filling, centring container. It shrinks to
 // the screen when the terminal is smaller than the box, so a small terminal
-// clips nothing.
+// clips the margin rather than the content.
 func centeredModal(p tview.Primitive, width, height int) tview.Primitive {
+	column := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(nil, 0, 1, false).
+		AddItem(p, height, 1, true).
+		AddItem(nil, 0, 1, false)
 	return &centeredBox{
 		Flex: tview.NewFlex().
 			AddItem(nil, 0, 1, false).
-			AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-				AddItem(nil, 0, 1, false).
-				AddItem(p, height, 1, true).
-				AddItem(nil, 0, 1, false), width, 1, true).
+			AddItem(column, width, 1, true).
 			AddItem(nil, 0, 1, false),
+		column: column,
+		inner:  p,
+		width:  width,
+		height: height,
 	}
 }
 
 // rebuildDetail forces the detail to rebuild its tab views from the cached
 // report. Shared with repaintAll so there is one rebuild idiom.
 func (a *App) rebuildDetail() {
+	// The rebuild destroys the page primitive focus points at, and nothing
+	// else re-homes it: the poll loop only restores focus it still sees on the
+	// detail. Without this every focused-content key lands on an off-tree
+	// widget until the user presses Tab.
+	focused := a.detail.HasFocus()
 	a.detail.device = "" // invalidate the cache so update() takes the rebuild branch
 	a.showSelected()
 	if len(a.devices) == 0 {
 		// showDevice returns before the placeholder when there is nothing to
 		// show, and the message in place is the one the app last chose.
 		a.detail.showPlaceholder(a.detail.placeholder)
+	}
+	if focused {
+		a.app.SetFocus(a.detail.content())
 	}
 }

@@ -113,3 +113,24 @@ func TestThemeDropdownFitsOpen(t *testing.T) {
 		})
 	}
 }
+
+// TestSettingsModalShrinksBelowItsOwnWidth: a Flex asked for a fixed size
+// larger than it has gives its gap items a negative share, which walks the box
+// off the left edge — the labels get clipped instead of the margin.
+func TestSettingsModalShrinksBelowItsOwnWidth(t *testing.T) {
+	const width = 44 // narrower than settingsWidth
+	if width >= settingsWidth {
+		t.Fatalf("this width does not exercise the clamp: %d >= %d", width, settingsWidth)
+	}
+	a, screen := newSimApp(t, width, 20)
+	t.Cleanup(func() { setTheme(themes["dark"]) })
+	openSettings(t, a, screen)
+	a.app.Draw()
+
+	joined := strings.Join(screenText(screen), "\n")
+	for _, want := range settingsRows {
+		if !strings.Contains(joined, want) {
+			t.Errorf("label %q is clipped off the left edge:\n%s", want, joined)
+		}
+	}
+}

@@ -77,23 +77,31 @@ func (a *App) fetchAndApply(ctx context.Context, wake bool) {
 		results[d.Name] = pollResult{rep: rep}
 	}
 
-	a.app.QueueUpdateDraw(func() {
-		a.applyResults(results)
-		// Refreshed even when off screen, so it is current on switch.
-		a.fleet.refresh(a.devices, a.reports, a.history, a.asleep)
-		// A tab-set change rebuilds the views, orphaning focus on the
-		// destroyed primitive — restore it afterwards.
-		detailFocused := a.detail.HasFocus()
-		a.showSelected()
-		if detailFocused {
-			a.app.SetFocus(a.detail.content())
-		}
-		// A rebuild resets tab borders and the Tests tab may have flipped
-		// idle↔running; resync focus accents and the hint bar.
-		a.refreshChrome()
-		a.refreshing.Store(false)
-		a.renderSpinner()
-	})
+	a.app.QueueUpdateDraw(func() { a.applyPoll(results) })
+}
+
+// applyPoll paints a finished poll batch. Split out of the QueueUpdateDraw
+// closure so a test can drive it without a smartctl stub; event-loop only.
+func (a *App) applyPoll(results map[string]pollResult) {
+	a.applyResults(results)
+	// The rows carry the health glyph, model, capacity and temperature, so
+	// they go stale the moment a report lands; without this the list sits on
+	// "scanning…" for the whole session.
+	a.populateList()
+	// Refreshed even when off screen, so it is current on switch.
+	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep)
+	// A tab-set change rebuilds the views, orphaning focus on the
+	// destroyed primitive — restore it afterwards.
+	detailFocused := a.detail.HasFocus()
+	a.showSelected()
+	if detailFocused {
+		a.app.SetFocus(a.detail.content())
+	}
+	// A rebuild resets tab borders and the Tests tab may have flipped
+	// idle↔running; resync focus accents and the hint bar.
+	a.refreshChrome()
+	a.refreshing.Store(false)
+	a.renderSpinner()
 }
 
 // applyResults folds a poll batch into the App state. Event-loop only, like

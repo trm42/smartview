@@ -69,11 +69,11 @@ type App struct {
 	// poll loop may range over it off the event loop without synchronisation.
 	devices []smart.Device
 	reports map[string]*smart.Report
-	history map[string][]float64
+	history map[string][]float64 // runtime temperature series per device
 	// asleep and lastRead back the standby marks: which drives smartctl
 	// declined to wake, and when reports[name] was actually read.
 	asleep   map[string]bool
-	lastRead map[string]time.Time // runtime temperature series per device
+	lastRead map[string]time.Time
 	// startedTests remembers, per device, the self-test type smartview itself
 	// started. The drive reports a running test's progress but never its type
 	// (ATA's status string is "in progress, N% remaining"), so this is the only
