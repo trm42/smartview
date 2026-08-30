@@ -71,8 +71,14 @@ and has no tview dependency**; **`internal/ui` is the presentation layer**.
 is `smart.Preflight`: smartctl on PATH *and* smartmontools >= 7.0, run under a
 short deadline and the signal context so a wedged binary cannot hang startup
 and Ctrl-C still works. A missing binary comes back as `smart.ErrNoSmartctl`
-rather than a message to match on, because which package manager to name is
-main's knowledge, not the data layer's. Fixture mode makes it a no-op. The UI
+and one below the floor as `smart.ErrOldSmartctl`, rather than messages to
+match on, because which package manager to name is main's knowledge, not the
+data layer's; `main` prints neither the raw `context.Canceled` (a quiet exit
+130) nor `DeadlineExceeded` (the timeout, named). Note the floor cannot be read
+off a version alone: the probe is `smartctl -j -V` and `-j` **is** what 7.0
+added, so a build old enough to fail rejects the flag instead of stating a
+version — a failed probe is therefore the verdict, and the branch that compares
+versions covers only hypothetical builds. Fixture mode makes it a no-op. The UI
 has two top-level screens — the per-drive view (drive list + tabbed detail)
 and the fleet comparison — swapped by `App.bodyPages`.
 
@@ -107,6 +113,11 @@ goroutine (`setNarrow` in app.go is the pattern).
   *alongside* the error; `Info`/`Scan` parse the JSON regardless of exit code.
   Never gate parsing on the exit code. Real failures surface via
   `smartctl.messages` (`Report.FatalMessage`).
+- **A context deadline does not bound `run` on its own.** `cmd.Output()` waits
+  for the stdout pipe to close and `CommandContext` signals only the direct
+  child, so a descendant still holding that pipe outlives the cancel; `run`
+  sets `cmd.WaitDelay` for it. Without that, a stub that leaves a child behind
+  printed the 5s preflight timeout and then held the process a further 55s.
 - **The JSON schema is sparse and drive-dependent.** Only `device`, `smartctl`,
   and `smart_status` are reliably present (Apple internal SSDs omit capacity,
   logs, etc.). Every other field in `types.go` is a pointer or slice so absent

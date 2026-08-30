@@ -75,6 +75,9 @@ for drive health via smartmontools.
 - [x] Wire `smart.Preflight` into startup. It is now the single startup gate:
       smartctl on PATH *and* at least smartmontools 7.0, under a 5s deadline and
       the signal context, so Ctrl-C works while it runs. A missing binary comes
-      back as `smart.ErrNoSmartctl`, which `main` matches to add the platform's
-      install hint. Fixture mode bypasses it, as before.
+      back as `smart.ErrNoSmartctl` and one below the floor as
+      `smart.ErrOldSmartctl` — including a build too old to answer `-j -V` at
+      all, which is what every real pre-7.0 smartctl does — and `main` matches
+      both to add the platform's install/upgrade hint. Fixture mode bypasses it,
+      as before.
 - [ ] `--json` / headless mode for scripting and CI health checks.

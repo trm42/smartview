@@ -53,13 +53,7 @@ func main() {
 	defer stop()
 
 	if err := preflight(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, "smartview:", err)
-		// Which package manager to name is this program's knowledge, not the
-		// data layer's, so the hint is attached here.
-		if errors.Is(err, smart.ErrNoSmartctl) {
-			fmt.Fprintln(os.Stderr, "Install smartmontools:", installHint())
-		}
-		os.Exit(1)
+		exitPreflight(err)
 	}
 
 	app := ui.New(*interval, *theme)
@@ -73,6 +67,29 @@ func main() {
 // touches no device, so this is a guard against a wedged binary rather than a
 // slow one.
 const preflightTimeout = 5 * time.Second
+
+// exitPreflight reports a failed startup check and exits. An interrupt is a
+// quiet abort rather than an error, and a deadline names the timeout instead of
+// printing the context that carried it.
+func exitPreflight(err error) {
+	switch {
+	case errors.Is(err, context.Canceled):
+		os.Exit(130) // interrupted before the UI came up
+	case errors.Is(err, context.DeadlineExceeded):
+		fmt.Fprintf(os.Stderr, "smartview: smartctl did not respond within %s\n", preflightTimeout)
+		os.Exit(1)
+	}
+	fmt.Fprintln(os.Stderr, "smartview:", err)
+	// Which package manager to name is this program's knowledge, not the data
+	// layer's, so the hint is attached here.
+	switch {
+	case errors.Is(err, smart.ErrNoSmartctl):
+		fmt.Fprintln(os.Stderr, "Install smartmontools:", installHint())
+	case errors.Is(err, smart.ErrOldSmartctl):
+		fmt.Fprintln(os.Stderr, "Upgrade smartmontools:", installHint())
+	}
+	os.Exit(1)
+}
 
 // preflight runs smart.Preflight under a deadline; a no-op in fixture mode.
 func preflight(ctx context.Context) error {
