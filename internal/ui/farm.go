@@ -287,10 +287,11 @@ const (
 )
 
 // farmColumnMin is the narrowest inner width a *paired* box stays readable in:
-// the value column plus room for a reading like "12.29V now". The widest row
-// the fixture renders is 49 cells, so a grid that never wraps would need ~106
-// columns of terminal; rather than demand that, the grid pairs while values
-// wrap to a second line and stacks once they would start breaking every row.
+// the value column plus 13 cells, room for a whole reading like "12.29V now".
+// Rows already wrap above this floor — the widest the fixture renders is 49
+// cells, so a grid that never wrapped would need ~106 columns of terminal —
+// so what the floor protects is the reading itself, which 13 cells still hold
+// intact and 12 start slicing apart.
 const farmColumnMin = farmValueCol + 13
 
 // farmWrap: every value here is a short number or reading, so it stays worth
