@@ -316,8 +316,8 @@ goroutine (`setNarrow` in app.go is the pattern).
   healthy. A "consumed" percentage passes through `pctBarUsed` so it drains
   rather than filling (the fleet shows endurance beside spare, and opposite
   polarities in one colour read as a contradiction).
-- **One breakpoint at `narrowBreakpoint` (100 columns).** Below it the drive
-  list collapses to a one-row rail (`renderRail`) and the detail takes the full
+- **One *top-level* layout breakpoint, `narrowBreakpoint` (100 columns).**
+  Below it the drive list collapses to a one-row rail (`renderRail`) and the detail takes the full
   width; `Application.SetBeforeDrawFunc` picks the layout, since width is only
   known at draw time. Nothing may truncate silently: the hint bar shortens
   deliberately and offers `?`, and the fleet drops whole columns (measuring the
@@ -329,6 +329,16 @@ goroutine (`setNarrow` in app.go is the pattern).
   `renderRail` wherever `populateList`/`showSelected` repaint the list, and
   `stepDrive` on `KeyUp`/`KeyDown` in `onKey`, since no list is on screen to
   receive them. `layout_test.go` exercises both widths on a simulation screen.
+- **The FARM tab has a second, independent breakpoint.** Its four stat boxes
+  pair into a 2×2 grid only while each column clears `farmColumnMin` inner
+  cells; below that `relayout` stacks them into one full-width column
+  (`stackBoxes`, in the grid's reading order). This is not `narrowBreakpoint`:
+  what matters is the width the *detail pane* gets, so a 100-column terminal
+  stacks — the drive list takes 36 of them — while an 80-column one, where the
+  narrow layout has already dropped the list, still pairs. The widest row the
+  fixtures render is 49 cells, so a grid that never wrapped would need ~106
+  columns; the grid pairs while values wrap to a second line and stacks once
+  they would start breaking every row.
 - **Width-aware panels relayout in `Draw`**, not in `refresh`: farm.go,
   overview.go and statistics.go each cache `lastWidth` and rebuild when it
   changes. Long values are pre-wrapped with `hangingIndent` (format.go) so
