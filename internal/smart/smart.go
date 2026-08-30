@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // binary is the smartctl executable name; resolved via PATH. A var, not a
@@ -37,6 +38,16 @@ type scanResult struct {
 // package assumes that schema; the README states the same floor.
 var minSmartctlVersion = [2]int{7, 0}
 
+// ErrNoSmartctl reports that the smartctl binary is not on PATH. Callers match
+// it to add an install hint: which package manager to name is the caller's
+// knowledge, not this package's.
+var ErrNoSmartctl = errors.New("smartctl not found on PATH")
+
+// ErrOldSmartctl reports a smartctl too old for the JSON schema this package
+// parses. Callers match it to add an upgrade hint, as with [ErrNoSmartctl].
+var ErrOldSmartctl = fmt.Errorf("smartctl is too old: smartview needs smartmontools %d.%d or newer",
+	minSmartctlVersion[0], minSmartctlVersion[1])
+
 // Available reports whether the smartctl binary is resolvable on PATH.
 func Available() bool {
 	_, err := exec.LookPath(binary)
@@ -45,7 +56,8 @@ func Available() bool {
 
 // Version reports smartctl's own version as the [major, minor, ...] list it
 // prints in `smartctl -j -V`. A build too old to understand -j emits no JSON at
-// all, which surfaces here as a parse error rather than a version.
+// all, so it fails here rather than reporting a version; [Preflight] reads that
+// failure as the answer.
 func Version(ctx context.Context) ([]int, error) {
 	res, err := runJSON[smartctlWrapper](ctx, "smartctl version", "-j", "-V")
 	if err != nil {
@@ -56,21 +68,27 @@ func Version(ctx context.Context) ([]int, error) {
 
 // Preflight checks that smartctl is on PATH and new enough to speak the JSON
 // schema this package parses; it is a no-op when the fixture source is active.
-// Not yet wired into startup — main.go still gates on Available() alone.
+// It is the startup gate: main calls it before building the UI, so an old
+// smartctl is named as such instead of failing later as a parse error.
 func Preflight(ctx context.Context) error {
 	if fixtureActive() {
 		return nil
 	}
 	if !Available() {
-		return errors.New("smartctl not found on PATH")
+		return ErrNoSmartctl
 	}
 	v, err := Version(ctx)
 	if err != nil {
-		return fmt.Errorf("smartctl version check: %w", err)
+		if ctx.Err() != nil {
+			return fmt.Errorf("smartctl version check: %w", err)
+		}
+		// The probe needs -j, which is what 7.0 added: a build below the floor
+		// rejects the flag instead of stating a version, so a failed probe is
+		// itself the verdict. The cause rides along in case it is not age.
+		return fmt.Errorf("%w (version check failed: %v)", ErrOldSmartctl, err)
 	}
 	if !versionAtLeast(v, minSmartctlVersion) {
-		return fmt.Errorf("smartctl %s is too old: smartview needs smartmontools %d.%d or newer",
-			formatVersion(v), minSmartctlVersion[0], minSmartctlVersion[1])
+		return fmt.Errorf("%w (found %s)", ErrOldSmartctl, formatVersion(v))
 	}
 	return nil
 }
@@ -199,10 +217,18 @@ func runJSON[T any](ctx context.Context, what string, args ...string) (*T, error
 // maxStderrDetail bounds how much of smartctl's stderr is folded into an error.
 const maxStderrDetail = 200
 
+// waitDelay bounds how long a cancelled command may hold us after its own
+// deadline. A var so tests need not wait it out.
+var waitDelay = 2 * time.Second
+
 // run executes smartctl. A non-zero exit returns stdout alongside the error:
 // smartctl emits valid JSON even with its exit-status bitmask set.
 func run(ctx context.Context, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, binary, args...)
+	// Output waits for the stdout pipe to close and CommandContext signals only
+	// the direct child, so without this a descendant holding the pipe outlives
+	// the deadline and the context bounds nothing.
+	cmd.WaitDelay = waitDelay
 	out, err := cmd.Output()
 	if err != nil {
 		// A cancelled context kills the child, so exec reports "signal: killed"

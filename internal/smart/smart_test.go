@@ -9,8 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // parseFixture decodes a captured smartctl report from testdata.
@@ -393,5 +395,141 @@ func TestEmptyOutputIsReportedPlainly(t *testing.T) {
 				t.Errorf("%s on empty output = %q, want %q", c.name, err, want)
 			}
 		})
+	}
+}
+
+// fakeSmartctl writes an executable stub that prints body on stdout, and
+// points the package at it for the duration of the test.
+func fakeSmartctl(t *testing.T, body string) {
+	t.Helper()
+	fakeSmartctlScript(t, "cat <<'EOF'\n"+body+"\nEOF\n")
+}
+
+// fakeSmartctlScript is fakeSmartctl for a stub that must do more than print:
+// body is the shell source, so it can fail the way a real smartctl does.
+func fakeSmartctlScript(t *testing.T, body string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell stub is POSIX-only")
+	}
+	path := filepath.Join(t.TempDir(), "smartctl")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orig := binary
+	binary = path
+	t.Cleanup(func() { binary = orig })
+}
+
+// Preflight is the startup gate, so the message it produces is what a user
+// with the wrong smartmontools actually sees. Before it was wired in, an old
+// build got a JSON parse error from the first real query instead.
+func TestPreflightNamesAnOldSmartctl(t *testing.T) {
+	fakeSmartctl(t, `{"smartctl":{"version":[6,6]}}`)
+	err := Preflight(t.Context())
+	if err == nil {
+		t.Fatal("Preflight accepted smartctl 6.6, below the 7.0 floor")
+	}
+	if !errors.Is(err, ErrOldSmartctl) {
+		t.Errorf("Preflight on smartctl 6.6 = %v, want ErrOldSmartctl", err)
+	}
+	for _, want := range []string{"6.6", "too old", "7.0"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message %q does not mention %q", err, want)
+		}
+	}
+}
+
+// A build at or above the floor passes, so the gate does not lock anyone out.
+func TestPreflightAcceptsASupportedSmartctl(t *testing.T) {
+	for _, v := range []string{`[7,0]`, `[7,4]`, `[8,1]`} {
+		fakeSmartctl(t, `{"smartctl":{"version":`+v+`}}`)
+		if err := Preflight(t.Context()); err != nil {
+			t.Errorf("Preflight rejected smartctl %s: %v", v, err)
+		}
+	}
+}
+
+// A missing binary is reported as ErrNoSmartctl so main can attach the
+// platform's install hint without matching on message text.
+func TestPreflightMissingBinaryIsMatchable(t *testing.T) {
+	orig := binary
+	binary = "smartview-no-such-binary"
+	t.Cleanup(func() { binary = orig })
+
+	err := Preflight(t.Context())
+	if !errors.Is(err, ErrNoSmartctl) {
+		t.Errorf("Preflight with no smartctl = %v, want ErrNoSmartctl", err)
+	}
+}
+
+// A version smartctl would not state is not evidence of an old build, and
+// refusing to start would be the worse error.
+func TestPreflightAcceptsAnUnstatedVersion(t *testing.T) {
+	fakeSmartctl(t, `{"smartctl":{}}`)
+	if err := Preflight(t.Context()); err != nil {
+		t.Errorf("Preflight rejected a build that states no version: %v", err)
+	}
+}
+
+// The version probe itself needs -j, which is what 7.0 added, so a build below
+// the floor rejects the flag rather than reporting a version it could be judged
+// on. That path is the only one a real old smartctl takes: if it does not reach
+// the floor message, nothing does.
+func TestPreflightNamesASmartctlTooOldForJSON(t *testing.T) {
+	fakeSmartctlScript(t, "echo \"smartctl: Unrecognized option '-j'\" >&2\nexit 1\n")
+	err := Preflight(t.Context())
+	if !errors.Is(err, ErrOldSmartctl) {
+		t.Fatalf("Preflight on a pre-JSON smartctl = %v, want ErrOldSmartctl", err)
+	}
+	for _, want := range []string{"too old", "7.0", "Unrecognized option"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message %q does not mention %q", err, want)
+		}
+	}
+}
+
+// A probe cut short by the caller says so: reporting an interrupted or timed-out
+// check as an old smartctl would send the user to fix the wrong thing, and main
+// branches on the context error to abort quietly.
+func TestPreflightReportsAnAbortedProbeAsSuch(t *testing.T) {
+	fakeSmartctl(t, `{"smartctl":{"version":[7,4]}}`)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err := Preflight(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Preflight on a cancelled context = %v, want context.Canceled", err)
+	}
+	if errors.Is(err, ErrOldSmartctl) {
+		t.Errorf("cancelled probe reported as an old smartctl: %v", err)
+	}
+}
+
+// A deadline has to bound the call, not just describe it. Output waits for the
+// stdout pipe to close and CommandContext signals only the direct child, so a
+// descendant that inherited the pipe keeps the read alive after the child is
+// killed -- and startup hangs long past the timeout that was supposed to stop it.
+func TestRunDoesNotOutliveItsDeadline(t *testing.T) {
+	fakeSmartctlScript(t, "sleep 3 &\nsleep 3\n")
+	orig := waitDelay
+	waitDelay = 50 * time.Millisecond
+	t.Cleanup(func() { waitDelay = orig })
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := run(ctx, "-j", "-V")
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("run past its deadline = %v, want context.DeadlineExceeded", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("run still blocked a second after a 50ms deadline")
 	}
 }
