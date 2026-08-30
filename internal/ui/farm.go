@@ -34,7 +34,7 @@ type farmView struct {
 func newFarmView(r *smart.Report) *farmView {
 	box := func(title string) *tview.TextView {
 		tv := tview.NewTextView().SetDynamicColors(true)
-		// Wrapping is pre-computed (hangingIndentValues); tview's own wrap
+		// Wrapping is pre-computed (hangingIndent); tview's own wrap
 		// would re-break the text back to the left margin.
 		tv.SetWrap(false)
 		titledBox(tv.Box, title)
@@ -59,43 +59,6 @@ func (v *farmView) setFocused(focused bool) {
 	v.errors.SetBorderColor(c)
 	v.env.SetBorderColor(c)
 	v.workload.SetBorderColor(c)
-}
-
-// hangingIndentValues rewraps each farmRow line so an over-long value hangs
-// under the value column. Unchanged when innerW leaves no room for values.
-func hangingIndentValues(text string, innerW int) string {
-	const valueCol = 21 // 20-char %-20s label + one space, per farmRow
-	valueW := innerW - valueCol
-	if valueW <= 0 {
-		return text
-	}
-	const marker = "[-:-:-] "
-	indent := strings.Repeat(" ", valueCol)
-
-	var out strings.Builder
-	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
-	for i, line := range lines {
-		if i > 0 {
-			out.WriteByte('\n')
-		}
-		prefix, value, found := strings.Cut(line, marker)
-		if !found {
-			out.WriteString(line)
-			continue
-		}
-		prefix += marker
-		wrapped := tview.WordWrap(value, valueW)
-		if len(wrapped) == 0 {
-			out.WriteString(prefix)
-			continue
-		}
-		out.WriteString(prefix + wrapped[0])
-		for _, cont := range wrapped[1:] {
-			out.WriteByte('\n')
-			out.WriteString(indent + cont)
-		}
-	}
-	return out.String()
 }
 
 // refresh captures the box text and rebuilds the charts, deferring the grid
@@ -178,10 +141,10 @@ const farmSummaryHeight = 3
 // and returns the shared top/bottom row heights (paired boxes grow to a
 // common height so the columns end level).
 func (v *farmView) wrapBoxes(leftInner, rightInner int) (topRowH, bottomRowH int) {
-	driveText := hangingIndentValues(v.driveText, leftInner)
-	envText := hangingIndentValues(v.envText, leftInner)
-	errorsText := hangingIndentValues(v.errorsText, rightInner)
-	workloadText := hangingIndentValues(v.workloadText, rightInner)
+	driveText := hangingIndent(v.driveText, farmWrap, leftInner)
+	envText := hangingIndent(v.envText, farmWrap, leftInner)
+	errorsText := hangingIndent(v.errorsText, farmWrap, rightInner)
+	workloadText := hangingIndent(v.workloadText, farmWrap, rightInner)
 	v.drive.SetText(driveText)
 	v.env.SetText(envText)
 	v.errors.SetText(errorsText)
@@ -275,9 +238,24 @@ func writeFarmWorkload(b *strings.Builder, f *smart.FARM) {
 	farmRow(b, "Data written", humanBytes(w.LogicalSectorsWrite*sectorBytes))
 }
 
+// farmLabelWidth is the label field every farmRow pads to; farmValueCol is the
+// display column values therefore start in. hangingIndent cuts each line at
+// that column, so a label wider than the field would push the value past the
+// cut and the wrap would land inside the label —
+// TestFarmValuesStartAtTheValueColumn pins that none does.
+const (
+	farmLabelWidth = 20
+	farmValueCol   = farmLabelWidth + 1
+)
+
+// farmWrap: every value here is a short number or reading, so it stays worth
+// wrapping down to a one-cell column. Clipping instead would drop digits off a
+// counter, and a truncated number still reads as a number.
+var farmWrap = hangingWrap{valueCol: farmValueCol, minValueW: 1}
+
 // farmRow writes an aligned key/value line.
 func farmRow(b *strings.Builder, k, v string) {
-	fmt.Fprintf(b, "[::b]%-20s[-:-:-] %s\n", k, v)
+	fmt.Fprintf(b, "[::b]%-*s[-:-:-] %s\n", farmLabelWidth, k, v)
 }
 
 // farmCount writes a counter line, tinting by severity only when non-zero.

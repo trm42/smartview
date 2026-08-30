@@ -55,7 +55,7 @@ func (v *overviewView) refresh(r *smart.Report, tempHistory []float64) {
 // relayout rebuilds the tab for a panel width of w: the identity box is sized
 // to its content and the temperature chart takes what is left.
 func (v *overviewView) relayout(w, h int) {
-	text := hangingIndent(identityText(v.rep, w), identityValueCol, w)
+	text := hangingIndent(identityText(v.rep, w), identityWrap, w)
 	v.identity.setTextKeepingScroll(text)
 
 	v.Clear()
@@ -159,6 +159,12 @@ const identityColumnWidth = 40
 
 // identityValueCol is the column values start in: a 14-cell key plus a space.
 const identityValueCol = 15
+
+// identityWrap: the Device row carries a 150-character macOS IOService path,
+// which WordWrap hard-splits when it has no break opportunity — below a
+// nine-cell value column that blows up the line count the panel is sized from,
+// so the text is left alone instead.
+var identityWrap = hangingWrap{valueCol: identityValueCol, minValueW: 9}
 
 // writeFields lays out fields in as many columns as fit; a value too long for
 // a column takes a full row of its own after the paired ones.

@@ -44,7 +44,7 @@ func (v *statisticsView) refresh(r *smart.Report, _ []float64) {
 // Draw re-wraps when the width changed (or a refresh invalidated it).
 func (v *statisticsView) Draw(screen tcell.Screen) {
 	if _, _, w, _ := v.GetInnerRect(); w != v.lastWidth {
-		v.setTextKeepingScroll(hangingIndent(v.raw, statValueCol, w))
+		v.setTextKeepingScroll(hangingIndent(v.raw, statWrap, w))
 		v.lastWidth = w
 	}
 	v.scrollTextView.Draw(screen)
@@ -79,6 +79,10 @@ func buildStatisticsText(r *smart.Report) string {
 
 // statValueCol is the column values start in.
 const statValueCol = len(nestIndent) + statLabelWidth + 1
+
+// statWrap: counter names are long and the values short, so a value column
+// under nine cells means the panel is already too narrow to read.
+var statWrap = hangingWrap{valueCol: statValueCol, minValueW: 9}
 
 // statLabelWidth fits smartctl's longest counter names (up to 44 chars).
 const statLabelWidth = 46

@@ -246,6 +246,18 @@ func kindLabel(r *smart.Report, l kindLabels) string {
 // driveKind classifies the drive for the identity line (SSD vs HDD vs NVMe).
 func driveKind(r *smart.Report) string { return kindLabel(r, longKindLabels) }
 
+// hangingWrap is one panel's key/value geometry. valueCol is the display
+// column values start in — it must match the width that panel's rows pad the
+// label to, or the cut lands inside the label. minValueW is the narrowest
+// value column still worth wrapping into: a panel of short numbers can wrap
+// into almost nothing, but one carrying a 150-character device path cannot,
+// because WordWrap hard-splits a token with no break opportunity and the line
+// count is what the panel is sized from.
+type hangingWrap struct {
+	valueCol  int
+	minValueW int
+}
+
 // hangingIndent re-wraps over-long lines so overflow hangs under the value
 // column; tview's own wrapping would break a value back to column 0, so
 // callers disable it and pre-wrap here.
@@ -253,9 +265,10 @@ func driveKind(r *smart.Report) string { return kindLabel(r, longKindLabels) }
 // valueCol is a display column, so the key is cut with splitAtWidth and the
 // value re-wrapped by tview.WordWrap — both measure cells and treat style tags
 // as zero-width.
-func hangingIndent(text string, valueCol, innerW int) string {
+func hangingIndent(text string, w hangingWrap, innerW int) string {
+	valueCol := w.valueCol
 	valueW := innerW - valueCol
-	if valueW <= 8 || text == "" {
+	if valueW < w.minValueW || text == "" {
 		return text
 	}
 	indent := strings.Repeat(" ", valueCol)

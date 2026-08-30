@@ -331,9 +331,20 @@ goroutine (`setNarrow` in app.go is the pattern).
   receive them. `layout_test.go` exercises both widths on a simulation screen.
 - **Width-aware panels relayout in `Draw`**, not in `refresh`: farm.go,
   overview.go and statistics.go each cache `lastWidth` and rebuild when it
-  changes. Long values are pre-wrapped with `hangingIndent` (format.go) so they
-  hang under the value column instead of returning to the left margin, and the
-  widget's own `SetWrap` is disabled so it cannot re-break the result.
+  changes. Long values are pre-wrapped with `hangingIndent` (format.go) so
+  they hang under the value column instead of returning to the left margin,
+  and the widget's own `SetWrap` is disabled so it cannot re-break the result.
+  `hangingIndent` cuts each line at a **display column**, so each panel
+  carries a `hangingWrap` naming that column and the narrowest value column
+  still worth wrapping into (`farmWrap`, `identityWrap`, `statWrap`). The
+  column must match the width that panel's rows pad the label to — a wider
+  label pushes the value past the cut and the wrap lands inside the label;
+  `TestFarmValuesStartAtTheValueColumn` pins that against rendered fixture
+  output. The floor differs on purpose: FARM values are short numbers and wrap
+  down to one cell, because clipping would drop digits off a counter and a
+  truncated number still reads as a number, while the identity panel stops at
+  nine because its 150-character device path has no break opportunity and
+  WordWrap would explode the line count the panel is sized from.
 - Protocol branching is via `Report.IsNVMe()` / `IsATA()`; NVMe and ATA render
   different attribute tables and gauges.
 - **Temperature sparkline**: ATA seeds it instantly from
