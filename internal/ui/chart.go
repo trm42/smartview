@@ -5,6 +5,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -60,6 +61,25 @@ func downsample(data []float64, width int) []float64 {
 			peak = max(peak, v)
 		}
 		out[i] = peak
+	}
+	return out
+}
+
+// bucketMax groups values into one bar per group, taking the bucket MAXIMUM
+// for the same reason downsample does: the tail of a bar chart is where a
+// failing head sits, and dropping or averaging it hides the one bar worth
+// seeing. Groups are uniform so a bar's first index can be labelled.
+func bucketMax(data []float64, group int) []float64 {
+	if group <= 1 {
+		return data
+	}
+	out := make([]float64, 0, (len(data)+group-1)/group)
+	for i := 0; i < len(data); i += group {
+		peak := data[i]
+		for _, v := range data[i+1 : min(i+group, len(data))] {
+			peak = max(peak, v)
+		}
+		out = append(out, peak)
 	}
 	return out
 }
@@ -166,6 +186,10 @@ type rangeChart struct {
 	tick    int    // bar pitch in cells; 1 for a traced series
 	unit    string // appended to the axis labels and the range caption
 	caption string // one line under the axis: what the x axis is
+	// axis builds the caption for a bar chart instead of caption. The pitch and
+	// how many values share a bar are only known at draw time, so the labels
+	// cannot be baked in with the data.
+	axis    func(pitch, group, count, width int) string
 	color   tcell.Color
 	focused bool
 }
@@ -181,10 +205,45 @@ func (c *rangeChart) setSeries(data []float64, unit, caption string) *rangeChart
 	return c
 }
 
-// setBars plots data as categorical bars at the given pitch (bar cell plus gap).
-func (c *rangeChart) setBars(data []float64, pitch int, unit, caption string) *rangeChart {
-	c.data, c.bars, c.tick, c.unit, c.caption = data, true, max(pitch, 1), unit, caption
+// setBars plots data as categorical bars. pitch is the widest bar cell plus
+// gap to use; Draw narrows it toward 1, then groups values into shared bars,
+// rather than let bars fall off the edge. axis builds the caption once the
+// pitch and the grouping are known.
+func (c *rangeChart) setBars(data []float64, pitch int, unit string, axis func(pitch, group, count, width int) string) *rangeChart {
+	c.data, c.bars, c.tick, c.unit, c.axis = data, true, max(pitch, 1), unit, axis
+	c.caption = ""
 	return c
+}
+
+// barFit picks the bar pitch and grouping for a plot of plotW cells: the
+// widest pitch up to c.tick that seats every bar, narrowing to 1 before it
+// groups. group exceeds 1 only when even one cell each does not fit.
+func (c *rangeChart) barFit(plotW int) (pitch, group int) {
+	n := len(c.data)
+	if n == 0 || plotW <= 0 {
+		return c.tick, 1
+	}
+	if per := plotW / n; per >= 1 {
+		return min(c.tick, per), 1
+	}
+	return 1, (n + plotW - 1) / plotW
+}
+
+// barCaption is the axis labels plus, when values had to share a bar, how
+// many share one — the same contract as the fleet's dropped columns: nothing
+// changes silently. The note is measured first so the labels are built around
+// it, in cells rather than bytes: "·" is two bytes and the screen clips in
+// cells.
+func (c *rangeChart) barCaption(pitch, group, plotW int) string {
+	note := ""
+	if group > 1 {
+		note = fmt.Sprintf(" · %d per bar", group)
+	}
+	labels := ""
+	if c.axis != nil {
+		labels = c.axis(pitch, group, len(c.data), plotW-utf8.RuneCountInString(note))
+	}
+	return labels + note
 }
 
 func (c *rangeChart) setColor(col tcell.Color) *rangeChart { c.color = col; return c }
@@ -231,8 +290,14 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 	}
 
 	var rows []string
+	caption := c.caption
 	if c.bars {
-		rows = barRows(c.data, c.tick, plotRows, lo, hi)
+		pitch, group := c.barFit(plotW)
+		// The scale stays the whole drive's range, so the axis labels keep
+		// agreeing with the title; grouping keeps every value on the chart, and
+		// the caption says how many share a bar rather than rescaling quietly.
+		rows = barRows(bucketMax(c.data, group), pitch, plotRows, lo, hi)
+		caption = c.barCaption(pitch, group, plotW)
 	} else {
 		rows = seriesRows(c.data, plotW, plotRows, lo, hi)
 	}
@@ -254,7 +319,7 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 	base := fmt.Sprintf("%*s ", gutter-2, fmt.Sprintf("%.0f", lo))
 	tview.Print(screen, esc(base), x, top+plotRows, gutter, tview.AlignLeft, muted)
 	tview.Print(screen, "└"+strings.Repeat("─", plotW-1), x+gutter-1, top+plotRows, plotW, tview.AlignLeft, muted)
-	if c.caption != "" {
-		tview.Print(screen, esc(c.caption), x+gutter, top+plotRows+1, plotW, tview.AlignLeft, muted)
+	if caption != "" {
+		tview.Print(screen, esc(caption), x+gutter, top+plotRows+1, plotW, tview.AlignLeft, muted)
 	}
 }

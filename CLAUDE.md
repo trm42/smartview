@@ -312,6 +312,26 @@ goroutine (`setNarrow` in app.go is the pattern).
   `downsample` reduces by bucket *maximum* so a spike is never averaged away,
   and the axis line always prints its baseline. The scaling is pure and unit
   tested; the NVMe percentage gauges still use `tvxwidgets`, where 0–100 is real.
+- **A bar chart narrows its pitch before it drops a bar**
+  (`rangeChart.barFit`). The pitch and the label step are chosen in `Draw`,
+  not baked in with the data, because only `Draw` knows the plot width:
+  `setBars` takes the *widest* pitch to use and an `axis(pitch, shown, width)`
+  func that builds the caption once both are known. Bars touch at pitch 1
+  rather than fall off the right edge — a cramped chart beats a wrong one, and
+  the title states the whole drive's range, so a clipped peak would name a
+  maximum that is never drawn. When even one cell each will not fit, values
+  share a bar (`bucketMax`) rather than fall off the tail: buckets are uniform
+  and take the *maximum*, the same rule `downsample` follows for a traced
+  series, because the tail is exactly where a failing head sits and keeping
+  the first N would leave a flat row of minimum marks. The caption then says
+  how many share a bar, measured in cells before the labels are built so the
+  note cannot itself be clipped — the same contract as the fleet's dropped
+  columns. Labels name the first head of each bar and stop at the last index
+  that fits whole (`farmHeadAxis`) rather than cut the finished strip to
+  width: a sliced index still reads as a number, and a label naming the wrong
+  head is worse than one that is absent. `chart_test.go` drives this on a
+  simulation screen and each assertion is mutation-checked, since an assertion
+  the implementation satisfies unconditionally proves nothing.
 - **One bar vocabulary**: `pctBarWidth` cells wide, always filling toward
   healthy. A "consumed" percentage passes through `pctBarUsed` so it drains
   rather than filling (the fleet shows endurance beside spare, and opposite

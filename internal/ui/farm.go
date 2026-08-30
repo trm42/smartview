@@ -5,6 +5,7 @@ package ui
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -343,14 +344,15 @@ func farmHeadChart(title string, data []int, health bool) tview.Primitive {
 	}
 
 	c := newRangeChart().
-		setBars(vals, farmHeadPitch, "", farmHeadAxis(len(data))).
+		setBars(vals, farmHeadPitch, "", farmHeadAxis).
 		setColor(color)
 	c.SetBorder(true)
 	c.SetTitle(fmt.Sprintf("%s— %d–%d ", title, slices.Min(data), worst))
 	return c
 }
 
-// farmHeadPitch is the per-head bar pitch: one cell of bar, one of gap.
+// farmHeadPitch is the widest per-head bar pitch: one cell of bar, one of gap.
+// rangeChart narrows it toward 1 when the plot is too tight to seat every head.
 const farmHeadPitch = 2
 
 // farmHeadSummary states an all-zero fault chart's healthy answer in one line.
@@ -361,16 +363,31 @@ func farmHeadSummary(title string, heads int) tview.Primitive {
 	return tv
 }
 
-// farmHeadAxis labels head indices under the bars; past ten heads two-digit
-// indices no longer fit the pitch, so every other one is labelled.
-func farmHeadAxis(heads int) string {
-	step := 1
-	if heads > 10 {
-		step = 2
+// farmHeadAxis labels head indices under the bars, naming the first head of
+// each bar (group heads share one when the plot is too tight for one apiece).
+// The pitch is chosen at draw time, so the label step is too: label every
+// step-th bar, where step is the fewest bars whose combined cells hold an
+// index plus a separating space.
+func farmHeadAxis(pitch, group, heads, width int) string {
+	if heads <= 0 || pitch <= 0 || group <= 0 || width <= 0 {
+		return ""
 	}
+	bars := (heads + group - 1) / group
+	labelW := len(strconv.Itoa((bars - 1) * group))
+	step := 1
+	for step*pitch < labelW+1 {
+		step++
+	}
+	// Stop at the last index that fits whole: cutting the finished strip to
+	// width would slice a multi-digit index and leave a digit that reads as a
+	// different head. Indices are ASCII, so b.Len() is also the column.
 	var b strings.Builder
-	for i := 0; i < heads; i += step {
-		fmt.Fprintf(&b, "%-*d", farmHeadPitch*step, i)
+	for i := 0; i < bars; i += step {
+		lbl := strconv.Itoa(i * group)
+		if b.Len()+len(lbl) > width {
+			break
+		}
+		fmt.Fprintf(&b, "%-*s", pitch*step, lbl)
 	}
 	return strings.TrimRight(b.String(), " ")
 }
