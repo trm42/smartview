@@ -212,7 +212,9 @@ func (a *App) focusDetail() {
 // click share it. From a mouse handler the event loop holds no draw lock, so
 // SetFocus is safe here where QueueUpdateDraw would deadlock.
 func (a *App) openTab(i int) {
-	a.detail.selectTab(i)
+	if !a.detail.selectTab(i) {
+		return
+	}
 	a.focusDetail()
 }
 
@@ -249,16 +251,18 @@ func (a *App) focusLeft() {
 	if a.list.HasFocus() {
 		return
 	}
-	if a.detail.active == 0 {
-		if a.narrow {
-			return
-		}
-		a.app.SetFocus(a.list)
-		a.refreshChrome()
+	// Ask stepTab rather than test active == 0: with show_unavailable_tabs
+	// there may be muted tabs to the left that it steps over, and only it
+	// knows whether any reachable one remains.
+	if a.detail.stepTab(-1) {
+		a.focusDetail()
 		return
 	}
-	a.detail.stepTab(-1)
-	a.focusDetail()
+	if a.narrow {
+		return
+	}
+	a.app.SetFocus(a.list)
+	a.refreshChrome()
 }
 
 // triggerRefresh asks the poll loop to fetch immediately (non-blocking). It
