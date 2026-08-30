@@ -3,6 +3,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -306,4 +307,21 @@ func TestWithAppliesOnlySetOverrides(t *testing.T) {
 			t.Errorf("With(interval) = %+v, want %+v", got, want)
 		}
 	})
+}
+
+// TestValidateFlagsTheThemeErrorForTheCaller lets main attach the theme list
+// to a theme error and nothing else — the same split as smart.ErrNoSmartctl,
+// where which names to print is the caller's knowledge, not this package's.
+func TestValidateFlagsTheThemeErrorForTheCaller(t *testing.T) {
+	bad := Default()
+	bad.Theme = "sepia"
+	if err := bad.Validate(knownTheme); !errors.Is(err, ErrUnknownTheme) {
+		t.Errorf("theme error = %v, want it to match ErrUnknownTheme", err)
+	}
+
+	slow := Default()
+	slow.RefreshInterval = 0
+	if err := slow.Validate(knownTheme); errors.Is(err, ErrUnknownTheme) {
+		t.Errorf("interval error %v matches ErrUnknownTheme; main would append the theme list to it", err)
+	}
 }

@@ -193,6 +193,10 @@ type detail struct {
 	tabs    []tab
 	active  int
 
+	// showAllTabs draws every tab, muting the ones this drive has no data
+	// for, so a tab keeps its number on every drive.
+	showAllTabs bool
+
 	device string             // current drive name, to detect device switches
 	views  map[string]tabView // live view per visible tab id
 	// placeholder is the last message showPlaceholder rendered, so a theme

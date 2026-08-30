@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 	"unicode"
 
+	"github.com/trm42/smartview/internal/config"
 	"github.com/trm42/smartview/internal/smart"
 )
 
@@ -263,7 +263,7 @@ func TestContextHintsFollowTheLiveAttributesView(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			a := New(30*time.Second, "dark")
+			a := New(config.Default(), func(config.Config) error { return nil })
 			// New installs the theme globally; put it back so test order cannot matter.
 			t.Cleanup(func() { setTheme(themes["dark"]) })
 			c.report.Device.Name = "/dev/sdz"

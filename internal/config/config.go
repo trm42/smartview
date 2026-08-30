@@ -5,6 +5,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -95,12 +96,17 @@ const (
 	maxInterval = 24 * time.Hour
 )
 
+// ErrUnknownTheme reports a theme name the UI does not define. Callers match
+// it to list the choices: which themes exist is internal/ui's knowledge, not
+// this package's — the same split as smart.ErrNoSmartctl.
+var ErrUnknownTheme = errors.New("unknown theme")
+
 // Validate checks every setting. knownTheme is injected because the theme
 // registry lives in internal/ui, which config must not import; main passes
 // ui.HasTheme.
 func (c Config) Validate(knownTheme func(string) bool) error {
 	if !knownTheme(c.Theme) {
-		return fmt.Errorf("unknown theme %q", c.Theme)
+		return fmt.Errorf("%w %q", ErrUnknownTheme, c.Theme)
 	}
 	if d := c.RefreshInterval.Duration(); d < minInterval || d > maxInterval {
 		return fmt.Errorf("refresh_interval %s out of range (%s to %s)",

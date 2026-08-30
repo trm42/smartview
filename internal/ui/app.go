@@ -14,6 +14,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
+	"github.com/trm42/smartview/internal/config"
 	"github.com/trm42/smartview/internal/smart"
 )
 
@@ -42,16 +43,24 @@ type App struct {
 
 	interval   time.Duration
 	themeName  string // active colour theme; cycled by the 'T' key
+	startView  string // config.StartDrives/StartFleet; consulted once, in Run
 	refreshCh  chan struct{}
+	wakeCh     chan struct{}      // 'R': refresh, waking spun-down drives
 	intervalCh chan time.Duration // runtime interval changes → poll-loop ticker reset
+	// save persists the settings modal's result. Injected so the UI never
+	// touches the filesystem and tests can assert on what would be written.
+	save func(config.Config) error
 	// rootCtx is the application context; interactive smartctl calls derive
 	// from it so they are cancelled on shutdown.
 	rootCtx context.Context
 
-	// refreshing crosses the poll and animation goroutines, hence atomic —
-	// the only field that does; the maps below stay event-loop-only.
+	// refreshing and standbyAware cross the poll goroutine, hence atomic —
+	// the only fields that do; the maps below stay event-loop-only.
 	refreshing atomic.Bool
-	spinFrame  int // animation frame; mutated only inside QueueUpdateDraw
+	// standbyAware is read by the poll goroutine when it picks the power
+	// policy, and written on the event loop when Settings applies.
+	standbyAware atomic.Bool
+	spinFrame    int // animation frame; mutated only inside QueueUpdateDraw
 
 	// All fields below are touched only on the main (event-loop) goroutine,
 	// either directly or inside QueueUpdateDraw callbacks, so need no locking.
@@ -82,10 +91,11 @@ const maxHistory = 120
 // spinnerInterval is the refresh spinner animation cadence.
 const spinnerInterval = 120 * time.Millisecond
 
-// New constructs the application. themeName must be valid (caller checks
-// HasTheme); the theme installs before build so widgets get its colours.
-func New(interval time.Duration, themeName string) *App {
-	setTheme(themes[themeName])
+// New constructs the application from validated settings (main runs
+// config.Validate); the theme installs before build so widgets get its
+// colours. save persists what the settings modal produces.
+func New(cfg config.Config, save func(config.Config) error) *App {
+	setTheme(themes[cfg.Theme])
 	a := &App{
 		app:          tview.NewApplication(),
 		list:         tview.NewList(),
@@ -94,16 +104,29 @@ func New(interval time.Duration, themeName string) *App {
 		banner:       newInertTextView(),
 		rail:         newInertTextView(),
 		lastWidth:    -1,
-		interval:     interval,
-		themeName:    themeName,
+		interval:     cfg.RefreshInterval.Duration(),
+		themeName:    cfg.Theme,
+		startView:    cfg.StartView,
+		save:         save,
 		refreshCh:    make(chan struct{}, 1),
+		wakeCh:       make(chan struct{}, 1),
 		intervalCh:   make(chan time.Duration, 1),
 		reports:      map[string]*smart.Report{},
 		history:      map[string][]float64{},
 		startedTests: map[string]startedTest{},
 	}
+	a.standbyAware.Store(cfg.StandbyAware)
+	a.detail.showAllTabs = cfg.ShowUnavailableTabs
 	a.build()
 	return a
+}
+
+// applyStartView opens the screen start_view names. It runs once, from Run:
+// afterwards the 'c' key owns which screen is up.
+func (a *App) applyStartView() {
+	if a.startView == config.StartFleet && !a.fleetMode {
+		a.toggleFleet()
+	}
 }
 
 // build assembles the widget tree and installs key bindings.
@@ -491,6 +514,7 @@ func (a *App) Run(ctx context.Context) error {
 	if len(devices) == 0 {
 		a.detail.showPlaceholder("No drives found. Try running with sudo.")
 	}
+	a.applyStartView()
 
 	// Stop the UI on context cancellation (SIGINT/SIGTERM).
 	go func() {
