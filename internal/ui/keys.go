@@ -93,8 +93,7 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case 't':
 			if a.detail.selectTabID("tests") {
-				a.app.SetFocus(a.detail.content())
-				a.refreshChrome()
+				a.focusDetail()
 			}
 			return nil
 		case 'c':
@@ -166,14 +165,14 @@ func (a *App) toggleFleet() {
 	a.refreshChrome()
 }
 
-// exitFleet returns to the per-drive view; focusDetail focuses the detail
+// exitFleet returns to the per-drive view; toDetail focuses the detail
 // pane (opening a drive) instead of the list (plain "back").
-func (a *App) exitFleet(focusDetail bool) {
+func (a *App) exitFleet(toDetail bool) {
 	a.fleetMode = false
 	a.bodyPages.SwitchToPage(pageDrives)
 	// Narrow keeps focus on the detail either way: the list is not in that
 	// layout, and focus on an off-tree primitive reaches nothing.
-	if focusDetail || a.narrow {
+	if toDetail || a.narrow {
 		a.app.SetFocus(a.detail.content())
 	} else {
 		a.app.SetFocus(a.list)
@@ -196,13 +195,22 @@ func (a *App) openDrive(name string) {
 	a.exitFleet(true)
 }
 
+// focusDetail moves focus to the detail body and resyncs the chrome, the pair
+// almost every focus move wants. The sites that instead call refreshChrome
+// after a branch (exitFleet, toggleFocus's wide arm, popModal, poll.go) may
+// focus the list rather than the detail, so they cannot use this — and now
+// look different because they are, not by accident.
+func (a *App) focusDetail() {
+	a.app.SetFocus(a.detail.content())
+	a.refreshChrome()
+}
+
 // openTab activates a tab and moves focus to its body; the 1-9 keys and a tab
 // click share it. From a mouse handler the event loop holds no draw lock, so
 // SetFocus is safe here where QueueUpdateDraw would deadlock.
 func (a *App) openTab(i int) {
 	a.detail.selectTab(i)
-	a.app.SetFocus(a.detail.content())
-	a.refreshChrome()
+	a.focusDetail()
 }
 
 // toggleFocus moves focus between the drive list and the detail content. In the
@@ -210,8 +218,7 @@ func (a *App) openTab(i int) {
 // so focusing it would park focus off-tree and tview would forward no key at all.
 func (a *App) toggleFocus() {
 	if a.narrow {
-		a.app.SetFocus(a.detail.content())
-		a.refreshChrome()
+		a.focusDetail()
 		return
 	}
 	if a.list.HasFocus() {
@@ -225,13 +232,11 @@ func (a *App) toggleFocus() {
 // focusRight advances along the chain list → tab0 → … → tabN (no wrap).
 func (a *App) focusRight() {
 	if a.list.HasFocus() {
-		a.app.SetFocus(a.detail.content())
-		a.refreshChrome()
+		a.focusDetail()
 		return
 	}
 	if a.detail.stepTab(1) {
-		a.app.SetFocus(a.detail.content())
-		a.refreshChrome()
+		a.focusDetail()
 	}
 }
 
@@ -250,8 +255,7 @@ func (a *App) focusLeft() {
 		return
 	}
 	a.detail.stepTab(-1)
-	a.app.SetFocus(a.detail.content())
-	a.refreshChrome()
+	a.focusDetail()
 }
 
 // triggerRefresh asks the poll loop to fetch immediately (non-blocking).

@@ -192,10 +192,7 @@ func (a *App) setNarrow(narrow bool) {
 	// is required too: QueueUpdate blocks until the event loop runs the closure,
 	// which cannot happen until this draw returns.
 	if narrow && a.list.HasFocus() {
-		go a.app.QueueUpdateDraw(func() {
-			a.app.SetFocus(a.detail.content())
-			a.refreshChrome()
-		})
+		go a.app.QueueUpdateDraw(a.focusDetail)
 	}
 }
 
