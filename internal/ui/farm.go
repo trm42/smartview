@@ -101,20 +101,27 @@ func (v *farmView) Draw(screen tcell.Screen) {
 	v.scrollView.Draw(screen)
 }
 
-// relayout builds the 2×2 grid above the charts for the given width and hands
-// the whole layout to the scroll container at its total height, so the bottom
-// charts stay reachable on a short terminal. Inner items are non-focusable —
-// focus stays on the scrollView.
+// relayout builds the boxes above the charts for the given width and hands the
+// whole layout to the scroll container at its total height, so the bottom
+// charts stay reachable on a short terminal. The four boxes pair into a 2×2
+// grid when the width affords it and stack into one column when it does not.
+// Inner items are non-focusable — focus stays on the scrollView.
 func (v *farmView) relayout(width int) {
 	leftW := width / 2
-	rightW := width - leftW
-	leftInner := leftW - 2 - 2*uiGutter // outer width minus borders and gutters
-	rightInner := rightW - 2 - 2*uiGutter
+	leftInner, rightInner := boxInner(leftW), boxInner(width-leftW)
 
-	topRowH, bottomRowH := v.wrapBoxes(leftInner, rightInner)
-	grid := buildFarmGrid(v.drive, v.env, v.errors, v.workload, topRowH, bottomRowH)
+	var grid tview.Primitive
+	var gridHeight int
+	if min(leftInner, rightInner) < farmColumnMin {
+		// Too narrow to pair: one full-width column gives every row back the
+		// space to stay on one line, which beats two columns of shredded values.
+		grid, gridHeight = v.stackBoxes(boxInner(width))
+	} else {
+		topRowH, bottomRowH := v.wrapBoxes(leftInner, rightInner)
+		grid = buildFarmGrid(v.drive, v.env, v.errors, v.workload, topRowH, bottomRowH)
+		gridHeight = topRowH + bottomRowH
+	}
 
-	gridHeight := topRowH + bottomRowH
 	outer := tview.NewFlex().SetDirection(tview.FlexRow)
 	outer.AddItem(grid, gridHeight, 0, false)
 	total := gridHeight
@@ -137,26 +144,57 @@ const farmChartHeight = 9
 // a bordered line, not a plot.
 const farmSummaryHeight = 3
 
-// wrapBoxes pre-wraps each box's text for its column width, sets the boxes,
-// and returns the shared top/bottom row heights (paired boxes grow to a
-// common height so the columns end level).
-func (v *farmView) wrapBoxes(leftInner, rightInner int) (topRowH, bottomRowH int) {
-	driveText := hangingIndent(v.driveText, farmWrap, leftInner)
-	envText := hangingIndent(v.envText, farmWrap, leftInner)
-	errorsText := hangingIndent(v.errorsText, farmWrap, rightInner)
-	workloadText := hangingIndent(v.workloadText, farmWrap, rightInner)
-	v.drive.SetText(driveText)
-	v.env.SetText(envText)
-	v.errors.SetText(errorsText)
-	v.workload.SetText(workloadText)
+// boxInner is the text width left inside a box of the given outer width, once
+// its border and gutters are taken.
+func boxInner(outerW int) int { return outerW - 2 - 2*uiGutter }
 
-	// Height is just the pre-wrapped line count plus the two borders.
-	boxHeight := func(text string) int {
-		return strings.Count(strings.TrimRight(text, "\n"), "\n") + 1 + 2
+// wrapBox pre-wraps one box's text for an inner width, sets it, and returns
+// the height the box needs: the wrapped line count plus its two borders.
+func (v *farmView) wrapBox(tv *tview.TextView, text string, innerW int) int {
+	wrapped := hangingIndent(text, farmWrap, innerW)
+	tv.SetText(wrapped)
+	return strings.Count(strings.TrimRight(wrapped, "\n"), "\n") + 1 + 2
+}
+
+// farmBoxes lists the four boxes in reading order: the grid's top row, then
+// its bottom row, so a stacked column presents them in the same sequence.
+func (v *farmView) farmBoxes() []struct {
+	tv   *tview.TextView
+	text string
+} {
+	return []struct {
+		tv   *tview.TextView
+		text string
+	}{
+		{v.drive, v.driveText},
+		{v.errors, v.errorsText},
+		{v.env, v.envText},
+		{v.workload, v.workloadText},
 	}
-	topRowH = max(boxHeight(driveText), boxHeight(errorsText))
-	bottomRowH = max(boxHeight(envText), boxHeight(workloadText))
-	return topRowH, bottomRowH
+}
+
+// wrapBoxes pre-wraps each box for its column width and returns the shared
+// top/bottom row heights (paired boxes grow to a common height so the columns
+// end level).
+func (v *farmView) wrapBoxes(leftInner, rightInner int) (topRowH, bottomRowH int) {
+	driveH := v.wrapBox(v.drive, v.driveText, leftInner)
+	errorsH := v.wrapBox(v.errors, v.errorsText, rightInner)
+	envH := v.wrapBox(v.env, v.envText, leftInner)
+	workloadH := v.wrapBox(v.workload, v.workloadText, rightInner)
+	return max(driveH, errorsH), max(envH, workloadH)
+}
+
+// stackBoxes lays the four boxes out in one full-width column, for a width too
+// narrow to pair them. Each keeps its own height; nothing is dropped.
+func (v *farmView) stackBoxes(innerW int) (tview.Primitive, int) {
+	col := tview.NewFlex().SetDirection(tview.FlexRow)
+	total := 0
+	for _, b := range v.farmBoxes() {
+		h := v.wrapBox(b.tv, b.text, innerW)
+		col.AddItem(b.tv, h, 0, false)
+		total += h
+	}
+	return col, total
 }
 
 // buildFarmGrid arranges the four boxes into the 2×2 grid: drive over env,
@@ -247,6 +285,13 @@ const (
 	farmLabelWidth = 20
 	farmValueCol   = farmLabelWidth + 1
 )
+
+// farmColumnMin is the narrowest inner width a *paired* box stays readable in:
+// the value column plus room for a reading like "12.29V now". The widest row
+// the fixture renders is 49 cells, so a grid that never wraps would need ~106
+// columns of terminal; rather than demand that, the grid pairs while values
+// wrap to a second line and stacks once they would start breaking every row.
+const farmColumnMin = farmValueCol + 13
 
 // farmWrap: every value here is a short number or reading, so it stays worth
 // wrapping down to a one-cell column. Clipping instead would drop digits off a

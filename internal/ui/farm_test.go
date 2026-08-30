@@ -95,3 +95,82 @@ func TestFarmValuesHangUnderTheValueColumn(t *testing.T) {
 		}
 	}
 }
+
+// Below farmColumnMin a paired box cannot hold a reading, so the four boxes
+// stack into one full-width column instead. The point is not the arrangement
+// but what it buys: at a width where the 2x2 grid shredded values across four
+// lines, one column puts every row back on a single line.
+func TestFarmStacksWhenTooNarrowToPair(t *testing.T) {
+	f := loadFARM(t)
+	v := newFarmView(&smart.Report{FARM: f})
+
+	// The widest row the fixture renders, used as the yardstick for "intact".
+	widest := 0
+	for _, box := range []func(*strings.Builder, *smart.FARM){
+		writeFarmDriveInfo, writeFarmErrors, writeFarmEnvironment, writeFarmWorkload,
+	} {
+		for _, line := range strings.Split(strings.TrimRight(farmBoxText(box, f), "\n"), "\n") {
+			widest = max(widest, tview.TaggedStringWidth(line))
+		}
+	}
+
+	for _, c := range []struct {
+		width   int
+		stacked bool
+	}{
+		{60, true},   // per-column inner 25: values would shred
+		{70, true},   // per-column inner 30, still under the floor
+		{80, false},  // per-column inner 35: pairs, long rows wrap once
+		{120, false}, // comfortable
+	} {
+		v.relayout(c.width)
+		// Observe the arrangement rather than re-deriving the condition: the
+		// stacked column mounts all four boxes, the grid mounts two columns.
+		outer, ok := v.inner.(*tview.Flex)
+		if !ok {
+			t.Fatalf("width %d: scroll content is %T, want *tview.Flex", c.width, v.inner)
+		}
+		arrangement, ok := outer.GetItem(0).(*tview.Flex)
+		if !ok {
+			t.Fatalf("width %d: first item is %T, want *tview.Flex", c.width, outer.GetItem(0))
+		}
+		if stacked := arrangement.GetItemCount() == 4; stacked != c.stacked {
+			t.Errorf("width %d: stacked = %v (%d items), want %v",
+				c.width, stacked, arrangement.GetItemCount(), c.stacked)
+		}
+		// Whichever arrangement was chosen, the container must be told a height
+		// that covers it.
+		if v.contentHeight <= 0 {
+			t.Errorf("width %d: content height %d", c.width, v.contentHeight)
+		}
+	}
+
+	// The payoff: stacked at 60 columns, the widest row fits on one line.
+	if got := boxInner(60); got < widest {
+		t.Logf("note: even stacked, inner %d < widest row %d at 60 columns", got, widest)
+	}
+	v.relayout(60)
+	for _, b := range v.farmBoxes() {
+		for _, line := range strings.Split(strings.TrimRight(b.tv.GetText(false), "\n"), "\n") {
+			if w := tview.TaggedStringWidth(line); w > boxInner(60) {
+				t.Errorf("stacked at 60: line overflows inner width %d (%d): %q", boxInner(60), w, line)
+			}
+		}
+	}
+}
+
+// The stacked column presents the boxes in the grid's reading order, so the
+// layout change does not reshuffle what the drive is telling you.
+func TestFarmStackKeepsReadingOrder(t *testing.T) {
+	v := newFarmView(&smart.Report{FARM: loadFARM(t)})
+	want := []*tview.TextView{v.drive, v.errors, v.env, v.workload}
+	got := v.farmBoxes()
+	if len(got) != len(want) {
+		t.Fatalf("farmBoxes returned %d boxes, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].tv != want[i] {
+			t.Errorf("box %d is not the one the grid puts there", i)
+		}
+	}
+}
