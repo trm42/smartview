@@ -11,7 +11,7 @@ import (
 // not wrap back to column 0.
 func TestHangingIndent(t *testing.T) {
 	line := "  " + padRight("Logical Sectors Read", statLabelWidth) + " 193.6 TB (378186418521 sectors)"
-	got := hangingIndent(line, statValueCol, 60)
+	got := hangingIndent(line, statWrap, 60)
 	lines := strings.Split(got, "\n")
 	if len(lines) < 2 {
 		t.Fatalf("expected the long value to wrap, got:\n%s", got)
@@ -26,11 +26,11 @@ func TestHangingIndent(t *testing.T) {
 	}
 	// A line that fits is returned untouched.
 	short := "  " + padRight("Power-on Hours", statLabelWidth) + " 1 y 28 d"
-	if got := hangingIndent(short, statValueCol, 120); got != short {
+	if got := hangingIndent(short, statWrap, 120); got != short {
 		t.Errorf("short line was rewritten:\n%q\n%q", short, got)
 	}
 	// An implausibly narrow pane gives up rather than indenting into nothing.
-	if got := hangingIndent(line, statValueCol, 20); got != line {
+	if got := hangingIndent(line, statWrap, 20); got != line {
 		t.Error("a pane too narrow to hang-indent should return the text unchanged")
 	}
 }

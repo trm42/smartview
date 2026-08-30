@@ -232,7 +232,7 @@ func TestHangingIndentSplitsOnDisplayColumns(t *testing.T) {
 	t.Run("ioservice path", func(t *testing.T) {
 		const path = "IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@9600000/" +
 			"AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1"
-		got := hangingIndent(key+path, valueCol, 60)
+		got := hangingIndent(key+path, hangingWrap{valueCol: valueCol, minValueW: 9}, 60)
 		lines := strings.Split(got, "\n")
 		if len(lines) < 3 {
 			t.Fatalf("a 150-character path should wrap, got:\n%s", got)
@@ -258,7 +258,7 @@ func TestHangingIndentSplitsOnDisplayColumns(t *testing.T) {
 
 	t.Run("colour tags survive", func(t *testing.T) {
 		value := "193.6 TB " + cautionTag() + "(378186418521 sectors, checked twice)[-]"
-		got := hangingIndent(key+value, valueCol, 50)
+		got := hangingIndent(key+value, hangingWrap{valueCol: valueCol, minValueW: 9}, 50)
 		if !strings.Contains(got, cautionTag()) || !strings.Contains(got, "[-]") {
 			t.Errorf("a colour tag was mangled by the re-wrap:\n%s", got)
 		}
@@ -276,7 +276,7 @@ func TestHangingIndentSplitsOnDisplayColumns(t *testing.T) {
 
 	t.Run("multi-byte runes", func(t *testing.T) {
 		value := strings.Repeat("温度", 12) + " 37°C"
-		got := hangingIndent(key+value, valueCol, 40)
+		got := hangingIndent(key+value, hangingWrap{valueCol: valueCol, minValueW: 9}, 40)
 		if !strings.Contains(got, "37°C") {
 			t.Errorf("multi-byte tail was lost:\n%s", got)
 		}
@@ -298,7 +298,7 @@ func TestHangingIndentSplitsOnDisplayColumns(t *testing.T) {
 			"",
 			key + "one\n" + key + "two",
 		} {
-			if got := hangingIndent(line, valueCol, 120); got != line {
+			if got := hangingIndent(line, hangingWrap{valueCol: valueCol, minValueW: 9}, 120); got != line {
 				t.Errorf("a line that fits was rewritten:\n%q\n%q", line, got)
 			}
 		}
@@ -339,7 +339,7 @@ func TestHangingIndentBreaksLongTokens(t *testing.T) {
 	const path = "IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@9600000/" +
 		"AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1"
 	line := "Device         " + path
-	got := hangingIndent(line, 15, 40)
+	got := hangingIndent(line, hangingWrap{valueCol: 15, minValueW: 9}, 40)
 	lines := strings.Split(got, "\n")
 	if len(lines) < 4 {
 		t.Fatalf("a 150-character token should break across lines, got %d:\n%s", len(lines), got)
