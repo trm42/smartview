@@ -257,7 +257,12 @@ func TestRailRepaintsAfterUpdate(t *testing.T) {
 // TestThemeCycleRegroundsPersistentWidgets guards the same class of miss
 // CLAUDE.md names for the banner: tview bakes the ground into a widget at
 // construction, and repaintAll rebuilds only the detail's tab views, so every
-// widget that outlives a theme change has to be re-grounded explicitly.
+// widget that outlives a theme change has to be re-grounded.
+//
+// repaintAll walks the tree for this; the list below stays hand-written on
+// purpose. If both sides derived from the walk the test would assert nothing,
+// so production walks and the test enumerates — that is what catches a widget
+// the walk cannot reach and nobody grounded (the rail, in the narrow layout).
 func TestThemeCycleRegroundsPersistentWidgets(t *testing.T) {
 	a, _ := newSimApp(t, 120, 40)
 	for range themeCycle {

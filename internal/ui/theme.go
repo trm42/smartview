@@ -142,6 +142,47 @@ func applyBackground(ws ...backgrounder) {
 	}
 }
 
+// childHaver and pageHaver are the two ways a tview container holds children.
+// Both are satisfied by promotion, so *detail, *fleetView and the tab views
+// are walked as their embedded Flex.
+type childHaver interface {
+	GetItemCount() int
+	GetItem(int) tview.Primitive
+}
+
+type pageHaver interface {
+	GetPageNames(bool) []string
+	GetPage(string) tview.Primitive
+}
+
+// groundTree re-grounds root and everything under it. This replaces a
+// hand-listed set of widgets, which is the miss CLAUDE.md names for the
+// banner: a widget added to the layout was themed only if someone remembered
+// to add it to the list too. Hidden pages are included (GetPageNames(false)),
+// so the fleet is re-grounded while off-screen.
+//
+// It reaches only what is *in* the tree: the narrow and wide layouts swap
+// which drive selector is mounted, so the other one is passed separately by
+// the caller.
+func groundTree(root tview.Primitive) {
+	if root == nil {
+		return
+	}
+	if b, ok := root.(backgrounder); ok {
+		b.SetBackgroundColor(activeTheme.Background)
+	}
+	switch c := root.(type) {
+	case pageHaver:
+		for _, name := range c.GetPageNames(false) {
+			groundTree(c.GetPage(name))
+		}
+	case childHaver:
+		for i := range c.GetItemCount() {
+			groundTree(c.GetItem(i))
+		}
+	}
+}
+
 // attrTextColor colours attribute row text: neutral when healthy, so only
 // rows needing attention are tinted. Colour marks exceptions, not membership.
 func attrTextColor(s smart.Severity) tcell.Color {

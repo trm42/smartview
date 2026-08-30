@@ -392,9 +392,10 @@ func (a *App) repaintAll() {
 	a.populateList()
 	// Widgets built once are not recreated by the rebuild, so they keep the
 	// ground tview baked in at construction until they are told again.
-	applyBackground(a.root, a.body, a.bodyPages, a.status, a.banner, a.rail,
-		a.detail, a.detail.barRow, a.detail.bar, a.detail.spinner, a.detail.pages,
-		a.fleet, a.fleet.bar, a.fleet.table, a.fleet.legend)
+	groundTree(a.root)
+	// The layout's off-tree half: applyLayout mounts the list or the rail, never
+	// both, so the walk above can only have reached one of them.
+	applyBackground(a.list, a.rail)
 	// The fleet table bakes a colour into every cell, same miss as the banner.
 	a.fleet.refresh(a.devices, a.reports, a.history)
 	a.refreshChrome()
