@@ -12,13 +12,24 @@ import (
 	"strings"
 )
 
-// binary is the smartctl executable name; resolved via PATH.
-const binary = "smartctl"
+// binary is the smartctl executable name; resolved via PATH. A var, not a
+// const, so tests can point it at a stub and exercise the run path.
+var binary = "smartctl"
+
+// smartctlWrapper is the envelope every smartctl JSON response carries.
+type smartctlWrapper struct {
+	Smartctl Smartctl `json:"smartctl"`
+}
+
+// farmWrapper is the envelope `smartctl -l farm -j` returns.
+type farmWrapper struct {
+	FARM *FARM `json:"seagate_farm_log"`
+}
 
 // scanResult mirrors `smartctl --scan-open -j`.
 type scanResult struct {
-	Smartctl Smartctl `json:"smartctl"`
-	Devices  []Device `json:"devices"`
+	smartctlWrapper
+	Devices []Device `json:"devices"`
 }
 
 // minSmartctlVersion is the oldest smartmontools release smartview supports.
@@ -36,18 +47,9 @@ func Available() bool {
 // prints in `smartctl -j -V`. A build too old to understand -j emits no JSON at
 // all, which surfaces here as a parse error rather than a version.
 func Version(ctx context.Context) ([]int, error) {
-	out, err := run(ctx, "-j", "-V")
-	if len(out) == 0 {
-		if err != nil {
-			return nil, err
-		}
-		return nil, errors.New("smartctl produced no output")
-	}
-	var res struct {
-		Smartctl Smartctl `json:"smartctl"`
-	}
-	if jerr := json.Unmarshal(out, &res); jerr != nil {
-		return nil, fmt.Errorf("parse smartctl version: %w", jerr)
+	res, err := runJSON[smartctlWrapper](ctx, "smartctl version", "-j", "-V")
+	if err != nil {
+		return nil, err
 	}
 	return res.Smartctl.Version, nil
 }
@@ -107,13 +109,9 @@ func Scan(ctx context.Context) ([]Device, error) {
 	if fixtureActive() {
 		return fixtureScan()
 	}
-	out, err := run(ctx, "--scan-open", "-j")
-	if err != nil && len(out) == 0 {
+	res, err := runJSON[scanResult](ctx, "scan output", "--scan-open", "-j")
+	if err != nil {
 		return nil, err
-	}
-	var res scanResult
-	if jerr := json.Unmarshal(out, &res); jerr != nil {
-		return nil, fmt.Errorf("parse scan output: %w", jerr)
 	}
 	return res.Devices, nil
 }
@@ -125,18 +123,7 @@ func Info(ctx context.Context, name string) (*Report, error) {
 	if fixtureActive() {
 		return fixtureInfo(name)
 	}
-	out, err := run(ctx, "-j", "-x", name)
-	if len(out) == 0 {
-		if err != nil {
-			return nil, err
-		}
-		return nil, errors.New("smartctl produced no output")
-	}
-	var rep Report
-	if jerr := json.Unmarshal(out, &rep); jerr != nil {
-		return nil, fmt.Errorf("parse report for %s: %w", name, jerr)
-	}
-	return &rep, nil
+	return runJSON[Report](ctx, "report for "+name, "-j", "-x", name)
 }
 
 // FarmLog runs `smartctl -l farm -j <name>` and parses the Seagate FARM log.
@@ -145,23 +132,11 @@ func FarmLog(ctx context.Context, name string) (*FARM, error) {
 	if fixtureActive() {
 		return fixtureFarm(name)
 	}
-	out, err := run(ctx, "-l", "farm", "-j", name)
-	if len(out) == 0 {
-		if err != nil {
-			return nil, err
-		}
-		return nil, errors.New("smartctl produced no output")
+	w, err := runJSON[farmWrapper](ctx, "FARM log for "+name, "-l", "farm", "-j", name)
+	if err != nil {
+		return nil, err
 	}
-	var wrapper struct {
-		FARM *FARM `json:"seagate_farm_log"`
-	}
-	if jerr := json.Unmarshal(out, &wrapper); jerr != nil {
-		return nil, fmt.Errorf("parse FARM log for %s: %w", name, jerr)
-	}
-	if wrapper.FARM == nil || !wrapper.FARM.Supported {
-		return nil, nil
-	}
-	return wrapper.FARM, nil
+	return supportedFarm(w.FARM), nil
 }
 
 // RunSelfTest starts a short or long SMART self-test (other types are
@@ -174,37 +149,51 @@ func RunSelfTest(ctx context.Context, name string, testType SelfTestType) error 
 		return fmt.Errorf("unsupported self-test type %q (want %q or %q)",
 			testType, SelfTestShort, SelfTestLong)
 	}
-	return runSelfTestCommand(ctx, name, "start", "-t", string(testType), "-j", name)
+	return runSelfTestCommand(ctx, name, "start", "-t", string(testType))
 }
 
 // AbortSelfTest cancels the running self-test (`smartctl -X`); a no-op if
 // none is running.
 func AbortSelfTest(ctx context.Context, name string) error {
-	return runSelfTestCommand(ctx, name, "abort", "-X", "-j", name)
+	return runSelfTestCommand(ctx, name, "abort", "-X")
 }
 
-// runSelfTestCommand runs a self-test control command; error-severity
+// runSelfTestCommand runs a self-test control command against name; flags are
+// the command-specific arguments and the device is appended here, so the name
+// in the argv cannot drift from the one in the error text. Error-severity
 // smartctl messages become the returned error.
-func runSelfTestCommand(ctx context.Context, name, action string, args ...string) error {
-	out, err := run(ctx, args...)
-	if len(out) == 0 {
-		if err != nil {
-			return err
-		}
-		return errors.New("smartctl produced no output")
+func runSelfTestCommand(ctx context.Context, name, action string, flags ...string) error {
+	args := append(flags[:len(flags):len(flags)], "-j", name)
+	w, err := runJSON[smartctlWrapper](ctx,
+		fmt.Sprintf("self-test %s response for %s", action, name), args...)
+	if err != nil {
+		return err
 	}
-	var wrapper struct {
-		Smartctl Smartctl `json:"smartctl"`
-	}
-	if jerr := json.Unmarshal(out, &wrapper); jerr != nil {
-		return fmt.Errorf("parse self-test %s response for %s: %w", action, name, jerr)
-	}
-	for _, m := range wrapper.Smartctl.Messages {
+	for _, m := range w.Smartctl.Messages {
 		if m.Severity == "error" {
 			return fmt.Errorf("self-test %s for %s: %s", action, name, m.String)
 		}
 	}
 	return nil
+}
+
+// runJSON runs smartctl and decodes its stdout into T. Empty output is an
+// error in its own right: smartctl emits valid JSON even with its exit-status
+// bitmask set, so nothing at all means the call never got that far. what names
+// the operation in the parse error.
+func runJSON[T any](ctx context.Context, what string, args ...string) (*T, error) {
+	out, err := run(ctx, args...)
+	if len(out) == 0 {
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New("smartctl produced no output")
+	}
+	var v T
+	if jerr := json.Unmarshal(out, &v); jerr != nil {
+		return nil, fmt.Errorf("parse %s: %w", what, jerr)
+	}
+	return &v, nil
 }
 
 // maxStderrDetail bounds how much of smartctl's stderr is folded into an error.

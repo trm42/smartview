@@ -477,8 +477,8 @@ func nvmeRows(h *smart.NVMeHealth) []attrKV {
 	add("Power-on", humanDuration(h.PowerOnHours), smart.SeverityOK)
 	add("Power cycles", fmt.Sprintf("%d", h.PowerCycles), smart.SeverityOK)
 	add("Unsafe shutdowns", fmt.Sprintf("%d", h.UnsafeShutdowns), smart.SeverityOK)
-	add("Data read", humanBytes(h.DataUnitsRead*512*1000), smart.SeverityOK)
-	add("Data written", humanBytes(h.DataUnitsWritten*512*1000), smart.SeverityOK)
+	add("Data read", humanBytes(smart.DataUnitBytes(h.DataUnitsRead)), smart.SeverityOK)
+	add("Data written", humanBytes(smart.DataUnitBytes(h.DataUnitsWritten)), smart.SeverityOK)
 	if h.HostReads > 0 || h.HostWrites > 0 {
 		add("Read commands", fmt.Sprintf("%d", h.HostReads), smart.SeverityOK)
 		add("Write commands", fmt.Sprintf("%d", h.HostWrites), smart.SeverityOK)

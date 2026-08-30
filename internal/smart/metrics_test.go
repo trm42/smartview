@@ -216,3 +216,54 @@ func TestMetricsOnSparseReport(t *testing.T) {
 		t.Error("ErrorCounts should be entirely absent")
 	}
 }
+
+// TestCapacityBytes pins the user_capacity -> nvme_total_capacity fallback and,
+// on the sparse Apple NVMe, that a drive reporting neither stays absent rather
+// than claiming a zero-byte capacity.
+func TestCapacityBytes(t *testing.T) {
+	for _, c := range []struct {
+		fixture string
+		want    int64
+		ok      bool
+	}{
+		{"smart-sda.json", 22000969973760, true},
+		{"smart-sdb.json", 500107862016, true},
+		{"smart-nvme.json", 2000398934016, true},
+		// The sparse Apple NVMe reports neither field: absent, not zero.
+		{"smart-apple-nvme.json", 0, false},
+	} {
+		r := parseFixture(t, c.fixture)
+		got, ok := r.CapacityBytes()
+		if ok != c.ok || got != c.want {
+			t.Errorf("%s: CapacityBytes = (%d,%v), want (%d,%v)", c.fixture, got, ok, c.want, c.ok)
+		}
+	}
+	// No capacity reported at all stays absent rather than becoming a zero.
+	if got, ok := (&Report{}).CapacityBytes(); ok || got != 0 {
+		t.Errorf("empty report: CapacityBytes = (%d,%v), want (0,false)", got, ok)
+	}
+	// The NVMe fallback arm: no fixture exercises it (every captured NVMe drive
+	// reports user_capacity too), so it is pinned here or not at all.
+	total := int64(494384795648)
+	if got, ok := (&Report{NVMeTotalCapacity: &total}).CapacityBytes(); !ok || got != total {
+		t.Errorf("nvme_total_capacity fallback = (%d,%v), want (%d,true)", got, ok, total)
+	}
+}
+
+// TestSectorBytes pins the 512-byte default. It is the unit the "Logical
+// Sectors *" counters are multiplied by, so a wrong default silently misreports
+// every byte total on a 4Kn drive.
+func TestSectorBytes(t *testing.T) {
+	for _, f := range []string{"smart-sda.json", "smart-sdb.json", "smart-nvme.json"} {
+		if got := parseFixture(t, f).SectorBytes(); got != 512 {
+			t.Errorf("%s: SectorBytes = %d, want 512", f, got)
+		}
+	}
+	if got := (&Report{}).SectorBytes(); got != 512 {
+		t.Errorf("unreported block size: SectorBytes = %d, want the 512 default", got)
+	}
+	n := 4096
+	if got := (&Report{LogicalBlockSize: &n}).SectorBytes(); got != 4096 {
+		t.Errorf("4Kn drive: SectorBytes = %d, want 4096", got)
+	}
+}

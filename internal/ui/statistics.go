@@ -60,10 +60,7 @@ func buildStatisticsText(r *smart.Report) string {
 		return ""
 	}
 	// "Logical Sectors *" counts are in logical-block units (4096 B on 4Kn).
-	sectorBytes := int64(512)
-	if r.LogicalBlockSize != nil && *r.LogicalBlockSize > 0 {
-		sectorBytes = int64(*r.LogicalBlockSize)
-	}
+	sectorBytes := r.SectorBytes()
 	first := true
 	for _, p := range r.ATADeviceStatistics.Pages {
 		valid := validStatEntries(p.Table)

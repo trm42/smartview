@@ -234,29 +234,11 @@ func orDash(s string) string {
 	return s
 }
 
-// capacityBytes returns the usable size: user_capacity, else nvme_total_capacity.
-func capacityBytes(r *smart.Report) (int64, bool) {
-	if r.UserCapacity != nil && r.UserCapacity.Bytes > 0 {
-		return r.UserCapacity.Bytes, true
-	}
-	if r.NVMeTotalCapacity != nil && *r.NVMeTotalCapacity > 0 {
-		return *r.NVMeTotalCapacity, true
-	}
-	return 0, false
-}
-
 // capacityString formats a report's usable capacity, or a dash if unknown.
+// The fallback itself lives in smart.CapacityBytes.
 func capacityString(r *smart.Report) string {
-	if b, ok := capacityBytes(r); ok {
+	if b, ok := r.CapacityBytes(); ok {
 		return humanBytes(b)
-	}
-	return dash
-}
-
-// tempString formats the current temperature in Celsius, or a dash.
-func tempString(r *smart.Report) string {
-	if t, ok := r.CurrentTemp(); ok {
-		return fmt.Sprintf("%d°C", t)
 	}
 	return dash
 }

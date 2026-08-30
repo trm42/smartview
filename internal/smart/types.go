@@ -121,13 +121,8 @@ type NamedValue struct {
 
 // InterfaceSpeed reports the negotiated vs maximum SATA link speed.
 type InterfaceSpeed struct {
-	Max     *LinkSpeed `json:"max"`
-	Current *LinkSpeed `json:"current"`
-}
-
-// LinkSpeed is one interface-speed reading (e.g. "6.0 Gb/s").
-type LinkSpeed struct {
-	String string `json:"string"`
+	Max     *StringValue `json:"max"`
+	Current *StringValue `json:"current"`
 }
 
 // Trim reports SSD TRIM/UNMAP support.
@@ -163,15 +158,3 @@ func (r *Report) IsNVMe() bool { return r.Device.Protocol == "NVMe" }
 
 // IsATA reports whether the report describes an ATA/SATA drive.
 func (r *Report) IsATA() bool { return r.Device.Protocol == "ATA" }
-
-// CurrentTemp returns the current Celsius reading, falling back from the
-// generic block to the NVMe health log.
-func (r *Report) CurrentTemp() (int, bool) {
-	if r.Temperature != nil && r.Temperature.Current != nil {
-		return *r.Temperature.Current, true
-	}
-	if r.NVMeHealth != nil && r.NVMeHealth.Temperature != nil {
-		return *r.NVMeHealth.Temperature, true
-	}
-	return 0, false
-}

@@ -88,7 +88,7 @@ func TestCapacity(t *testing.T) {
 	}
 	total := int64(2_000_398_934_016)
 	fallback := &smart.Report{NVMeTotalCapacity: &total}
-	if b, ok := capacityBytes(fallback); !ok || b != total {
+	if b, ok := fallback.CapacityBytes(); !ok || b != total {
 		t.Errorf("nvme fallback = %d,%v", b, ok)
 	}
 	if got := capacityString(&smart.Report{}); got != dash {
@@ -96,12 +96,12 @@ func TestCapacity(t *testing.T) {
 	}
 }
 
-func TestTempString(t *testing.T) {
+func TestTempCell(t *testing.T) {
 	c := 37
-	if got := tempString(&smart.Report{Temperature: &smart.Temperature{Current: &c}}); got != "37°C" {
+	if got := tempCell(&smart.Report{Temperature: &smart.Temperature{Current: &c}}); got != "37°C" {
 		t.Errorf("temp = %q", got)
 	}
-	if got := tempString(&smart.Report{}); got != dash {
+	if got := tempCell(&smart.Report{}); got != dash {
 		t.Errorf("no temp = %q, want dash", got)
 	}
 }
