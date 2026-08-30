@@ -241,8 +241,8 @@ func writeFarmWorkload(b *strings.Builder, f *smart.FARM) {
 // farmLabelWidth is the label field every farmRow pads to; farmValueCol is the
 // display column values therefore start in. hangingIndent cuts each line at
 // that column, so a label wider than the field would push the value past the
-// cut and the wrap would land inside the label — TestFarmLabelsFitTheField
-// pins that none does.
+// cut and the wrap would land inside the label —
+// TestFarmValuesStartAtTheValueColumn pins that none does.
 const (
 	farmLabelWidth = 20
 	farmValueCol   = farmLabelWidth + 1

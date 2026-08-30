@@ -312,7 +312,6 @@ func TestThemeCycleRegroundsPersistentWidgets(t *testing.T) {
 // it anyway. The same holds for whichever of list/rail the layout left out.
 func TestThemeCycleRegroundsWidgetsTheWalkCannotReach(t *testing.T) {
 	a, _ := newSimApp(t, 120, 40)
-	a.build()
 
 	// Stand in for the euid == 0 layout: build() would never have added it.
 	a.root.RemoveItem(a.banner)
