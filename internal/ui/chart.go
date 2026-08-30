@@ -86,8 +86,10 @@ func bucketMax(data []float64, group int) []float64 {
 
 // fillEighths scales v within [lo, hi] to a column height in eighths of a
 // cell. The range is the data's own, so the fill measures distance above the
-// series minimum, not above zero.
+// series minimum, not above zero. It pads the range itself: a flat series
+// would otherwise divide by zero and render every column as NaN.
 func fillEighths(v, lo, hi float64, rows int) float64 {
+	lo, hi = padRange(lo, hi)
 	frac := (v - lo) / (hi - lo)
 	frac = min(max(frac, 0), 1)
 	return frac * float64(rows) * 8
@@ -116,7 +118,6 @@ func seriesRows(data []float64, width, rows int, lo, hi float64) []string {
 	if width <= 0 || rows <= 0 {
 		return nil
 	}
-	lo, hi = padRange(lo, hi)
 	grid := make([][]rune, rows)
 	for r := range grid {
 		grid[r] = []rune(strings.Repeat(" ", width))
@@ -143,7 +144,6 @@ func barRows(values []float64, barWidth, rows int, lo, hi float64) []string {
 	if barWidth <= 0 || rows <= 0 {
 		return nil
 	}
-	lo, hi = padRange(lo, hi)
 	cols := make([][]rune, rows)
 	for _, v := range values {
 		eighths := fillEighths(v, lo, hi, rows)

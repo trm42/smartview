@@ -294,7 +294,7 @@ func TestChartGroupingNoteIsNeverItselfClipped(t *testing.T) {
 // still be drawn. Keeping the first N values dropped heads 32-59 at this
 // width, so a single failing head at 47 left a flat row of minimum marks --
 // the chart's one interesting bar, gone. Buckets take the MAXIMUM, the same
-// rule downsample uses to keep a spike in a traced series.
+// rule downsample uses to keep a spike in a filled series.
 func TestChartKeepsAFaultInTheTail(t *testing.T) {
 	const w, h = 40, 10
 	const faulty = 47
