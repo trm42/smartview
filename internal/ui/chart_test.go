@@ -3,8 +3,12 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 )
 
 // The scaling is a pure function, so unlike the widgets it replaces it can be
@@ -159,5 +163,129 @@ func TestAxisLabelsDeduplicate(t *testing.T) {
 	}
 	if got[0] != "40" {
 		t.Errorf("top label = %q, want the maximum 40", got[0])
+	}
+}
+
+// drawChart renders a primitive on a simulation screen and returns its rows.
+func drawChart(t *testing.T, p tview.Primitive, w, h int) []string {
+	t.Helper()
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	screen.SetSize(w, h)
+	p.SetRect(0, 0, w, h)
+	p.Draw(screen)
+	screen.Show()
+	cells, cw, _ := screen.GetContents()
+	rows := make([]string, h)
+	for y := range h {
+		var b strings.Builder
+		for x := range cw {
+			b.WriteRune(cells[y*cw+x].Runes[0])
+		}
+		rows[y] = strings.TrimRight(b.String(), " ")
+	}
+	return rows
+}
+
+// countBars counts painted bar cells (full block or any partial).
+func countBars(line string) int {
+	n := 0
+	for _, r := range line {
+		if r == '█' || (r >= '▁' && r <= '▇') {
+			n++
+		}
+	}
+	return n
+}
+
+func headSeries(n int) []int {
+	d := make([]int, n)
+	for i := range d {
+		d[i] = 350 + i*5
+	}
+	return d
+}
+
+// A chart must never drop bars off its right edge just because the default
+// pitch does not fit: the pitch narrows toward one cell first. Before this,
+// a 30-head drive at 60 columns painted 26 heads and said nothing -- and the
+// title's range named a maximum that was never drawn, which on a health
+// display is worse than a cramped chart.
+func TestChartNarrowsPitchRatherThanDropBars(t *testing.T) {
+	const w, h = 60, 12
+	heads := headSeries(30)
+	rows := drawChart(t, farmHeadChart(" heads ", heads, false), w, h)
+
+	baseline := rows[h-4] // last plot row, above the axis line
+	if got := countBars(baseline); got != len(heads) {
+		t.Errorf("painted %d of %d heads at width %d:\n%s",
+			got, len(heads), w, strings.Join(rows, "\n"))
+	}
+	// Nothing was dropped, so nothing should claim otherwise.
+	if caption := rows[h-2]; strings.Contains(caption, "more") {
+		t.Errorf("caption reports dropped bars when all fit: %q", caption)
+	}
+}
+
+// The gap between bars is worth keeping when there is room for it; narrowing
+// the pitch is a concession to width, not the new default.
+func TestChartKeepsItsPitchWhenThereIsRoom(t *testing.T) {
+	const w, h = 60, 12
+	rows := drawChart(t, farmHeadChart(" heads ", headSeries(10), false), w, h)
+	baseline := rows[h-4]
+	i := strings.IndexAny(baseline, "▁▂▃▄▅▆▇█")
+	if i < 0 {
+		t.Fatalf("no bars drawn:\n%s", strings.Join(rows, "\n"))
+	}
+	// At the default pitch of 2 the cell after the first bar is a gap.
+	if r := []rune(baseline[i:]); len(r) < 2 || r[1] != ' ' {
+		t.Errorf("bars are touching at a width that affords a gap: %q", baseline)
+	}
+}
+
+// When even one cell per bar will not fit, the chart shows what it can and
+// says how many it could not -- the same contract as the fleet's dropped
+// columns. Silently painting a subset would hide a failing head.
+func TestChartSaysHowManyBarsItDropped(t *testing.T) {
+	const w, h = 40, 10
+	heads := headSeries(60)
+	rows := drawChart(t, farmHeadChart(" heads ", heads, false), w, h)
+
+	painted := countBars(rows[h-4])
+	if painted >= len(heads) {
+		t.Fatalf("width %d should not fit %d heads; painted %d", w, len(heads), painted)
+	}
+	caption := rows[h-2]
+	want := fmt.Sprintf("%d more", len(heads)-painted)
+	if !strings.Contains(caption, want) {
+		t.Errorf("caption %q does not say %q:\n%s", caption, want, strings.Join(rows, "\n"))
+	}
+}
+
+// The note about dropped bars must survive whatever width forced it; a note
+// that is itself clipped would be the same failure one level up. The labels
+// are built around the note for exactly this reason, so the check is that the
+// count is complete and agrees with what was painted.
+func TestChartDroppedNoteIsNeverItselfClipped(t *testing.T) {
+	const h = 10
+	heads := headSeries(60)
+	sawDrop := false
+	for _, w := range []int{30, 36, 40, 48, 60} {
+		rows := drawChart(t, farmHeadChart(" heads ", heads, false), w, h)
+		painted, caption := countBars(rows[h-4]), rows[h-2]
+		if painted >= len(heads) {
+			continue // wide enough for all of them; nothing to report
+		}
+		sawDrop = true
+		want := fmt.Sprintf("· %d more", len(heads)-painted)
+		if !strings.Contains(caption, want) {
+			t.Errorf("width %d: painted %d of %d, caption %q lacks %q",
+				w, painted, len(heads), caption, want)
+		}
+	}
+	if !sawDrop {
+		t.Fatal("no width dropped a bar; the test proves nothing")
 	}
 }

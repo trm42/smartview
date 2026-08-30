@@ -166,6 +166,10 @@ type rangeChart struct {
 	tick    int    // bar pitch in cells; 1 for a traced series
 	unit    string // appended to the axis labels and the range caption
 	caption string // one line under the axis: what the x axis is
+	// axis builds the caption for a bar chart instead of caption. The pitch and
+	// how many bars fit are only known at draw time, so the labels cannot be
+	// baked in with the data.
+	axis    func(pitch, shown, width int) string
 	color   tcell.Color
 	focused bool
 }
@@ -181,10 +185,40 @@ func (c *rangeChart) setSeries(data []float64, unit, caption string) *rangeChart
 	return c
 }
 
-// setBars plots data as categorical bars at the given pitch (bar cell plus gap).
-func (c *rangeChart) setBars(data []float64, pitch int, unit, caption string) *rangeChart {
-	c.data, c.bars, c.tick, c.unit, c.caption = data, true, max(pitch, 1), unit, caption
+// setBars plots data as categorical bars. pitch is the widest bar cell plus
+// gap to use; Draw narrows it toward 1 rather than let bars fall off the edge.
+// axis builds the caption once the pitch and bar count are known.
+func (c *rangeChart) setBars(data []float64, pitch int, unit string, axis func(pitch, shown, width int) string) *rangeChart {
+	c.data, c.bars, c.tick, c.unit, c.axis = data, true, max(pitch, 1), unit, axis
+	c.caption = ""
 	return c
+}
+
+// barFit picks the bar pitch and count for a plot of plotW cells: the widest
+// pitch up to c.tick that seats every bar, narrowing to 1 before dropping any.
+// shown is short of the data only when even one cell each does not fit.
+func (c *rangeChart) barFit(plotW int) (pitch, shown int) {
+	n := len(c.data)
+	if n == 0 || plotW <= 0 {
+		return c.tick, 0
+	}
+	pitch = min(c.tick, max(plotW/n, 1))
+	return pitch, min(n, plotW/pitch)
+}
+
+// barCaption is the axis labels plus, when bars had to be dropped, how many —
+// the same contract as the fleet's dropped columns: nothing goes missing
+// silently. The note is measured first so the labels are built around it.
+func (c *rangeChart) barCaption(pitch, shown, plotW int) string {
+	note := ""
+	if dropped := len(c.data) - shown; dropped > 0 {
+		note = fmt.Sprintf(" · %d more", dropped)
+	}
+	labels := ""
+	if c.axis != nil {
+		labels = c.axis(pitch, shown, plotW-len(note))
+	}
+	return labels + note
 }
 
 func (c *rangeChart) setColor(col tcell.Color) *rangeChart { c.color = col; return c }
@@ -231,8 +265,14 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 	}
 
 	var rows []string
+	caption := c.caption
 	if c.bars {
-		rows = barRows(c.data, c.tick, plotRows, lo, hi)
+		pitch, shown := c.barFit(plotW)
+		// The scale stays the whole drive's range even when bars are dropped, so
+		// the axis labels keep agreeing with the title; the caption says what is
+		// missing rather than quietly rescaling around it.
+		rows = barRows(c.data[:shown], pitch, plotRows, lo, hi)
+		caption = c.barCaption(pitch, shown, plotW)
 	} else {
 		rows = seriesRows(c.data, plotW, plotRows, lo, hi)
 	}
@@ -254,7 +294,7 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 	base := fmt.Sprintf("%*s ", gutter-2, fmt.Sprintf("%.0f", lo))
 	tview.Print(screen, esc(base), x, top+plotRows, gutter, tview.AlignLeft, muted)
 	tview.Print(screen, "└"+strings.Repeat("─", plotW-1), x+gutter-1, top+plotRows, plotW, tview.AlignLeft, muted)
-	if c.caption != "" {
-		tview.Print(screen, esc(c.caption), x+gutter, top+plotRows+1, plotW, tview.AlignLeft, muted)
+	if caption != "" {
+		tview.Print(screen, esc(caption), x+gutter, top+plotRows+1, plotW, tview.AlignLeft, muted)
 	}
 }

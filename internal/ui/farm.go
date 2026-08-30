@@ -5,6 +5,7 @@ package ui
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -343,14 +344,15 @@ func farmHeadChart(title string, data []int, health bool) tview.Primitive {
 	}
 
 	c := newRangeChart().
-		setBars(vals, farmHeadPitch, "", farmHeadAxis(len(data))).
+		setBars(vals, farmHeadPitch, "", farmHeadAxis).
 		setColor(color)
 	c.SetBorder(true)
 	c.SetTitle(fmt.Sprintf("%s— %d–%d ", title, slices.Min(data), worst))
 	return c
 }
 
-// farmHeadPitch is the per-head bar pitch: one cell of bar, one of gap.
+// farmHeadPitch is the widest per-head bar pitch: one cell of bar, one of gap.
+// rangeChart narrows it toward 1 when the plot is too tight to seat every head.
 const farmHeadPitch = 2
 
 // farmHeadSummary states an all-zero fault chart's healthy answer in one line.
@@ -361,16 +363,25 @@ func farmHeadSummary(title string, heads int) tview.Primitive {
 	return tv
 }
 
-// farmHeadAxis labels head indices under the bars; past ten heads two-digit
-// indices no longer fit the pitch, so every other one is labelled.
-func farmHeadAxis(heads int) string {
+// farmHeadAxis labels head indices under the bars. The pitch is chosen at draw
+// time, so the label step is too: label every step-th head, where step is the
+// fewest heads whose combined cells hold an index plus a separating space.
+func farmHeadAxis(pitch, heads, width int) string {
+	if heads <= 0 || pitch <= 0 || width <= 0 {
+		return ""
+	}
+	labelW := len(strconv.Itoa(heads - 1))
 	step := 1
-	if heads > 10 {
-		step = 2
+	for step*pitch < labelW+1 {
+		step++
 	}
 	var b strings.Builder
 	for i := 0; i < heads; i += step {
-		fmt.Fprintf(&b, "%-*d", farmHeadPitch*step, i)
+		fmt.Fprintf(&b, "%-*d", pitch*step, i)
 	}
-	return strings.TrimRight(b.String(), " ")
+	out := strings.TrimRight(b.String(), " ")
+	if len(out) > width {
+		out = out[:width]
+	}
+	return out
 }
