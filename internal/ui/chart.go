@@ -84,14 +84,40 @@ func bucketMax(data []float64, group int) []float64 {
 	return out
 }
 
-// seriesRows traces the TOP EDGE of the series scaled to [lo, hi] — a line,
-// not a filled area, which would reproduce the solid-block failure. Row 0 is
-// the top of the chart.
+// fillEighths scales v within [lo, hi] to a column height in eighths of a
+// cell. The range is the data's own, so the fill measures distance above the
+// series minimum, not above zero. It pads the range itself: a flat series
+// would otherwise divide by zero and render every column as NaN.
+func fillEighths(v, lo, hi float64, rows int) float64 {
+	lo, hi = padRange(lo, hi)
+	frac := (v - lo) / (hi - lo)
+	frac = min(max(frac, 0), 1)
+	return frac * float64(rows) * 8
+}
+
+// fillGlyph is the glyph for row r of a column filled to eighths eighths from
+// the baseline; row rows-1 is the baseline. A column too short to draw still
+// gets a minimum mark there, or the smallest value reads as missing data.
+func fillGlyph(eighths float64, rows, r int) rune {
+	cell := eighths - float64((rows-1-r)*8) // this cell's fill, counting up from the baseline
+	switch {
+	case cell >= 8:
+		return '█'
+	case cell > 0:
+		return blockRamp[int(cell)]
+	case r == rows-1:
+		return blockRamp[0]
+	}
+	return ' '
+}
+
+// seriesRows plots the series scaled to [lo, hi] as an area filled under the
+// trace: the shape reads at a glance, and because the fill starts at the data
+// minimum it cannot become the zero-anchored solid block. Row 0 is the top.
 func seriesRows(data []float64, width, rows int, lo, hi float64) []string {
 	if width <= 0 || rows <= 0 {
 		return nil
 	}
-	lo, hi = padRange(lo, hi)
 	grid := make([][]rune, rows)
 	for r := range grid {
 		grid[r] = []rune(strings.Repeat(" ", width))
@@ -100,15 +126,10 @@ func seriesRows(data []float64, width, rows int, lo, hi float64) []string {
 		if x >= width {
 			break
 		}
-		frac := (v - lo) / (hi - lo)
-		frac = min(max(frac, 0), 1)
-		eighths := frac * float64(rows) * 8
-		if eighths >= float64(rows*8) {
-			grid[0][x] = '█'
-			continue
+		eighths := fillEighths(v, lo, hi, rows)
+		for r := range rows {
+			grid[r][x] = fillGlyph(eighths, rows, r)
 		}
-		row := rows - 1 - int(eighths)/8
-		grid[row][x] = blockRamp[int(eighths)%8]
 	}
 	out := make([]string, rows)
 	for r, g := range grid {
@@ -123,27 +144,11 @@ func barRows(values []float64, barWidth, rows int, lo, hi float64) []string {
 	if barWidth <= 0 || rows <= 0 {
 		return nil
 	}
-	lo, hi = padRange(lo, hi)
 	cols := make([][]rune, rows)
 	for _, v := range values {
-		frac := (v - lo) / (hi - lo)
-		frac = min(max(frac, 0), 1)
-		eighths := frac * float64(rows) * 8
+		eighths := fillEighths(v, lo, hi, rows)
 		for r := range rows {
-			// This cell's fill in eighths, counting up from the baseline row.
-			cell := eighths - float64((rows-1-r)*8)
-			g := ' '
-			switch {
-			case cell >= 8:
-				g = '█'
-			case cell > 0:
-				g = blockRamp[int(cell)]
-			case r == rows-1:
-				// The smallest value would draw nothing and read as a missing
-				// category; give the baseline row a minimum mark.
-				g = blockRamp[0]
-			}
-			cols[r] = append(cols[r], g)
+			cols[r] = append(cols[r], fillGlyph(eighths, rows, r))
 			for range barWidth - 1 {
 				cols[r] = append(cols[r], ' ') // gap, so neighbours stay separate
 			}
@@ -177,13 +182,13 @@ func axisLabels(rows int, lo, hi float64) []string {
 }
 
 // rangeChart is a bordered chart that scales to its data rather than zero:
-// a traced series (setSeries) or categorical bars (setBars), with the
+// a filled series (setSeries) or categorical bars (setBars), with the
 // baseline value stated on the axis.
 type rangeChart struct {
 	*tview.Box
 	data    []float64
 	bars    bool
-	tick    int    // bar pitch in cells; 1 for a traced series
+	tick    int    // bar pitch in cells; 1 for a filled series
 	unit    string // appended to the axis labels and the range caption
 	caption string // one line under the axis: what the x axis is
 	// axis builds the caption for a bar chart instead of caption. The pitch and
@@ -199,7 +204,7 @@ func newRangeChart() *rangeChart {
 	return &rangeChart{Box: tview.NewBox(), tick: 1, color: activeTheme.BarHealthy}
 }
 
-// setSeries plots data as a traced line, downsampled to the available width.
+// setSeries plots data as a filled area, downsampled to the available width.
 func (c *rangeChart) setSeries(data []float64, unit, caption string) *rangeChart {
 	c.data, c.bars, c.tick, c.unit, c.caption = data, false, 1, unit, caption
 	return c

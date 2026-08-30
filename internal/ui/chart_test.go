@@ -41,18 +41,18 @@ func TestSeriesRowsScalesToRangeNotZero(t *testing.T) {
 	}
 }
 
-// TestSeriesRowsTracesTopEdge checks we draw a line, not a filled area: a single
-// sample must mark exactly one cell in one row, not a column down to the floor.
-func TestSeriesRowsTracesTopEdge(t *testing.T) {
-	rows := seriesRows([]float64{10}, 1, 4, 0, 10)
-	marked := 0
-	for _, r := range rows {
-		if strings.TrimSpace(r) != "" {
-			marked++
-		}
+// TestSeriesRowsFillsUnderTheLine: the area under the trace is filled so the
+// shape reads at a glance, and nothing is drawn above it — a column filled to
+// the top would be the old zero-anchored solid block.
+func TestSeriesRowsFillsUnderTheLine(t *testing.T) {
+	rows := seriesRows([]float64{5}, 1, 4, 0, 10)
+	if len(rows) != 4 {
+		t.Fatalf("got %d rows, want 4", len(rows))
 	}
-	if marked != 1 {
-		t.Errorf("want the top edge only (1 marked row), got %d:\n%s", marked, strings.Join(rows, "\n"))
+	for r, want := range []bool{false, false, true, true} {
+		if got := strings.TrimSpace(rows[r]) != ""; got != want {
+			t.Errorf("row %d filled=%v, want %v:\n%s", r, got, want, strings.Join(rows, "\n"))
+		}
 	}
 }
 
@@ -294,7 +294,7 @@ func TestChartGroupingNoteIsNeverItselfClipped(t *testing.T) {
 // still be drawn. Keeping the first N values dropped heads 32-59 at this
 // width, so a single failing head at 47 left a flat row of minimum marks --
 // the chart's one interesting bar, gone. Buckets take the MAXIMUM, the same
-// rule downsample uses to keep a spike in a traced series.
+// rule downsample uses to keep a spike in a filled series.
 func TestChartKeepsAFaultInTheTail(t *testing.T) {
 	const w, h = 40, 10
 	const faulty = 47

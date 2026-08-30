@@ -453,10 +453,17 @@ func buildTempSparkline(r *smart.Report, runtime []float64) tview.Primitive {
 	now := int(data[len(data)-1])
 	lo, hi, _ := dataRange(data)
 
+	// Colour by the current temperature, not the drive-wide verdict, and only
+	// once it leaves the band: a filled area painted OK green would make every
+	// healthy drive's Overview a wall of green (same rule as the FARM bars).
+	color := activeTheme.BarHealthy
+	if sev := tempSeverity(now); sev != smart.SeverityOK {
+		color = severityColor(sev)
+	}
+
 	c := newRangeChart().
 		setSeries(data, "°C", fmt.Sprintf("%d samples · oldest left, now right", len(data))).
-		// Colour by the current temperature, not the drive-wide verdict.
-		setColor(severityColor(tempSeverity(now)))
+		setColor(color)
 	c.SetBorder(true)
 	c.SetTitle(fmt.Sprintf(" Temperature — now %d°C · range %.0f–%.0f°C ", now, lo, hi))
 	return c
