@@ -65,6 +65,25 @@ func downsample(data []float64, width int) []float64 {
 	return out
 }
 
+// bucketMax groups values into one bar per group, taking the bucket MAXIMUM
+// for the same reason downsample does: the tail of a bar chart is where a
+// failing head sits, and dropping or averaging it hides the one bar worth
+// seeing. Groups are uniform so a bar's first index can be labelled.
+func bucketMax(data []float64, group int) []float64 {
+	if group <= 1 {
+		return data
+	}
+	out := make([]float64, 0, (len(data)+group-1)/group)
+	for i := 0; i < len(data); i += group {
+		peak := data[i]
+		for _, v := range data[i+1 : min(i+group, len(data))] {
+			peak = max(peak, v)
+		}
+		out = append(out, peak)
+	}
+	return out
+}
+
 // seriesRows traces the TOP EDGE of the series scaled to [lo, hi] — a line,
 // not a filled area, which would reproduce the solid-block failure. Row 0 is
 // the top of the chart.
@@ -168,9 +187,9 @@ type rangeChart struct {
 	unit    string // appended to the axis labels and the range caption
 	caption string // one line under the axis: what the x axis is
 	// axis builds the caption for a bar chart instead of caption. The pitch and
-	// how many bars fit are only known at draw time, so the labels cannot be
-	// baked in with the data.
-	axis    func(pitch, shown, width int) string
+	// how many values share a bar are only known at draw time, so the labels
+	// cannot be baked in with the data.
+	axis    func(pitch, group, count, width int) string
 	color   tcell.Color
 	focused bool
 }
@@ -187,38 +206,42 @@ func (c *rangeChart) setSeries(data []float64, unit, caption string) *rangeChart
 }
 
 // setBars plots data as categorical bars. pitch is the widest bar cell plus
-// gap to use; Draw narrows it toward 1 rather than let bars fall off the edge.
-// axis builds the caption once the pitch and bar count are known.
-func (c *rangeChart) setBars(data []float64, pitch int, unit string, axis func(pitch, shown, width int) string) *rangeChart {
+// gap to use; Draw narrows it toward 1, then groups values into shared bars,
+// rather than let bars fall off the edge. axis builds the caption once the
+// pitch and the grouping are known.
+func (c *rangeChart) setBars(data []float64, pitch int, unit string, axis func(pitch, group, count, width int) string) *rangeChart {
 	c.data, c.bars, c.tick, c.unit, c.axis = data, true, max(pitch, 1), unit, axis
 	c.caption = ""
 	return c
 }
 
-// barFit picks the bar pitch and count for a plot of plotW cells: the widest
-// pitch up to c.tick that seats every bar, narrowing to 1 before dropping any.
-// shown is short of the data only when even one cell each does not fit.
-func (c *rangeChart) barFit(plotW int) (pitch, shown int) {
+// barFit picks the bar pitch and grouping for a plot of plotW cells: the
+// widest pitch up to c.tick that seats every bar, narrowing to 1 before it
+// groups. group exceeds 1 only when even one cell each does not fit.
+func (c *rangeChart) barFit(plotW int) (pitch, group int) {
 	n := len(c.data)
 	if n == 0 || plotW <= 0 {
-		return c.tick, 0
+		return c.tick, 1
 	}
-	pitch = min(c.tick, max(plotW/n, 1))
-	return pitch, min(n, plotW/pitch)
+	if per := plotW / n; per >= 1 {
+		return min(c.tick, per), 1
+	}
+	return 1, (n + plotW - 1) / plotW
 }
 
-// barCaption is the axis labels plus, when bars had to be dropped, how many —
-// the same contract as the fleet's dropped columns: nothing goes missing
-// silently. The note is measured first so the labels are built around it, in
-// cells rather than bytes: "·" is two bytes and the screen clips in cells.
-func (c *rangeChart) barCaption(pitch, shown, plotW int) string {
+// barCaption is the axis labels plus, when values had to share a bar, how
+// many share one — the same contract as the fleet's dropped columns: nothing
+// changes silently. The note is measured first so the labels are built around
+// it, in cells rather than bytes: "·" is two bytes and the screen clips in
+// cells.
+func (c *rangeChart) barCaption(pitch, group, plotW int) string {
 	note := ""
-	if dropped := len(c.data) - shown; dropped > 0 {
-		note = fmt.Sprintf(" · %d more", dropped)
+	if group > 1 {
+		note = fmt.Sprintf(" · %d per bar", group)
 	}
 	labels := ""
 	if c.axis != nil {
-		labels = c.axis(pitch, shown, plotW-utf8.RuneCountInString(note))
+		labels = c.axis(pitch, group, len(c.data), plotW-utf8.RuneCountInString(note))
 	}
 	return labels + note
 }
@@ -269,12 +292,12 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 	var rows []string
 	caption := c.caption
 	if c.bars {
-		pitch, shown := c.barFit(plotW)
-		// The scale stays the whole drive's range even when bars are dropped, so
-		// the axis labels keep agreeing with the title; the caption says what is
-		// missing rather than quietly rescaling around it.
-		rows = barRows(c.data[:shown], pitch, plotRows, lo, hi)
-		caption = c.barCaption(pitch, shown, plotW)
+		pitch, group := c.barFit(plotW)
+		// The scale stays the whole drive's range, so the axis labels keep
+		// agreeing with the title; grouping keeps every value on the chart, and
+		// the caption says how many share a bar rather than rescaling quietly.
+		rows = barRows(bucketMax(c.data, group), pitch, plotRows, lo, hi)
+		caption = c.barCaption(pitch, group, plotW)
 	} else {
 		rows = seriesRows(c.data, plotW, plotRows, lo, hi)
 	}
