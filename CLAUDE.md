@@ -67,9 +67,14 @@ hint (`rebuild with: go build -tags dev`).
 
 Two packages with a hard one-way boundary: **`internal/smart` is the data layer
 and has no tview dependency**; **`internal/ui` is the presentation layer**.
-`main.go` wires flags + a smartctl preflight and starts the UI. The UI has two
-top-level screens — the per-drive view (drive list + tabbed detail) and the
-fleet comparison — swapped by `App.bodyPages`.
+`main.go` wires flags + a smartctl preflight and starts the UI. That preflight
+is `smart.Preflight`: smartctl on PATH *and* smartmontools >= 7.0, run under a
+short deadline and the signal context so a wedged binary cannot hang startup
+and Ctrl-C still works. A missing binary comes back as `smart.ErrNoSmartctl`
+rather than a message to match on, because which package manager to name is
+main's knowledge, not the data layer's. Fixture mode makes it a no-op. The UI
+has two top-level screens — the per-drive view (drive list + tabbed detail)
+and the fleet comparison — swapped by `App.bodyPages`.
 
 `App` itself is spread over four files by topic: `app.go` (the struct, `build`,
 `Run`, layout, chrome, `repaintAll`), `keys.go` (key dispatch and the

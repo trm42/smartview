@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -393,5 +394,70 @@ func TestEmptyOutputIsReportedPlainly(t *testing.T) {
 				t.Errorf("%s on empty output = %q, want %q", c.name, err, want)
 			}
 		})
+	}
+}
+
+// fakeSmartctl writes an executable stub that prints body on stdout, and
+// points the package at it for the duration of the test.
+func fakeSmartctl(t *testing.T, body string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell stub is POSIX-only")
+	}
+	path := filepath.Join(t.TempDir(), "smartctl")
+	script := "#!/bin/sh\ncat <<'EOF'\n" + body + "\nEOF\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orig := binary
+	binary = path
+	t.Cleanup(func() { binary = orig })
+}
+
+// Preflight is the startup gate, so the message it produces is what a user
+// with the wrong smartmontools actually sees. Before it was wired in, an old
+// build got a JSON parse error from the first real query instead.
+func TestPreflightNamesAnOldSmartctl(t *testing.T) {
+	fakeSmartctl(t, `{"smartctl":{"version":[6,6]}}`)
+	err := Preflight(t.Context())
+	if err == nil {
+		t.Fatal("Preflight accepted smartctl 6.6, below the 7.0 floor")
+	}
+	for _, want := range []string{"6.6", "too old", "7.0"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message %q does not mention %q", err, want)
+		}
+	}
+}
+
+// A build at or above the floor passes, so the gate does not lock anyone out.
+func TestPreflightAcceptsASupportedSmartctl(t *testing.T) {
+	for _, v := range []string{`[7,0]`, `[7,4]`, `[8,1]`} {
+		fakeSmartctl(t, `{"smartctl":{"version":`+v+`}}`)
+		if err := Preflight(t.Context()); err != nil {
+			t.Errorf("Preflight rejected smartctl %s: %v", v, err)
+		}
+	}
+}
+
+// A missing binary is reported as ErrNoSmartctl so main can attach the
+// platform's install hint without matching on message text.
+func TestPreflightMissingBinaryIsMatchable(t *testing.T) {
+	orig := binary
+	binary = "smartview-no-such-binary"
+	t.Cleanup(func() { binary = orig })
+
+	err := Preflight(t.Context())
+	if !errors.Is(err, ErrNoSmartctl) {
+		t.Errorf("Preflight with no smartctl = %v, want ErrNoSmartctl", err)
+	}
+}
+
+// A version smartctl would not state is not evidence of an old build, and
+// refusing to start would be the worse error.
+func TestPreflightAcceptsAnUnstatedVersion(t *testing.T) {
+	fakeSmartctl(t, `{"smartctl":{}}`)
+	if err := Preflight(t.Context()); err != nil {
+		t.Errorf("Preflight rejected a build that states no version: %v", err)
 	}
 }

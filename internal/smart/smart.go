@@ -37,6 +37,11 @@ type scanResult struct {
 // package assumes that schema; the README states the same floor.
 var minSmartctlVersion = [2]int{7, 0}
 
+// ErrNoSmartctl reports that the smartctl binary is not on PATH. Callers match
+// it to add an install hint: which package manager to name is the caller's
+// knowledge, not this package's.
+var ErrNoSmartctl = errors.New("smartctl not found on PATH")
+
 // Available reports whether the smartctl binary is resolvable on PATH.
 func Available() bool {
 	_, err := exec.LookPath(binary)
@@ -56,13 +61,14 @@ func Version(ctx context.Context) ([]int, error) {
 
 // Preflight checks that smartctl is on PATH and new enough to speak the JSON
 // schema this package parses; it is a no-op when the fixture source is active.
-// Not yet wired into startup — main.go still gates on Available() alone.
+// It is the startup gate: main calls it before building the UI, so an old
+// smartctl is named as such instead of failing later as a parse error.
 func Preflight(ctx context.Context) error {
 	if fixtureActive() {
 		return nil
 	}
 	if !Available() {
-		return errors.New("smartctl not found on PATH")
+		return ErrNoSmartctl
 	}
 	v, err := Version(ctx)
 	if err != nil {

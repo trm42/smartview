@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -45,20 +46,39 @@ func main() {
 			fmt.Fprintln(os.Stderr, "smartview:", err)
 			os.Exit(1)
 		}
-	} else if !smart.Available() {
-		fmt.Fprintln(os.Stderr, "smartview: smartctl not found on PATH.")
-		fmt.Fprintln(os.Stderr, "Install smartmontools:", installHint())
-		os.Exit(1)
 	}
 
+	// Installed before the preflight, so Ctrl-C works while it runs.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if err := preflight(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, "smartview:", err)
+		// Which package manager to name is this program's knowledge, not the
+		// data layer's, so the hint is attached here.
+		if errors.Is(err, smart.ErrNoSmartctl) {
+			fmt.Fprintln(os.Stderr, "Install smartmontools:", installHint())
+		}
+		os.Exit(1)
+	}
 
 	app := ui.New(*interval, *theme)
 	if err := app.Run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "smartview:", err)
 		os.Exit(1)
 	}
+}
+
+// preflightTimeout bounds the startup check. It runs `smartctl -j -V`, which
+// touches no device, so this is a guard against a wedged binary rather than a
+// slow one.
+const preflightTimeout = 5 * time.Second
+
+// preflight runs smart.Preflight under a deadline; a no-op in fixture mode.
+func preflight(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, preflightTimeout)
+	defer cancel()
+	return smart.Preflight(ctx)
 }
 
 // buildVersion prefers the link-time value, then the module version, then the

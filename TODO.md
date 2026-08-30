@@ -72,7 +72,9 @@ for drive health via smartmontools.
 
 ## Nice to have
 
-- [ ] Wire `smart.Preflight` into startup. It checks smartctl is on PATH *and* at
-      least smartmontools 7.0, but `main.go` still gates on `Available()` alone, so
-      an old smartctl fails later with a parse error instead of a clear message.
+- [x] Wire `smart.Preflight` into startup. It is now the single startup gate:
+      smartctl on PATH *and* at least smartmontools 7.0, under a 5s deadline and
+      the signal context, so Ctrl-C works while it runs. A missing binary comes
+      back as `smart.ErrNoSmartctl`, which `main` matches to add the platform's
+      install hint. Fixture mode bypasses it, as before.
 - [ ] `--json` / headless mode for scripting and CI health checks.
