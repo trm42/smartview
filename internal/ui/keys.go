@@ -109,6 +109,10 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 			// Uppercase cycles the theme; lowercase t (above) is the Tests tab.
 			a.cycleTheme()
 			return nil
+		case 'S':
+			// Uppercase opens Settings; lowercase s (attributes.go) sorts.
+			a.showSettings()
+			return nil
 		case '1', '2', '3', '4', '5', '6', '7', '8', '9':
 			a.openTab(int(r - '1'))
 			return nil

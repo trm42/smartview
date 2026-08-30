@@ -422,13 +422,7 @@ func (a *App) cycleTheme() {
 // time: force a detail rebuild, then re-render list, fleet, chrome and
 // banner. Trade-off: the rebuild resets Attributes selection/scroll.
 func (a *App) repaintAll() {
-	a.detail.device = "" // invalidate cache so update() takes the rebuild branch
-	a.showSelected()
-	if len(a.devices) == 0 {
-		// showDevice returns before the placeholder when there is nothing to
-		// show, and the message in place is the one the app last chose.
-		a.detail.showPlaceholder(a.detail.placeholder)
-	}
+	a.rebuildDetail()
 	styleList(a.list)
 	a.populateList()
 	// Widgets built once are not recreated by the rebuild, so they keep the
