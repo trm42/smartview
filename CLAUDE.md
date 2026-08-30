@@ -320,11 +320,14 @@ goroutine (`setNarrow` in app.go is the pattern).
   rather than fall off the right edge — a cramped chart beats a wrong one, and
   the title states the whole drive's range, so a clipped peak would name a
   maximum that is never drawn. When even one cell each will not fit, the
-  caption says how many bars are missing, measured before the labels are built
-  so the note cannot itself be clipped — the same contract as the fleet's
-  dropped columns. `chart_test.go` drives this on a simulation screen and each
-  assertion is mutation-checked, since an assertion the implementation
-  satisfies unconditionally proves nothing.
+  caption says how many bars are missing, measured in cells before the labels
+  are built so the note cannot itself be clipped — the same contract as the
+  fleet's dropped columns. The labels then stop at the last index that fits
+  whole (`farmHeadAxis`) rather than cut the finished strip to width: a sliced
+  index still reads as a number, and a label naming the wrong head is worse
+  than one that is absent. `chart_test.go` drives this on a simulation screen
+  and each assertion is mutation-checked, since an assertion the
+  implementation satisfies unconditionally proves nothing.
 - **One bar vocabulary**: `pctBarWidth` cells wide, always filling toward
   healthy. A "consumed" percentage passes through `pctBarUsed` so it drains
   rather than filling (the fleet shows endurance beside spare, and opposite

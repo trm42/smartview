@@ -375,13 +375,16 @@ func farmHeadAxis(pitch, heads, width int) string {
 	for step*pitch < labelW+1 {
 		step++
 	}
+	// Stop at the last index that fits whole: cutting the finished strip to
+	// width would slice a multi-digit index and leave a digit that reads as a
+	// different head. Indices are ASCII, so b.Len() is also the column.
 	var b strings.Builder
 	for i := 0; i < heads; i += step {
-		fmt.Fprintf(&b, "%-*d", pitch*step, i)
+		lbl := strconv.Itoa(i)
+		if b.Len()+len(lbl) > width {
+			break
+		}
+		fmt.Fprintf(&b, "%-*s", pitch*step, lbl)
 	}
-	out := strings.TrimRight(b.String(), " ")
-	if len(out) > width {
-		out = out[:width]
-	}
-	return out
+	return strings.TrimRight(b.String(), " ")
 }

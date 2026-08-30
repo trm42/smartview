@@ -5,6 +5,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -208,7 +209,8 @@ func (c *rangeChart) barFit(plotW int) (pitch, shown int) {
 
 // barCaption is the axis labels plus, when bars had to be dropped, how many —
 // the same contract as the fleet's dropped columns: nothing goes missing
-// silently. The note is measured first so the labels are built around it.
+// silently. The note is measured first so the labels are built around it, in
+// cells rather than bytes: "·" is two bytes and the screen clips in cells.
 func (c *rangeChart) barCaption(pitch, shown, plotW int) string {
 	note := ""
 	if dropped := len(c.data) - shown; dropped > 0 {
@@ -216,7 +218,7 @@ func (c *rangeChart) barCaption(pitch, shown, plotW int) string {
 	}
 	labels := ""
 	if c.axis != nil {
-		labels = c.axis(pitch, shown, plotW-len(note))
+		labels = c.axis(pitch, shown, plotW-utf8.RuneCountInString(note))
 	}
 	return labels + note
 }

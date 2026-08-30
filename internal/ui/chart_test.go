@@ -4,6 +4,7 @@ package ui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -287,5 +288,47 @@ func TestChartDroppedNoteIsNeverItselfClipped(t *testing.T) {
 	}
 	if !sawDrop {
 		t.Fatal("no width dropped a bar; the test proves nothing")
+	}
+}
+
+// An axis label must name the head it sits over. Cutting the finished strip
+// to the caption width sliced multi-digit indices in half -- 13 heads at
+// width 21 ended "9  1", and that 1 sat over head 12. A wrong label is worse
+// than a missing one, so the strip stops at the last index that fits whole.
+func TestHeadAxisLabelsNameTheHeadBeneathThem(t *testing.T) {
+	sawCut := false
+	for pitch := 1; pitch <= farmHeadPitch; pitch++ {
+		for heads := 2; heads <= 60; heads++ {
+			full := heads * pitch
+			for width := 1; width <= full; width++ {
+				strip := farmHeadAxis(pitch, heads, width)
+				if len(strip) > width {
+					t.Fatalf("pitch %d, %d heads, width %d: %q is %d cells",
+						pitch, heads, width, strip, len(strip))
+				}
+				if strip != farmHeadAxis(pitch, heads, full) {
+					sawCut = true
+				}
+				for col := 0; col < len(strip); {
+					if strip[col] == ' ' {
+						col++
+						continue
+					}
+					end := col
+					for end < len(strip) && strip[end] != ' ' {
+						end++
+					}
+					i, err := strconv.Atoi(strip[col:end])
+					if err != nil || col%pitch != 0 || i != col/pitch {
+						t.Fatalf("pitch %d, %d heads, width %d: %q labels column %d %q, which is head %d",
+							pitch, heads, width, strip, col, strip[col:end], col/pitch)
+					}
+					col = end
+				}
+			}
+		}
+	}
+	if !sawCut {
+		t.Fatal("no width ever shortened the strip; the test proves nothing")
 	}
 }
