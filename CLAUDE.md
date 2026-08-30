@@ -324,10 +324,14 @@ goroutine (`setNarrow` in app.go is the pattern).
   Sparkline divides by the maximum and BarChart offers only `SetMaxValue` while
   drawing its own axis labels, so neither can take a baseline — a 35–40 °C
   history rendered as a solid block and 20 per-head resistances of 350–495 as
-  identical bars. `seriesRows` traces a line, `barRows` fills categorical bars,
-  `downsample` reduces by bucket *maximum* so a spike is never averaged away,
-  and the axis line always prints its baseline. The scaling is pure and unit
-  tested; the NVMe percentage gauges still use `tvxwidgets`, where 0–100 is real.
+  identical bars. `seriesRows` fills the area under the series and `barRows`
+  fills categorical bars — both through the same `fillEighths`/`fillGlyph`
+  pair, so a column reads the same either way and the smallest value keeps its
+  baseline mark instead of vanishing; the fill starts at the data minimum, not
+  at zero, which is what keeps a filled 35–40 °C history from going back to
+  being a solid block. `downsample` reduces by bucket *maximum* so a spike is
+  never averaged away, and the axis line always prints its baseline. The
+  scaling is pure and unit tested; the NVMe percentage gauges still use `tvxwidgets`, where 0–100 is real.
 - **A bar chart narrows its pitch before it drops a bar**
   (`rangeChart.barFit`). The pitch and the label step are chosen in `Draw`,
   not baked in with the data, because only `Draw` knows the plot width:
