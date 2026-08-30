@@ -298,6 +298,7 @@ func TestThemeCycleRegroundsPersistentWidgets(t *testing.T) {
 		{"bodyPages", a.bodyPages},
 		{"root", a.root},
 		{"detail", a.detail},
+		{"detail.note", a.detail.note},
 		{"detail.barRow", a.detail.barRow},
 		{"detail.bar", a.detail.bar},
 		{"detail.spinner", a.detail.spinner},

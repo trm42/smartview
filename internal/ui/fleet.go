@@ -128,10 +128,10 @@ func (v *fleetView) syncWidth() bool {
 // refresh applies the latest poll. Called on every poll, visible or not, so
 // the comparison is current the moment it is opened; event-loop goroutine only.
 func (v *fleetView) refresh(devices []smart.Device, reports map[string]*smart.Report,
-	history map[string][]float64) {
+	history map[string][]float64, asleep map[string]bool) {
 	rows := make([]fleetRow, 0, len(devices))
 	for _, d := range devices {
-		row := fleetRow{dev: d, rep: reports[d.Name]}
+		row := fleetRow{dev: d, rep: reports[d.Name], asleep: asleep[d.Name]}
 		if row.rep != nil {
 			row.series = temperatureSeries(row.rep, history[d.Name])
 		}
@@ -139,6 +139,15 @@ func (v *fleetView) refresh(devices []smart.Device, reports map[string]*smart.Re
 	}
 	v.rows = rows
 	v.render()
+}
+
+// standbyPrefix marks a spun-down drive in the fleet's identity cell, matching
+// the drive list's mark.
+func standbyPrefix(row fleetRow) string {
+	if !row.asleep {
+		return ""
+	}
+	return standbyGlyph + " "
 }
 
 // render rebuilds the strip, table and legend. The table primitive is
@@ -166,6 +175,9 @@ func (v *fleetView) render() {
 	// The legend is our own prose with intentional markup; nothing
 	// drive-controlled reaches it, so it is not escaped.
 	legend := sec.legend(v.rows)
+	if slices.ContainsFunc(v.rows, func(r fleetRow) bool { return r.asleep }) {
+		legend = standbyGlyph + " spun down; values as of the last read · " + legend
+	}
 	if v.dropped > 0 {
 		legend = fmt.Sprintf("%s%d more column%s at a wider terminal[-] · %s",
 			cautionTag(), v.dropped, map[bool]string{true: "", false: "s"}[v.dropped == 1], legend)
@@ -280,9 +292,14 @@ func (v *fleetView) renderTable(sec fleetSection) {
 func (v *fleetView) setRow(rowIdx int, row fleetRow, sec fleetSection, n int) {
 	var cells []fleetCell
 	if row.rep == nil {
+		waiting := "scanning…"
+		if row.asleep {
+			waiting = "asleep"
+		}
 		cells = []fleetCell{
-			{text: mutedTag() + "●[-] " + esc(fleetDevice(row.dev)), color: activeTheme.Muted},
-			{text: "scanning…", color: activeTheme.Muted},
+			{text: mutedTag() + "●[-] " + standbyPrefix(row) + esc(fleetDevice(row.dev)),
+				color: activeTheme.Muted},
+			{text: waiting, color: activeTheme.Muted},
 			{text: dash, color: activeTheme.Muted},
 		}[:v.identityCols]
 		for range n {
@@ -299,7 +316,7 @@ func (v *fleetView) setRow(rowIdx int, row fleetRow, sec fleetSection, n int) {
 			secCells = secCells[:n]
 		}
 		identity := []fleetCell{
-			{text: healthGlyph(row.rep.Overall()) + " " + esc(fleetDevice(row.dev)),
+			{text: healthGlyph(row.rep.Overall()) + " " + standbyPrefix(row) + esc(fleetDevice(row.dev)),
 				color: activeTheme.Neutral},
 			{text: esc(model), color: activeTheme.Neutral},
 			// Serial disambiguates two drives of the same model.

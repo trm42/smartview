@@ -69,7 +69,11 @@ type App struct {
 	// poll loop may range over it off the event loop without synchronisation.
 	devices []smart.Device
 	reports map[string]*smart.Report
-	history map[string][]float64 // runtime temperature series per device
+	history map[string][]float64
+	// asleep and lastRead back the standby marks: which drives smartctl
+	// declined to wake, and when reports[name] was actually read.
+	asleep   map[string]bool
+	lastRead map[string]time.Time // runtime temperature series per device
 	// startedTests remembers, per device, the self-test type smartview itself
 	// started. The drive reports a running test's progress but never its type
 	// (ATA's status string is "in progress, N% remaining"), so this is the only
@@ -113,6 +117,8 @@ func New(cfg config.Config, save func(config.Config) error) *App {
 		intervalCh:   make(chan time.Duration, 1),
 		reports:      map[string]*smart.Report{},
 		history:      map[string][]float64{},
+		asleep:       map[string]bool{},
+		lastRead:     map[string]time.Time{},
 		startedTests: map[string]startedTest{},
 	}
 	a.standbyAware.Store(cfg.StandbyAware)
@@ -237,6 +243,17 @@ func (a *App) applyLayout(narrow bool) {
 // driveListWidth is the drive list's fixed column width in the wide layout.
 const driveListWidth = 38
 
+// asleepCount is how many of the current drives are spun down.
+func (a *App) asleepCount() int {
+	n := 0
+	for _, d := range a.devices {
+		if a.asleep[d.Name] {
+			n++
+		}
+	}
+	return n
+}
+
 // renderRail draws the narrow drive selector: one row of severity glyphs and
 // short names, the drive at cur highlighted, plus an attention count. cur is
 // passed in because the list's changed-func runs before the new index is stored.
@@ -268,6 +285,11 @@ func (a *App) renderRail(cur int) {
 	}
 	if alerts > 0 {
 		fmt.Fprintf(&b, "  %s▲ %d[-]", cautionTag(), alerts)
+	}
+	// The rail has no room for a per-drive mark at railDeviceWidth, so the
+	// standby drives are counted instead.
+	if n := a.asleepCount(); n > 0 {
+		fmt.Fprintf(&b, "  %s%s %d[-]", mutedTag(), standbyGlyph, n)
 	}
 	a.rail.SetText(b.String())
 }
@@ -417,7 +439,7 @@ func (a *App) repaintAll() {
 	// banner only when we are not root.
 	applyBackground(a.list, a.rail, a.banner)
 	// The fleet table bakes a colour into every cell, same miss as the banner.
-	a.fleet.refresh(a.devices, a.reports, a.history)
+	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep)
 	a.refreshChrome()
 	a.refreshBanner()
 }
@@ -440,12 +462,20 @@ func (a *App) showDevice(i int) {
 		return
 	}
 	dev := a.devices[i]
+	a.detail.setNote(a.standbyNote(dev.Name))
 	if rep, ok := a.reports[dev.Name]; ok {
 		a.observeSelfTest(dev.Name, rep)
 		a.detail.update(rep, a.history[dev.Name])
-	} else {
-		a.detail.showPlaceholder("Loading " + dev.Name + " …")
+		return
 	}
+	if a.asleep[dev.Name] {
+		// Never read and spun down: say so and name the way out, rather than
+		// sit on "Loading…" for a drive that will never answer on its own.
+		a.detail.showPlaceholder(dev.Name + " is spun down.\n\n" +
+			"Press R to wake it and read, or turn off standby_aware in Settings.")
+		return
+	}
+	a.detail.showPlaceholder("Loading " + dev.Name + " …")
 }
 
 // selectedDevice returns the currently highlighted device.
@@ -483,11 +513,42 @@ func (a *App) populateList() {
 	}
 }
 
+// standbyGlyph marks a drive smartctl declined to wake. Like the ~ on an
+// approximate write total, it is a glyph plus a legend rather than a silent
+// substitution: the values beside it are real, just not current.
+const standbyGlyph = "◌"
+
+// standbyMark returns the standby prefix for a drive, or "" when it is awake.
+func (a *App) standbyMark(name string) string {
+	if !a.asleep[name] {
+		return ""
+	}
+	return mutedTag() + standbyGlyph + "[-] "
+}
+
+// standbyNote dates a spun-down drive's cached values for the caveat row.
+func (a *App) standbyNote(name string) string {
+	if !a.asleep[name] {
+		return ""
+	}
+	read, ok := a.lastRead[name]
+	if !ok {
+		return fmt.Sprintf("%s%s Spun down — no reading yet; press R to wake and read.[-]",
+			mutedTag(), standbyGlyph)
+	}
+	return fmt.Sprintf("%s%s Spun down — values as of %s, %s ago.[-]",
+		mutedTag(), standbyGlyph, read.Format("15:04"), roundDuration(time.Since(read)))
+}
+
 // listRow renders the main/secondary text for a drive row.
 func (a *App) listRow(d smart.Device) (string, string) {
 	rep, ok := a.reports[d.Name]
 	if !ok {
-		return fmt.Sprintf("%s●[-] %s", mutedTag(), esc(shortName(d))), "scanning…"
+		sec := "scanning…"
+		if a.asleep[d.Name] {
+			sec = a.standbyMark(d.Name) + "asleep · R to read"
+		}
+		return fmt.Sprintf("%s●[-] %s", mutedTag(), esc(shortName(d))), sec
 	}
 	// Model and device name are drive-controlled; esc() blocks markup injection.
 	model := esc(rep.ModelName)
@@ -496,9 +557,11 @@ func (a *App) listRow(d smart.Device) (string, string) {
 	}
 	main := fmt.Sprintf("%s %s", healthGlyph(rep.Overall()), model)
 	// Temperature goes last: tempCell ends with a style reset that would drop
-	// the secondary colour for anything after it.
-	sec := fmt.Sprintf("%s · %s · %s",
-		esc(shortName(d)), capacityString(rep), tempCell(rep))
+	// the secondary colour for anything after it. The standby mark therefore
+	// goes first, and the health glyph is deliberately left undimmed: a
+	// failing drive must not lose its colour for being asleep.
+	sec := fmt.Sprintf("%s%s · %s · %s",
+		a.standbyMark(d.Name), esc(shortName(d)), capacityString(rep), tempCell(rep))
 	return main, sec
 }
 

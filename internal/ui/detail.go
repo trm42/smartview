@@ -189,9 +189,13 @@ type detail struct {
 	// able to reach it.
 	barRow  *tview.Flex
 	spinner *inertTextView
-	pages   *tview.Pages
-	tabs    []tab
-	active  int
+	// note is a one-row caveat strip above the tab body, collapsed to height 0
+	// when empty. Staleness is judged against the poll interval, which the
+	// data layer does not know, so it is carried here rather than on Report.
+	note   *inertTextView
+	pages  *tview.Pages
+	tabs   []tab
+	active int
 
 	// showAllTabs draws every tab, muting the ones this drive has no data
 	// for, so a tab keeps its number on every drive.
@@ -214,6 +218,7 @@ func newDetail() *detail {
 		Flex:    tview.NewFlex().SetDirection(tview.FlexRow),
 		bar:     newTabBar(),
 		spinner: newInertTextView(),
+		note:    newInertTextView(),
 		pages:   tview.NewPages(),
 	}
 	d.spinner.SetTextAlign(tview.AlignRight)
@@ -228,10 +233,24 @@ func newDetail() *detail {
 	d.barRow = tview.NewFlex().
 		AddItem(d.bar, 0, 1, false).
 		AddItem(d.spinner, 2, 0, false)
+	d.note.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	d.AddItem(d.barRow, 1, 0, false)
+	d.AddItem(d.note, 0, 0, false) // height 0 until setNote fills it
 	d.AddItem(d.pages, 0, 1, true)
 	d.showPlaceholder("Scanning for drives…")
 	return d
+}
+
+// setNote shows a one-line caveat above the tab body, or hides the row when s
+// is empty. The row is resized rather than removed so the layout order cannot
+// drift.
+func (d *detail) setNote(s string) {
+	d.note.SetText(s)
+	height := 0
+	if s != "" {
+		height = 1
+	}
+	d.ResizeItem(d.note, height, 0)
 }
 
 // showPlaceholder displays a message when no drive is selected yet.

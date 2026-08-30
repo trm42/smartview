@@ -88,6 +88,9 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 		case 'r':
 			a.triggerRefresh()
 			return nil
+		case 'R':
+			a.forceRefresh()
+			return nil
 		case '+', '-':
 			a.setInterval(nextInterval(a.interval, r == '-'))
 			return nil
@@ -159,7 +162,7 @@ func (a *App) toggleFleet() {
 	}
 	a.fleetMode = true
 	// Render from the cache so entry doesn't wait for the next poll.
-	a.fleet.refresh(a.devices, a.reports, a.history)
+	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep)
 	a.bodyPages.SwitchToPage(pageFleet)
 	a.app.SetFocus(a.fleet.table)
 	a.refreshChrome()
@@ -258,10 +261,21 @@ func (a *App) focusLeft() {
 	a.focusDetail()
 }
 
-// triggerRefresh asks the poll loop to fetch immediately (non-blocking).
+// triggerRefresh asks the poll loop to fetch immediately (non-blocking). It
+// honours the standby policy: 'r' must not spin a parked drive up.
 func (a *App) triggerRefresh() {
 	select {
 	case a.refreshCh <- struct{}{}:
+	default:
+	}
+}
+
+// forceRefresh asks the poll loop to fetch immediately and wake any parked
+// drive. This is the only path that overrides standby_aware — without it, a
+// cold start with every drive asleep could never show a reading.
+func (a *App) forceRefresh() {
+	select {
+	case a.wakeCh <- struct{}{}:
 	default:
 	}
 }

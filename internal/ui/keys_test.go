@@ -221,6 +221,7 @@ func TestKeysModalSpecificBindings(t *testing.T) {
 		"G",
 		"j",
 		"k",
+		"R", // the only way to read a drive standby_aware is skipping
 	} {
 		if !documentedKeys(t)[want] {
 			t.Errorf("%q missing from the '?' modal", want)

@@ -84,7 +84,7 @@ const keysText = "Keys\n\n" +
 	"c          fleet compare\n" +
 	"Enter      open drive\n" +
 	"Esc        back\n" +
-	"r          refresh now\n" +
+	"r / R      refresh / wake\n" +
 	"+ / -      refresh rate\n" +
 	"T          colour theme\n" +
 	"?          this list\n" +
