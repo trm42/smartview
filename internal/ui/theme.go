@@ -8,6 +8,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"github.com/trm42/smartview/internal/smart"
 )
 
 // Theme is smartview's colour palette as semantic roles. The tcell.Color is
@@ -67,6 +69,86 @@ func activeTabTag() string {
 		fg, bg = tcell.ColorBlack, tcell.ColorWhite
 	}
 	return "[" + tag(fg) + ":" + tag(bg) + ":b]"
+}
+
+// borderColor returns the accent colour for a focused pane, muted otherwise.
+func borderColor(focused bool) tcell.Color {
+	if focused {
+		return activeTheme.Accent
+	}
+	return activeTheme.Muted
+}
+
+// severityColor maps a health severity to its display colour.
+func severityColor(s smart.Severity) tcell.Color {
+	switch s {
+	case smart.SeverityFailing:
+		return activeTheme.Failing
+	case smart.SeverityCaution:
+		return activeTheme.Caution
+	default:
+		return activeTheme.OK
+	}
+}
+
+// severityTag returns the bare colour token, for callers interpolating into "[%s]".
+func severityTag(s smart.Severity) string {
+	return tag(severityColor(s))
+}
+
+// selectedRowStyle is the selected-row highlight: an explicit background that
+// keeps the cell's own foreground (tview's default inversion makes neutral
+// rows vanish).
+func selectedRowStyle(fg tcell.Color) tcell.Style {
+	// Pin ColorDefault to SelectionFg — the terminal default can be illegible
+	// on the highlight.
+	if fg == tcell.ColorDefault {
+		fg = activeTheme.SelectionFg
+	}
+	return tcell.StyleDefault.
+		Background(activeTheme.SelectionBg).
+		Foreground(fg).
+		Attributes(tcell.AttrBold)
+}
+
+// styleList applies the theme to a List: pins the secondary-text colour
+// (tview defaults it to a green that leaks into every theme) and routes
+// selection through selectedRowStyle so list and table selections match.
+// Re-call after a theme change.
+func styleList(l *tview.List) {
+	bg := activeTheme.Background
+	l.SetBackgroundColor(bg)
+	// A List prints its rows without maintaining the background underneath, so
+	// the ground has to be pinned in each row style; the SetXTextColor setters
+	// reach only the foreground.
+	l.SetMainTextStyle(tcell.StyleDefault.Foreground(activeTheme.Neutral).Background(bg))
+	l.SetSecondaryTextStyle(tcell.StyleDefault.Foreground(activeTheme.ListSecondary).Background(bg))
+	l.SetShortcutStyle(tcell.StyleDefault.Foreground(activeTheme.Accent).Background(bg))
+	l.SetSelectedStyle(selectedRowStyle(activeTheme.SelectionFg))
+}
+
+// backgrounder is any widget whose ground can be re-set; Box, Flex, Pages,
+// Table, List and TextView all satisfy it.
+type backgrounder interface {
+	SetBackgroundColor(tcell.Color) *tview.Box
+}
+
+// applyBackground grounds widgets in the active theme. tview bakes
+// Styles.PrimitiveBackgroundColor in at construction, so every widget that
+// outlives a theme change has to be told again.
+func applyBackground(ws ...backgrounder) {
+	for _, w := range ws {
+		w.SetBackgroundColor(activeTheme.Background)
+	}
+}
+
+// attrTextColor colours attribute row text: neutral when healthy, so only
+// rows needing attention are tinted. Colour marks exceptions, not membership.
+func attrTextColor(s smart.Severity) tcell.Color {
+	if s == smart.SeverityOK {
+		return activeTheme.Neutral
+	}
+	return severityColor(s)
 }
 
 // activeTheme is the live palette every colour helper reads.

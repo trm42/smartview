@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
 	"github.com/trm42/smartview/internal/smart"
@@ -90,14 +89,6 @@ func pctBarUsed(pct int, sev smart.Severity) string {
 	return fmt.Sprintf("[%s]%s[-] %d%%", severityTag(sev), bar, used)
 }
 
-// borderColor returns the accent colour for a focused pane, muted otherwise.
-func borderColor(focused bool) tcell.Color {
-	if focused {
-		return activeTheme.Accent
-	}
-	return activeTheme.Muted
-}
-
 // tempSeverity grades a temperature for display colouring only; health never
 // derives from raw temperature, so these thresholds stay in the UI layer.
 func tempSeverity(celsius int) smart.Severity {
@@ -111,85 +102,9 @@ func tempSeverity(celsius int) smart.Severity {
 	}
 }
 
-// severityColor maps a health severity to its display colour.
-func severityColor(s smart.Severity) tcell.Color {
-	switch s {
-	case smart.SeverityFailing:
-		return activeTheme.Failing
-	case smart.SeverityCaution:
-		return activeTheme.Caution
-	default:
-		return activeTheme.OK
-	}
-}
-
-// severityTag returns the bare colour token, for callers interpolating into "[%s]".
-func severityTag(s smart.Severity) string {
-	return tag(severityColor(s))
-}
-
 // healthGlyph is the coloured status dot shown beside each drive.
 func healthGlyph(s smart.Severity) string {
 	return fmt.Sprintf("[%s]●[-]", severityTag(s))
-}
-
-// selectedRowStyle is the selected-row highlight: an explicit background that
-// keeps the cell's own foreground (tview's default inversion makes neutral
-// rows vanish).
-func selectedRowStyle(fg tcell.Color) tcell.Style {
-	// Pin ColorDefault to SelectionFg — the terminal default can be illegible
-	// on the highlight.
-	if fg == tcell.ColorDefault {
-		fg = activeTheme.SelectionFg
-	}
-	return tcell.StyleDefault.
-		Background(activeTheme.SelectionBg).
-		Foreground(fg).
-		Attributes(tcell.AttrBold)
-}
-
-// styleList applies the theme to a List: pins the secondary-text colour
-// (tview defaults it to a green that leaks into every theme) and routes
-// selection through selectedRowStyle so list and table selections match.
-// Re-call after a theme change.
-func styleList(l *tview.List) {
-	bg := activeTheme.Background
-	l.SetBackgroundColor(bg)
-	// A List prints its rows without maintaining the background underneath, so
-	// the ground has to be pinned in each row style; the SetXTextColor setters
-	// reach only the foreground.
-	l.SetMainTextStyle(tcell.StyleDefault.Foreground(activeTheme.Neutral).Background(bg))
-	l.SetSecondaryTextStyle(tcell.StyleDefault.Foreground(activeTheme.ListSecondary).Background(bg))
-	l.SetShortcutStyle(tcell.StyleDefault.Foreground(activeTheme.Accent).Background(bg))
-	l.SetSelectedStyle(selectedRowStyle(activeTheme.SelectionFg))
-}
-
-// backgrounder is any widget whose ground can be re-set; Box, Flex, Pages,
-// Table, List and TextView all satisfy it.
-type backgrounder interface {
-	SetBackgroundColor(tcell.Color) *tview.Box
-}
-
-// applyBackground grounds widgets in the active theme. tview bakes
-// Styles.PrimitiveBackgroundColor in at construction, so every widget that
-// outlives a theme change has to be told again.
-func applyBackground(ws ...backgrounder) {
-	for _, w := range ws {
-		w.SetBackgroundColor(activeTheme.Background)
-	}
-}
-
-// attrTextColor colours attribute row text: neutral when healthy, so only
-// rows needing attention are tinted.
-func attrTextColor(s smart.Severity) tcell.Color {
-	switch s {
-	case smart.SeverityFailing:
-		return activeTheme.Failing
-	case smart.SeverityCaution:
-		return activeTheme.Caution
-	default:
-		return activeTheme.Neutral
-	}
 }
 
 // humanBytes renders a byte count as a human-readable capacity.
@@ -224,6 +139,20 @@ func humanMinutes(m int) string {
 		return fmt.Sprintf("%d min", m)
 	}
 	return fmt.Sprintf("~%d h", (m+30)/60)
+}
+
+// clampPct bounds a percentage into the 0..100 range every bar and gauge
+// assumes.
+func clampPct(v int) int {
+	return min(max(v, 0), 100)
+}
+
+// plural renders a count with the right noun.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, one)
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }
 
 // orDash renders s, falling back to the dash placeholder when empty.

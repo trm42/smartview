@@ -474,8 +474,3 @@ func temperatureSeries(r *smart.Report, runtime []float64) []float64 {
 	}
 	return runtime
 }
-
-// clampPct bounds a percentage into the gauge's 0..100 range.
-func clampPct(v int) int {
-	return min(max(v, 0), 100)
-}
