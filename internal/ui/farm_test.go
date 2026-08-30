@@ -104,23 +104,13 @@ func TestFarmStacksWhenTooNarrowToPair(t *testing.T) {
 	f := loadFARM(t)
 	v := newFarmView(&smart.Report{FARM: f})
 
-	// The widest row the fixture renders, used as the yardstick for "intact".
-	widest := 0
-	for _, box := range []func(*strings.Builder, *smart.FARM){
-		writeFarmDriveInfo, writeFarmErrors, writeFarmEnvironment, writeFarmWorkload,
-	} {
-		for _, line := range strings.Split(strings.TrimRight(farmBoxText(box, f), "\n"), "\n") {
-			widest = max(widest, tview.TaggedStringWidth(line))
-		}
-	}
-
 	for _, c := range []struct {
 		width   int
 		stacked bool
 	}{
-		{60, true},   // per-column inner 25: values would shred
-		{70, true},   // per-column inner 30, still under the floor
-		{80, false},  // per-column inner 35: pairs, long rows wrap once
+		{60, true},   // per-column inner 26: values would shred
+		{70, true},   // per-column inner 31, still under the floor
+		{80, false},  // per-column inner 36: pairs, long rows wrap once
 		{120, false}, // comfortable
 	} {
 		v.relayout(c.width)
@@ -145,18 +135,24 @@ func TestFarmStacksWhenTooNarrowToPair(t *testing.T) {
 		}
 	}
 
-	// The payoff: stacked at 60 columns, the widest row fits on one line.
-	if got := boxInner(60); got < widest {
-		t.Logf("note: even stacked, inner %d < widest row %d at 60 columns", got, widest)
-	}
+	// The payoff, measured the one way that separates the layouts: a line
+	// count. Stacked at 60 columns nothing wraps and each box renders exactly
+	// the rows it wrote; paired at that width they swell to 10/8/23/17. Line
+	// width cannot show this — hangingIndent keeps lines inside whatever width
+	// it is handed, the paired one included.
 	v.relayout(60)
 	for _, b := range v.farmBoxes() {
-		for _, line := range strings.Split(strings.TrimRight(b.tv.GetText(false), "\n"), "\n") {
-			if w := tview.TaggedStringWidth(line); w > boxInner(60) {
-				t.Errorf("stacked at 60: line overflows inner width %d (%d): %q", boxInner(60), w, line)
-			}
+		raw := countLines(b.text)
+		if got := countLines(b.tv.GetText(false)); got != raw {
+			t.Errorf("stacked at 60: box wrapped to %d lines, want its %d rows intact:\n%s",
+				got, raw, b.tv.GetText(false))
 		}
 	}
+}
+
+// countLines counts text's lines, ignoring a trailing newline.
+func countLines(s string) int {
+	return strings.Count(strings.TrimRight(s, "\n"), "\n") + 1
 }
 
 // The stacked column presents the boxes in the grid's reading order, so the

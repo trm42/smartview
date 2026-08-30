@@ -334,11 +334,12 @@ goroutine (`setNarrow` in app.go is the pattern).
   cells; below that `relayout` stacks them into one full-width column
   (`stackBoxes`, in the grid's reading order). This is not `narrowBreakpoint`:
   what matters is the width the *detail pane* gets, so a 100-column terminal
-  stacks — the drive list takes 36 of them — while an 80-column one, where the
-  narrow layout has already dropped the list, still pairs. The widest row the
-  fixtures render is 49 cells, so a grid that never wrapped would need ~106
-  columns; the grid pairs while values wrap to a second line and stacks once
-  they would start breaking every row.
+  stacks — the drive list takes 38 of them, leaving a per-column inner width of
+  27 — while an 80-column one, where the narrow layout has already dropped the
+  list, still pairs at 36. Rows wrap either way: the widest the fixtures render
+  is 49 cells, so a grid that never wrapped would need ~106 columns. What
+  `farmColumnMin` protects is the reading, not the line — 13 cells of value
+  column still hold "12.29V now" intact, 12 start slicing it apart.
 - **Width-aware panels relayout in `Draw`**, not in `refresh`: farm.go,
   overview.go and statistics.go each cache `lastWidth` and rebuild when it
   changes. Long values are pre-wrapped with `hangingIndent` (format.go) so
