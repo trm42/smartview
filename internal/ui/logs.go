@@ -27,7 +27,7 @@ type logsView struct {
 func newLogsView(r *smart.Report) *logsView {
 	v := &logsView{newScrollTextView()}
 	v.SetDynamicColors(true).SetScrollable(true)
-	v.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Logs ")
+	titledBox(v.Box, " Logs ")
 	v.refresh(r, nil)
 	return v
 }
@@ -39,9 +39,7 @@ func (v *logsView) setFocused(focused bool) {
 
 // refresh re-renders the log text, restoring the prior scroll offset.
 func (v *logsView) refresh(r *smart.Report, _ []float64) {
-	row, col := v.GetScrollOffset()
-	v.SetText(buildLogsText(r))
-	v.ScrollTo(row, col)
+	v.setTextKeepingScroll(buildLogsText(r))
 }
 
 // buildLogsText assembles the Logs tab body.
@@ -163,36 +161,42 @@ func writeNVMeErrorCount(b *strings.Builder, l *smart.NVMeErrorLog) {
 // maxErrorEntries caps the decoded entries listed, newest first.
 const maxErrorEntries = 8
 
-// writeNVMeErrorEntries lists decoded NVMe error-log entries (newest first).
-func writeNVMeErrorEntries(b *strings.Builder, table []smart.NVMeErrorLogEntry) {
+// writeCapped writes at most maxErrorEntries rows of table via line, then says
+// how many it withheld. The cap and its "… N more" note are the same for ATA
+// and NVMe; only the row differs.
+func writeCapped[T any](b *strings.Builder, table []T, line func(T) string) {
 	for i, e := range table {
 		if i >= maxErrorEntries {
 			fmt.Fprintf(b, nestIndent+mutedTag()+"… %d more[-]\n", len(table)-maxErrorEntries)
-			break
+			return
 		}
+		b.WriteString(line(e))
+	}
+}
+
+// writeNVMeErrorEntries lists decoded NVMe error-log entries (newest first).
+func writeNVMeErrorEntries(b *strings.Builder, table []smart.NVMeErrorLogEntry) {
+	writeCapped(b, table, func(e smart.NVMeErrorLogEntry) string {
 		status := e.StatusField.String
 		if status == "" {
 			status = fmt.Sprintf("0x%x", e.StatusField.Value)
 		}
-		fmt.Fprintf(b, nestIndent+cautionTag()+"#%d[-] %s %s(cmd %d)[-]\n", e.ErrorCount, colorResult(status), mutedTag(), e.CommandID)
-	}
+		return fmt.Sprintf(nestIndent+cautionTag()+"#%d[-] %s %s(cmd %d)[-]\n",
+			e.ErrorCount, colorResult(status), mutedTag(), e.CommandID)
+	})
 }
 
 // writeATAErrorEntries lists decoded ATA error-log entries (newest first)
 // with the lifetime hour each occurred at.
 func writeATAErrorEntries(b *strings.Builder, r *smart.Report, table []smart.ATAErrorLogEntry) {
-	for i, e := range table {
-		if i >= maxErrorEntries {
-			fmt.Fprintf(b, nestIndent+mutedTag()+"… %d more[-]\n", len(table)-maxErrorEntries)
-			break
-		}
+	writeCapped(b, table, func(e smart.ATAErrorLogEntry) string {
 		desc := esc(tidyErrorDescription(e.ErrorDescription))
 		if e.ErrorDescription == "" {
 			desc = fmt.Sprintf("error %d", e.ErrorNumber)
 		}
-		fmt.Fprintf(b, nestIndent+cautionTag()+"#%d[-] %s %s%s[-]\n",
+		return fmt.Sprintf(nestIndent+cautionTag()+"#%d[-] %s %s%s[-]\n",
 			e.ErrorNumber, desc, mutedTag(), driveAge(r, e.LifetimeHours))
-	}
+	})
 }
 
 // driveAge renders the drive's age at an event and how long ago it was; the

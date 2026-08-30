@@ -37,7 +37,7 @@ func newFarmView(r *smart.Report) *farmView {
 		// Wrapping is pre-computed (hangingIndentValues); tview's own wrap
 		// would re-break the text back to the left margin.
 		tv.SetWrap(false)
-		tv.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(title)
+		titledBox(tv.Box, title)
 		return tv
 	}
 	v := &farmView{
@@ -332,7 +332,7 @@ const farmHeadPitch = 2
 // farmHeadSummary states an all-zero fault chart's healthy answer in one line.
 func farmHeadSummary(title string, heads int) tview.Primitive {
 	tv := tview.NewTextView().SetDynamicColors(true)
-	tv.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(title)
+	titledBox(tv.Box, title)
 	tv.SetText(fmt.Sprintf("none on any of %d heads", heads))
 	return tv
 }

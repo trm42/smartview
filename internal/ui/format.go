@@ -45,6 +45,13 @@ const uiGutter = 1
 // nestIndent is the leading whitespace for a line under an in-box header.
 const nestIndent = "  "
 
+// titledBox applies the package's standard frame: a border, the uniform
+// horizontal gutter, and a title. uiGutter's rule is "every text/table/list
+// box"; this is where that is actually applied rather than re-typed.
+func titledBox(b *tview.Box, title string) *tview.Box {
+	return b.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(title)
+}
+
 // marginBar renders a severity-coloured headroom bar for a normalized SMART
 // value above its threshold: fuller means more margin, same polarity as every
 // other bar. base is the smallest standard top value (100/200/253) covering
@@ -63,30 +70,36 @@ func marginBar(value, worst, thresh int, sev smart.Severity) string {
 		frac = float64(value-thresh) / float64(span)
 	}
 	frac = min(max(frac, 0), 1)
-	filled := int(frac*float64(width) + 0.5)
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
-	return fmt.Sprintf("[%s]%s[-]", severityTag(sev), bar)
+	full, empty := barGlyphs(int(frac*float64(width)+0.5), width)
+	return fmt.Sprintf("[%s]%s%s[-]", severityTag(sev), full, empty)
 }
 
 // pctBarWidth is the cell width of every bar in the UI.
 const pctBarWidth = 8
 
+// barGlyphs is the one bar vocabulary: filled cells then empty ones, to a
+// total of width. Returned as a pair so a caller that colours the two halves
+// differently (progressBar) still spells the bar the same way — under mono the
+// glyphs are all that survives.
+func barGlyphs(filled, width int) (full, empty string) {
+	filled = min(max(filled, 0), width)
+	return strings.Repeat("█", filled), strings.Repeat("░", width-filled)
+}
+
 // pctBar renders a percentage as a severity-coloured bar plus the value.
 // A FULLER BAR ALWAYS MEANS HEALTHIER; callers with a "consumed" percentage
 // use pctBarUsed so opposite polarities never share a colour.
 func pctBar(pct int, sev smart.Severity) string {
-	filled := (clampPct(pct)*pctBarWidth + 50) / 100
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", pctBarWidth-filled)
-	return fmt.Sprintf("[%s]%s[-] %d%%", severityTag(sev), bar, pct)
+	full, empty := barGlyphs((clampPct(pct)*pctBarWidth+50)/100, pctBarWidth)
+	return fmt.Sprintf("[%s]%s%s[-] %d%%", severityTag(sev), full, empty, pct)
 }
 
 // pctBarUsed renders a CONSUMED percentage: the bar drains as the drive wears
 // (matching every other bar's polarity) while the number stays the "used" figure.
 func pctBarUsed(pct int, sev smart.Severity) string {
 	used := clampPct(pct)
-	filled := ((100-used)*pctBarWidth + 50) / 100
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", pctBarWidth-filled)
-	return fmt.Sprintf("[%s]%s[-] %d%%", severityTag(sev), bar, used)
+	full, empty := barGlyphs(((100-used)*pctBarWidth+50)/100, pctBarWidth)
+	return fmt.Sprintf("[%s]%s%s[-] %d%%", severityTag(sev), full, empty, used)
 }
 
 // tempSeverity grades a temperature for display colouring only; health never
@@ -192,21 +205,38 @@ func tempCell(r *smart.Report) string {
 	return dash
 }
 
-// driveKind classifies the drive for the identity line (SSD vs HDD vs NVMe).
-func driveKind(r *smart.Report) string {
+// kindLabels names a drive kind at one verbosity. The classification itself is
+// in kindLabel: two switches over the same four cases drift, and the fleet's
+// short labels have to agree with the identity line's long ones.
+type kindLabels struct{ nvme, hdd, ssd string }
+
+var (
+	longKindLabels  = kindLabels{nvme: "NVMe SSD", hdd: "HDD @ %d rpm", ssd: "SATA SSD"}
+	shortKindLabels = kindLabels{nvme: "NVMe", hdd: "HDD", ssd: "SSD"}
+)
+
+// kindLabel classifies the drive and names it from the given label set. Only
+// the HDD label may take the rotation rate, so it alone is a format string.
+func kindLabel(r *smart.Report, l kindLabels) string {
 	switch {
 	case r.IsNVMe():
-		return "NVMe SSD"
+		return l.nvme
 	case r.RotationRate != nil && *r.RotationRate > 0:
-		return fmt.Sprintf("HDD @ %d rpm", *r.RotationRate)
+		if strings.Contains(l.hdd, "%d") {
+			return fmt.Sprintf(l.hdd, *r.RotationRate)
+		}
+		return l.hdd
 	case r.IsATA():
-		return "SATA SSD"
+		return l.ssd
 	default:
-		// Device.Protocol is smartctl's own enum, not free text, but shortKind
-		// escapes it at the same kind of sink; keep the two consistent.
+		// Device.Protocol is smartctl's own enum, not free text, but it reaches a
+		// markup-interpreting sink either way.
 		return esc(r.Device.Protocol)
 	}
 }
+
+// driveKind classifies the drive for the identity line (SSD vs HDD vs NVMe).
+func driveKind(r *smart.Report) string { return kindLabel(r, longKindLabels) }
 
 // hangingIndent re-wraps over-long lines so overflow hangs under the value
 // column; tview's own wrapping would break a value back to column 0, so

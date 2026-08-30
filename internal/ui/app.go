@@ -91,9 +91,9 @@ func New(interval time.Duration, themeName string) *App {
 		app:          tview.NewApplication(),
 		list:         tview.NewList(),
 		detail:       newDetail(),
-		status:       &inertTextView{tview.NewTextView().SetDynamicColors(true)},
-		banner:       &inertTextView{tview.NewTextView().SetDynamicColors(true)},
-		rail:         &inertTextView{tview.NewTextView().SetDynamicColors(true)},
+		status:       newInertTextView(),
+		banner:       newInertTextView(),
+		rail:         newInertTextView(),
 		lastWidth:    -1,
 		interval:     interval,
 		themeName:    themeName,
@@ -111,7 +111,7 @@ func New(interval time.Duration, themeName string) *App {
 func (a *App) build() {
 	a.list.ShowSecondaryText(true).SetHighlightFullLine(true)
 	styleList(a.list)
-	a.list.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Drives ")
+	titledBox(a.list.Box, " Drives ")
 	// The index tview passes is the new one; GetCurrentItem() is not yet.
 	a.list.SetChangedFunc(func(i int, _, _ string, _ rune) {
 		a.showDevice(i)

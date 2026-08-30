@@ -114,6 +114,14 @@ func newScrollTextView() *scrollTextView {
 	return &scrollTextView{TextView: tview.NewTextView()}
 }
 
+// setTextKeepingScroll replaces the text without moving the viewport, so an
+// in-place refresh does not jump the view out from under the reader.
+func (s *scrollTextView) setTextKeepingScroll(text string) {
+	row, col := s.GetScrollOffset()
+	s.SetText(text)
+	s.ScrollTo(row, col)
+}
+
 func (s *scrollTextView) Draw(screen tcell.Screen) {
 	s.TextView.Draw(screen)
 	row, _ := s.GetScrollOffset()

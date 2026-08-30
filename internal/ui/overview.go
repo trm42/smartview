@@ -33,7 +33,7 @@ type overviewView struct {
 func newOverviewView(r *smart.Report, tempHistory []float64) *overviewView {
 	id := newScrollTextView()
 	id.SetDynamicColors(true).SetScrollable(true).SetWrap(false)
-	id.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Drive ")
+	titledBox(id.Box, " Drive ")
 	v := &overviewView{
 		Flex:      tview.NewFlex().SetDirection(tview.FlexRow),
 		identity:  id,
@@ -55,10 +55,8 @@ func (v *overviewView) refresh(r *smart.Report, tempHistory []float64) {
 // relayout rebuilds the tab for a panel width of w: the identity box is sized
 // to its content and the temperature chart takes what is left.
 func (v *overviewView) relayout(w, h int) {
-	row, col := v.identity.GetScrollOffset()
 	text := hangingIndent(identityText(v.rep, w), identityValueCol, w)
-	v.identity.SetText(text)
-	v.identity.ScrollTo(row, col)
+	v.identity.setTextKeepingScroll(text)
 
 	v.Clear()
 	mid := tview.NewFlex() // horizontal: identity | gauges
@@ -381,36 +379,32 @@ func buildGauges(r *smart.Report) tview.Primitive {
 	}
 	h := r.NVMeHealth
 	col := tview.NewFlex().SetDirection(tview.FlexRow)
-	added := false
-
-	if h.PercentageUsed != nil {
+	// shown and graded are separate: a gauge can read "90% left" while being
+	// coloured by the 10% consumed behind it.
+	addGauge := func(title string, shown int, graded smart.Severity) {
 		g := tvxwidgets.NewPercentageModeGauge()
-		// Endurance remaining, not consumed: the fleet's endurance bar drains as
-		// the drive wears, and two surfaces showing the same reading with
-		// opposite polarity read as a contradiction.
-		g.SetTitle(" Life left ")
+		g.SetTitle(title)
 		g.SetBorder(true)
 		g.SetMaxValue(100)
-		g.SetValue(100 - clampPct(*h.PercentageUsed))
-		// Colour by the value itself, not the drive-wide verdict.
-		g.SetPgBgColor(severityColor(lifeUsedSeverity(*h.PercentageUsed)))
+		g.SetValue(clampPct(shown))
+		g.SetPgBgColor(severityColor(graded))
 		col.AddItem(g, 3, 0, false)
-		added = true
+	}
+
+	if h.PercentageUsed != nil {
+		// Endurance remaining, not consumed: the fleet's endurance bar drains as
+		// the drive wears, and two surfaces showing the same reading with
+		// opposite polarity read as a contradiction. Colour comes from the value
+		// itself, not the drive-wide verdict.
+		addGauge(" Life left ", 100-clampPct(*h.PercentageUsed), lifeUsedSeverity(*h.PercentageUsed))
 	}
 	if h.AvailableSpare != nil {
 		// SparePercent resolves both the reading and the threshold it is graded
 		// against; re-deriving either here is how the two surfaces drift apart.
 		pct, thr, _ := r.SparePercent()
-		g := tvxwidgets.NewPercentageModeGauge()
-		g.SetTitle(" Spare avail ")
-		g.SetBorder(true)
-		g.SetMaxValue(100)
-		g.SetValue(clampPct(pct))
-		g.SetPgBgColor(severityColor(spareSeverityPct(pct, thr)))
-		col.AddItem(g, 3, 0, false)
-		added = true
+		addGauge(" Spare avail ", pct, spareSeverityPct(pct, thr))
 	}
-	if !added {
+	if col.GetItemCount() == 0 {
 		return nil
 	}
 	return col

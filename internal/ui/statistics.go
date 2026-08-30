@@ -25,7 +25,7 @@ type statisticsView struct {
 func newStatisticsView(r *smart.Report) *statisticsView {
 	v := &statisticsView{scrollTextView: newScrollTextView(), lastWidth: -1}
 	v.SetDynamicColors(true).SetScrollable(true).SetWrap(false)
-	v.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Device statistics ")
+	titledBox(v.Box, " Device statistics ")
 	v.refresh(r, nil)
 	return v
 }
@@ -44,9 +44,7 @@ func (v *statisticsView) refresh(r *smart.Report, _ []float64) {
 // Draw re-wraps when the width changed (or a refresh invalidated it).
 func (v *statisticsView) Draw(screen tcell.Screen) {
 	if _, _, w, _ := v.GetInnerRect(); w != v.lastWidth {
-		row, col := v.GetScrollOffset()
-		v.SetText(hangingIndent(v.raw, statValueCol, w))
-		v.ScrollTo(row, col)
+		v.setTextKeepingScroll(hangingIndent(v.raw, statValueCol, w))
 		v.lastWidth = w
 	}
 	v.scrollTextView.Draw(screen)

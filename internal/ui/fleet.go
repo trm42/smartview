@@ -51,19 +51,20 @@ const fleetLegendHeight = 2
 func newFleetView(onOpen func(device string)) *fleetView {
 	v := &fleetView{
 		Flex:     tview.NewFlex().SetDirection(tview.FlexRow),
-		bar:      &inertTextView{tview.NewTextView().SetDynamicColors(true)},
+		bar:      newInertTextView(),
 		table:    newScrollTable(),
-		legend:   &inertTextView{tview.NewTextView().SetDynamicColors(true).SetWrap(true)},
+		legend:   newInertTextView(),
 		sections: fleetSections(),
 		onOpen:   onOpen,
 	}
 	v.activeID = v.sections[0].id
 
+	v.legend.SetWrap(true)
 	v.bar.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	v.legend.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	v.table.SetBorders(false).SetFixed(1, 0)
 	v.table.SetSelectable(true, false)
-	v.table.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter)
+	titledBox(v.table.Box, "")
 
 	v.table.SetSelectionChangedFunc(func(row, _ int) {
 		if v.renderer {

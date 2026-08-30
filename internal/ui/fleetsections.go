@@ -71,13 +71,7 @@ func temperatureSection() fleetSection {
 		available: func(rows []fleetRow) bool {
 			return anyRow(rows, func(r *smart.Report) bool { _, ok := r.CurrentTemp(); return ok })
 		},
-		rank: func(row fleetRow) (float64, bool) {
-			if row.rep == nil {
-				return 0, false
-			}
-			t, ok := row.rep.CurrentTemp()
-			return float64(t), ok
-		},
+		rank: rankBy((*smart.Report).CurrentTemp),
 		cells: func(row fleetRow) []fleetCell {
 			r := row.rep
 			now := fleetCell{text: dash, color: activeTheme.Neutral, align: tview.AlignRight}
@@ -209,13 +203,7 @@ func enduranceSection() fleetSection {
 				return ok
 			})
 		},
-		rank: func(row fleetRow) (float64, bool) {
-			if row.rep == nil {
-				return 0, false
-			}
-			pct, ok := row.rep.LifeUsedPercent()
-			return float64(pct), ok
-		},
+		rank: rankBy((*smart.Report).LifeUsedPercent),
 		cells: func(row fleetRow) []fleetCell {
 			r := row.rep
 			life := fleetCell{text: dash, color: activeTheme.Neutral}
@@ -279,13 +267,7 @@ func ageSection() fleetSection {
 		available: func(rows []fleetRow) bool {
 			return anyRow(rows, func(r *smart.Report) bool { _, ok := r.PowerOnHours(); return ok })
 		},
-		rank: func(row fleetRow) (float64, bool) {
-			if row.rep == nil {
-				return 0, false
-			}
-			h, ok := row.rep.PowerOnHours()
-			return float64(h), ok
-		},
+		rank: rankBy((*smart.Report).PowerOnHours),
 		cells: func(row fleetRow) []fleetCell {
 			r := row.rep
 			powerOn, cycles, perCycle := numCell(dash), numCell(dash), numCell(dash)
@@ -344,19 +326,21 @@ func anyRow(rows []fleetRow, pred func(*smart.Report) bool) bool {
 	return false
 }
 
-// shortKind is driveKind compressed for a table column.
-func shortKind(r *smart.Report) string {
-	switch {
-	case r.IsNVMe():
-		return "NVMe"
-	case r.RotationRate != nil && *r.RotationRate > 0:
-		return "HDD"
-	case r.IsATA():
-		return "SSD"
-	default:
-		return esc(r.Device.Protocol)
+// rankBy turns a metric accessor into a section rank: absent readings sort
+// last rather than pretending to a zero, and the nil-report guard lives here
+// instead of being repeated (and forgotten) per section.
+func rankBy(f func(*smart.Report) (int, bool)) func(fleetRow) (float64, bool) {
+	return func(row fleetRow) (float64, bool) {
+		if row.rep == nil {
+			return 0, false
+		}
+		v, ok := f(row.rep)
+		return float64(v), ok
 	}
 }
+
+// shortKind is driveKind compressed for a table column.
+func shortKind(r *smart.Report) string { return kindLabel(r, shortKindLabels) }
 
 // seriesRange returns the extremes of an observed series; a single sample has
 // no range and reports absent until a second poll lands.
@@ -364,7 +348,8 @@ func seriesRange(series []float64) (lo, hi int, ok bool) {
 	if len(series) < 2 {
 		return 0, 0, false
 	}
-	return int(slices.Min(series)), int(slices.Max(series)), true
+	f, g, _ := dataRange(series) // len >= 2, so ok is never false here
+	return int(f), int(g), true
 }
 
 // sparkString renders a series as a text sparkline (so the comparison can be

@@ -68,10 +68,50 @@ const attrNameWidth = 22
 
 // attributesView is the ATA attribute table plus footer, with sort (s) and
 // filter (f); rows rebuild in place so selection and focus survive.
-type attributesView struct {
+// attrScaffold is the frame both attribute tables share: a selectable table
+// over a description footer. Only the frame — the two views differ in how they
+// restore selection (by attribute ID vs by row index) and in which keys they
+// claim, so that stays with each.
+type attrScaffold struct {
 	*tview.Flex
 	table  *scrollTable
 	footer *tview.TextView
+}
+
+// newAttrScaffold assembles the frame; onSelect is handed the table row.
+func newAttrScaffold(onSelect func(row int)) attrScaffold {
+	s := attrScaffold{
+		Flex:   tview.NewFlex().SetDirection(tview.FlexRow),
+		table:  newScrollTable(),
+		footer: tview.NewTextView().SetDynamicColors(true).SetWrap(true),
+	}
+	s.table.SetBorders(false).SetFixed(1, 0)
+	s.table.SetSelectable(true, false)
+	titledBox(s.footer.Box, "")
+	s.table.SetSelectionChangedFunc(func(row, _ int) { onSelect(row) })
+	s.AddItem(s.table, 0, 1, true)
+	s.AddItem(s.footer, attrFooterHeight, 0, false)
+	return s
+}
+
+// setFocused accents the table's border when the Attributes tab holds focus.
+func (s attrScaffold) setFocused(focused bool) {
+	s.table.SetBorderColor(borderColor(focused))
+}
+
+// footerRow maps a table row to an index into a rows slice of length n,
+// clearing the footer and reporting false for the header row or past the end.
+func (s attrScaffold) footerRow(row, n int) (int, bool) {
+	i := row - 1
+	if i < 0 || i >= n {
+		s.footer.SetText("")
+		return 0, false
+	}
+	return i, true
+}
+
+type attributesView struct {
+	attrScaffold
 	attrs  []smart.ATAAttribute
 	shown  []smart.ATAAttribute // rows currently displayed; row i+1 → shown[i]
 	sortBy sortMode
@@ -79,17 +119,8 @@ type attributesView struct {
 }
 
 func newAttributesView(attrs []smart.ATAAttribute) *attributesView {
-	v := &attributesView{
-		Flex:   tview.NewFlex().SetDirection(tview.FlexRow),
-		table:  newScrollTable(),
-		footer: tview.NewTextView().SetDynamicColors(true).SetWrap(true),
-		attrs:  attrs,
-	}
-	v.table.SetBorders(false).SetFixed(1, 0)
-	v.table.SetSelectable(true, false)
-	v.footer.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter)
-
-	v.table.SetSelectionChangedFunc(func(row, _ int) { v.updateFooter(row) })
+	v := &attributesView{attrs: attrs}
+	v.attrScaffold = newAttrScaffold(func(row int) { v.updateFooter(row) })
 	v.table.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch ev.Rune() {
 		case 's':
@@ -108,16 +139,9 @@ func newAttributesView(attrs []smart.ATAAttribute) *attributesView {
 		return ev
 	})
 
-	v.AddItem(v.table, 0, 1, true)
-	v.AddItem(v.footer, attrFooterHeight, 0, false)
 	v.renderRows()
 	v.selectByID(-1)
 	return v
-}
-
-// setFocused accents the table's border when the Attributes tab holds focus.
-func (v *attributesView) setFocused(focused bool) {
-	v.table.SetBorderColor(borderColor(focused))
 }
 
 // refresh re-applies the latest data, keeping selection (by ID) and sort/filter.
@@ -163,7 +187,7 @@ func (v *attributesView) selectByID(id int) {
 // the table primitive so focus is not lost; the caller applies selection.
 func (v *attributesView) renderRows() {
 	v.table.Clear()
-	v.table.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(fmt.Sprintf(
+	titledBox(v.table.Box, fmt.Sprintf(
 		" SMART attributes — sort: %s · filter: %s  %s[s/f][-] ", v.sortBy, v.filter, accentTag()))
 
 	headers := []string{"ID", "Attribute", "Kind", "State", "Margin", "Reading"}
@@ -270,9 +294,8 @@ func (v *attributesView) visibleRows() []smart.ATAAttribute {
 
 // updateFooter writes the description and precise numbers for the selected row.
 func (v *attributesView) updateFooter(row int) {
-	i := row - 1
-	if i < 0 || i >= len(v.shown) {
-		v.footer.SetText("")
+	i, ok := v.footerRow(row, len(v.shown))
+	if !ok {
 		return
 	}
 	a := v.shown[i]
@@ -365,36 +388,19 @@ type attrKV struct {
 // nvmeAttributesView renders the NVMe health log as a key/value table with a
 // description footer, refreshing in place.
 type nvmeAttributesView struct {
-	*tview.Flex
-	table  *scrollTable
-	footer *tview.TextView
-	rows   []attrKV
+	attrScaffold
+	rows []attrKV
 }
 
 func newNVMeAttributesView(h *smart.NVMeHealth) *nvmeAttributesView {
-	v := &nvmeAttributesView{
-		Flex:   tview.NewFlex().SetDirection(tview.FlexRow),
-		table:  newScrollTable(),
-		footer: tview.NewTextView().SetDynamicColors(true).SetWrap(true),
-	}
-	v.table.SetBorders(false).SetFixed(1, 0)
-	v.table.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" NVMe health log ")
-	v.table.SetSelectable(true, false)
-	v.footer.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter)
-	v.table.SetSelectionChangedFunc(func(row, _ int) { v.setFooter(row) })
-
-	v.AddItem(v.table, 0, 1, true)
-	v.AddItem(v.footer, attrFooterHeight, 0, false)
+	v := &nvmeAttributesView{}
+	v.attrScaffold = newAttrScaffold(func(row int) { v.setFooter(row) })
+	titledBox(v.table.Box, " NVMe health log ")
 
 	v.setRows(h)
 	v.table.Select(1, 0)
 	v.setFooter(1)
 	return v
-}
-
-// setFocused accents the table's border when the Attributes tab holds focus.
-func (v *nvmeAttributesView) setFocused(focused bool) {
-	v.table.SetBorderColor(borderColor(focused))
 }
 
 // refresh re-applies the latest data, keeping the selected row (field order
@@ -433,9 +439,8 @@ func (v *nvmeAttributesView) setRows(h *smart.NVMeHealth) {
 
 // setFooter writes the description for the selected field.
 func (v *nvmeAttributesView) setFooter(row int) {
-	i := row - 1
-	if i < 0 || i >= len(v.rows) {
-		v.footer.SetText("")
+	i, ok := v.footerRow(row, len(v.rows))
+	if !ok {
 		return
 	}
 	desc := nvmeDesc[v.rows[i].k]
@@ -532,6 +537,6 @@ func headerCellAligned(s string, align int) *tview.TableCell {
 // centeredNote is a placeholder primitive for empty/unsupported sections.
 func centeredNote(msg string) tview.Primitive {
 	tv := tview.NewTextView().SetTextAlign(tview.AlignCenter).SetText("\n" + msg)
-	tv.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter)
+	titledBox(tv.Box, "")
 	return tv
 }
