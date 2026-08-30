@@ -134,23 +134,70 @@ func Scan(ctx context.Context) ([]Device, error) {
 	return res.Devices, nil
 }
 
+// PowerPolicy decides whether a spun-down drive may be woken to be read.
+type PowerPolicy int
+
+const (
+	// WakeDrive reads the drive, spinning it up if it is parked.
+	WakeDrive PowerPolicy = iota
+	// SkipStandby returns an empty report rather than wake a parked drive.
+	SkipStandby
+)
+
+// standbyExit is the exit status smartctl is told to use when it declines to
+// wake a drive. smartctl's own default here is 2, which the man page notes is
+// ambiguous with "device open failed"; 129 is bit 0 (command line did not
+// parse) with bit 7 (self-test log contains errors), and a parse failure exits
+// before any device is opened, so a real run cannot produce that pair.
+const standbyExit = 129
+
+// InStandby reports that smartctl declined to wake a spun-down drive, so this
+// report carries the envelope and no drive data.
+func (r *Report) InStandby() bool { return r.Smartctl.ExitStatus == standbyExit }
+
+// powerArgs is the standby guard, empty unless the caller asked to skip parked
+// drives. -d is part of it because autodetection's own probing can spin the
+// drive up (smartctl(8), -n), which would defeat the guard.
+//
+// No STATUS2: without it smartctl simply reads a drive whose power-mode check
+// is unsupported, which is what we want. Supplying STATUS2 would turn that
+// benign fall-through into an early exit carrying no data.
+func powerArgs(d Device, policy PowerPolicy) []string {
+	if policy != SkipStandby {
+		return nil
+	}
+	args := []string{"-n", "standby," + strconv.Itoa(standbyExit)}
+	if d.Type != "" {
+		args = append(args, "-d", d.Type)
+	}
+	return args
+}
+
 // Info runs `smartctl -j -x <name>` and parses the full report. smartctl's
 // exit status is a bitmask, often non-zero on healthy drives, so stdout is
 // parsed regardless; real failures surface via smartctl.messages (FatalMessage).
-func Info(ctx context.Context, name string) (*Report, error) {
+//
+// Under SkipStandby a parked drive comes back as a valid *Report with a nil
+// error: runJSON only surfaces the exit error when stdout is empty, and
+// smartctl still prints a full envelope. [Report.InStandby] is the signal.
+func Info(ctx context.Context, d Device, policy PowerPolicy) (*Report, error) {
 	if fixtureActive() {
-		return fixtureInfo(name)
+		return fixtureInfo(d.Name)
 	}
-	return runJSON[Report](ctx, "report for "+name, "-j", "-x", name)
+	args := append(powerArgs(d, policy), "-j", "-x", d.Name)
+	return runJSON[Report](ctx, "report for "+d.Name, args...)
 }
 
-// FarmLog runs `smartctl -l farm -j <name>` and parses the Seagate FARM log.
-// An unsupported drive yields (nil, nil): expected, not an error.
-func FarmLog(ctx context.Context, name string) (*FARM, error) {
+// FarmLog runs `smartctl -l farm -j <device>` and parses the Seagate FARM log.
+// An unsupported drive yields (nil, nil): expected, not an error. It carries
+// the same power policy as [Info] — both run every poll, so guarding only one
+// would still wake the drive.
+func FarmLog(ctx context.Context, d Device, policy PowerPolicy) (*FARM, error) {
 	if fixtureActive() {
-		return fixtureFarm(name)
+		return fixtureFarm(d.Name)
 	}
-	w, err := runJSON[farmWrapper](ctx, "FARM log for "+name, "-l", "farm", "-j", name)
+	args := append(powerArgs(d, policy), "-l", "farm", "-j", d.Name)
+	w, err := runJSON[farmWrapper](ctx, "FARM log for "+d.Name, args...)
 	if err != nil {
 		return nil, err
 	}

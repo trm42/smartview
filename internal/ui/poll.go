@@ -41,7 +41,7 @@ func (a *App) fetchAndApply(ctx context.Context) {
 	results := make(map[string]*smart.Report, len(a.devices))
 	for _, d := range a.devices {
 		cctx, cancel := context.WithTimeout(ctx, fetchTimeout)
-		rep, _ := smart.Info(cctx, d.Name)
+		rep, _ := smart.Info(cctx, d, smart.WakeDrive)
 		cancel()
 		if rep == nil {
 			continue // transient failure; keep the last-known-good report
@@ -49,7 +49,7 @@ func (a *App) fetchAndApply(ctx context.Context) {
 		// FARM is a separate smartctl call; failures just leave the tab hidden.
 		if rep.SupportsFARM() {
 			fctx, fcancel := context.WithTimeout(ctx, fetchTimeout)
-			if farm, ferr := smart.FarmLog(fctx, d.Name); ferr == nil && farm != nil {
+			if farm, ferr := smart.FarmLog(fctx, d, smart.WakeDrive); ferr == nil && farm != nil {
 				rep.FARM = farm
 			}
 			fcancel()
