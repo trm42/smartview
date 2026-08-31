@@ -10,6 +10,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"github.com/trm42/smartview/internal/config"
 )
 
 // screenText renders the simulation screen as lines, so an assertion can ask
@@ -74,9 +76,32 @@ func TestSettingsModalFitsTheSmallestTerminal(t *testing.T) {
 			t.Errorf("line %d starts at column 0; the modal is not centred:\n%s", i, joined)
 		}
 	}
-	if !strings.Contains(joined, "[ ]") {
-		t.Errorf("no checkbox glyph on screen; tview's default is a bare space "+
+	if !strings.Contains(joined, uncheckedGlyph) {
+		t.Errorf("no unchecked glyph on screen; tview's default is a bare space "+
 			"that vanishes under mono:\n%s", joined)
+	}
+}
+
+// TestCheckedCheckboxIsVisible is the half the all-defaults render cannot
+// reach: both settings default to false, so a checked box was never drawn. A
+// Checkbox renders its state string as markup, and an unescaped "[x]" parses
+// as a colour tag and disappears entirely — while "[ ]" survives, so the
+// unchecked box looked fine and hid it.
+func TestCheckedCheckboxIsVisible(t *testing.T) {
+	cfg := config.Default()
+	cfg.StandbyAware = true
+	cfg.ShowUnavailableTabs = true
+	a, screen := newSimAppCfg(t, 80, 24, cfg)
+	t.Cleanup(func() { setTheme(themes["dark"]) })
+	openSettings(t, a, screen)
+	a.app.Draw()
+
+	joined := strings.Join(screenText(screen), "\n")
+	if n := strings.Count(joined, checkedGlyph); n != 2 {
+		t.Errorf("%d checked glyphs on screen, want 2 (both settings are on):\n%s", n, joined)
+	}
+	if strings.Contains(joined, uncheckedGlyph) {
+		t.Errorf("an unchecked glyph is on screen with both settings on:\n%s", joined)
 	}
 }
 

@@ -24,6 +24,13 @@ const settingsWidth = 52
 // short to show the buttons.
 var settingsHeight = len(settingsRows) + 4
 
+// Checkbox state glyphs. Written unescaped here and escaped at the sink, so
+// what is intended is legible; see settingsForm for why escaping is required.
+const (
+	checkedGlyph   = "[x]"
+	uncheckedGlyph = "[ ]"
+)
+
 // settingsRows names the form's rows, in order. Its length sizes the modal, so
 // adding a setting cannot leave the box too short to show the buttons.
 var settingsRows = []string{
@@ -79,9 +86,16 @@ func (a *App) settingsForm(cfg config.Config) *tview.Form {
 	// tview draws an unchecked box as a bare space — a one-cell background
 	// tint that disappears under mono, where colour is all we would have.
 	// Explicit glyphs survive it, like the ● that carries severity.
+	//
+	// Both strings go through tview.Escape: a Checkbox renders its state
+	// string as markup, so a bare "[x]" parses as a colour tag and is
+	// swallowed, leaving a checked box showing nothing at all. "[ ]" happens
+	// to survive unescaped because the space does not match the tag pattern —
+	// which is exactly the asymmetry that hid the bug.
 	for i := range form.GetFormItemCount() {
 		if cb, ok := form.GetFormItem(i).(*tview.Checkbox); ok {
-			cb.SetCheckedString("[x]").SetUncheckedString("[ ]")
+			cb.SetCheckedString(tview.Escape(checkedGlyph)).
+				SetUncheckedString(tview.Escape(uncheckedGlyph))
 		}
 	}
 	titledBox(form.Box, " Settings ")
