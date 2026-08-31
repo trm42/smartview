@@ -17,12 +17,35 @@ import (
 
 // Modal size: a border, one row per setting, a blank, and the button row.
 // Vertical padding is 0 for density, as everywhere else in the UI.
-const settingsWidth = 52
+const settingsWidth = 56
 
-// settingsHeight is the border, one row per setting, a blank and the button
-// row. Derived from settingsRows so adding a setting cannot leave the box too
-// short to show the buttons.
-var settingsHeight = len(settingsRows) + 4
+// changedGlyph marks a row edited since the modal opened. It sits in a
+// two-column gutter left of every label rather than at the right edge,
+// because a tview Form row is label plus field with nothing after it.
+const (
+	changedGlyph = "•"
+	rowGutter    = "  "
+)
+
+// settingsHelp is the one-line description shown under the form for whichever
+// row has focus. It is the only place a caveat like "ATA drives only" reaches
+// someone actually editing the setting — the config file and README do not.
+var settingsHelp = []string{
+	"Colour palette. T cycles it live.",
+	"How often every drive is re-read.",
+	"Leave parked drives asleep. ATA only.",
+	"Draw all six tabs, muting empty ones.",
+	"Which screen to open on. Next run.",
+}
+
+// settingsHeight is the border, one row per setting, a blank, the button row,
+// and the two-line footer (help + keys). Derived from settingsRows so adding a
+// setting cannot leave the box too short to show the buttons.
+var settingsHeight = len(settingsRows) + 7
+
+// settingsKeys is the modal's hint line, in the status bar's vocabulary. The
+// modal was the one surface in the app that taught no keys.
+const settingsKeys = "↑↓ move   ⏎/→ change   Tab buttons   Esc cancel"
 
 // Checkbox state glyphs. Written unescaped here and escaped at the sink, so
 // what is intended is legible; see settingsForm for why escaping is required.
@@ -35,7 +58,7 @@ const (
 // adding a setting cannot leave the box too short to show the buttons.
 var settingsRows = []string{
 	"Theme", "Refresh", "Skip spun-down drives",
-	"Show unavailable tabs", "Start view (next run)",
+	"Show unavailable tabs", "Start view",
 }
 
 // currentConfig snapshots the live settings. Derived rather than stored: a
@@ -55,26 +78,37 @@ func (a *App) currentConfig() config.Config {
 // writes to that copy, which is what makes Cancel free: nothing outside the
 // closure changes until Save runs.
 func (a *App) settingsForm(cfg config.Config) *tview.Form {
+	original := cfg
+	a.settingsHelp = newInertTextView()
+	a.settingsHelp.SetBorderPadding(0, 0, uiGutter+1, uiGutter)
 	form := tview.NewForm()
+	// AddDropDown fires its callback during construction, so mark starts as a
+	// no-op and is reassigned once form exists for it to relabel.
+	mark := func() {}
 	form.SetItemPadding(0) // density, matching every other box in the UI
+	// NewForm defaults to SetBorderPadding(1, 1, 1, 1). The wrapper supplies
+	// the gutter, and a row of vertical padding pushes the button row outside
+	// the form's clip — which is exactly how the buttons went missing.
+	form.SetBorderPadding(0, 0, 0, 0)
 	intervals := intervalChoices(cfg.RefreshInterval.Duration())
 	views := []string{config.StartDrives, config.StartFleet}
 
-	form.AddDropDown(settingsRows[0], themeCycle, indexOr(themeCycle, cfg.Theme, 0),
-		func(opt string, _ int) { cfg.Theme = opt })
-	form.AddDropDown(settingsRows[1], labelDurations(intervals),
+	form.AddDropDown(rowGutter+settingsRows[0], themeCycle, indexOr(themeCycle, cfg.Theme, 0),
+		func(opt string, _ int) { cfg.Theme = opt; mark() })
+	form.AddDropDown(rowGutter+settingsRows[1], labelDurations(intervals),
 		indexOr(intervals, cfg.RefreshInterval.Duration(), 0),
 		func(_ string, i int) {
 			if i >= 0 && i < len(intervals) {
 				cfg.RefreshInterval = config.Duration(intervals[i])
 			}
+			mark()
 		})
-	form.AddCheckbox(settingsRows[2], cfg.StandbyAware,
-		func(v bool) { cfg.StandbyAware = v })
-	form.AddCheckbox(settingsRows[3], cfg.ShowUnavailableTabs,
-		func(v bool) { cfg.ShowUnavailableTabs = v })
-	form.AddDropDown(settingsRows[4], views, indexOr(views, cfg.StartView, 0),
-		func(opt string, _ int) { cfg.StartView = opt })
+	form.AddCheckbox(rowGutter+settingsRows[2], cfg.StandbyAware,
+		func(v bool) { cfg.StandbyAware = v; mark() })
+	form.AddCheckbox(rowGutter+settingsRows[3], cfg.ShowUnavailableTabs,
+		func(v bool) { cfg.ShowUnavailableTabs = v; mark() })
+	form.AddDropDown(rowGutter+settingsRows[4], views, indexOr(views, cfg.StartView, 0),
+		func(opt string, _ int) { cfg.StartView = opt; mark() })
 
 	form.AddButton("Save", func() {
 		a.popModal()
@@ -82,6 +116,15 @@ func (a *App) settingsForm(cfg config.Config) *tview.Form {
 	})
 	form.AddButton("Cancel", a.popModal)
 	form.SetCancelFunc(a.popModal) // Esc
+
+	// A chooser has to look pressable. currentPrefix/currentSuffix wrap only
+	// the value on the row, not the entries in the open list.
+	for i := range form.GetFormItemCount() {
+		if dd, ok := form.GetFormItem(i).(*tview.DropDown); ok {
+			dd.SetTextOptions("", "", "‹ ", " ›", "")
+		}
+	}
+	a.installRowKeys(form, &cfg, original)
 
 	// tview draws an unchecked box as a bare space — a one-cell background
 	// tint that disappears under mono, where colour is all we would have.
@@ -98,16 +141,119 @@ func (a *App) settingsForm(cfg config.Config) *tview.Form {
 				SetUncheckedString(tview.Escape(uncheckedGlyph))
 		}
 	}
-	titledBox(form.Box, " Settings ")
+	mark = func() { markChangedRows(form, original, cfg) }
+	mark()
 	return styleForm(form)
 }
 
-// showSettings opens the editor. The form is rebuilt on every open rather than
+// markChangedRows puts a dot in each edited row's gutter. Labels keep a
+// constant two-column prefix so the form's label column cannot jump as rows
+// are marked.
+func markChangedRows(form *tview.Form, original, cur config.Config) {
+	changed := []bool{
+		cur.Theme != original.Theme,
+		cur.RefreshInterval != original.RefreshInterval,
+		cur.StandbyAware != original.StandbyAware,
+		cur.ShowUnavailableTabs != original.ShowUnavailableTabs,
+		cur.StartView != original.StartView,
+	}
+	for i, dirty := range changed {
+		gutter := rowGutter
+		if dirty {
+			gutter = changedGlyph + " "
+		}
+		setItemLabel(form.GetFormItem(i), gutter+settingsRows[i])
+	}
+}
+
+// setItemLabel relabels a form item. SetLabel is not on the FormItem
+// interface: each widget returns its own concrete type, so they cannot share
+// one.
+func setItemLabel(item tview.FormItem, label string) {
+	switch v := item.(type) {
+	case *tview.DropDown:
+		v.SetLabel(label)
+	case *tview.Checkbox:
+		v.SetLabel(label)
+	}
+}
+
+// boxed is the part of every form item the FormItem interface omits: both
+// hooks live on the embedded *tview.Box and are promoted, so one interface
+// covers DropDown and Checkbox alike.
+type boxed interface {
+	SetInputCapture(func(*tcell.EventKey) *tcell.EventKey) *tview.Box
+	SetFocusFunc(func()) *tview.Box
+}
+
+// installRowKeys gives the form a list model: up/down move between settings
+// and Enter or Right activates the focused one.
+//
+// It must be installed per item, not on the Form: Form.Focus delegates to the
+// child, so the application focuses the item and a capture on the Form is
+// never in the chain. The capture is also what stops tview opening a closed
+// DropDown on Up/Down/Home/End/PgUp/PgDn, which would otherwise swallow row
+// navigation on the very first keypress.
+func (a *App) installRowKeys(form *tview.Form, cfg *config.Config, original config.Config) {
+	n := form.GetFormItemCount()
+	focusRow := func(i int) {
+		i = min(max(i, 0), n-1) // clamp, no wrap — the rule stepTab follows
+		form.SetFocus(i)
+		a.app.SetFocus(form)
+	}
+	for i := range n {
+		item, ok := form.GetFormItem(i).(boxed)
+		if !ok {
+			continue
+		}
+		row := i
+		item.SetFocusFunc(func() { a.settingsHelp.SetText(mutedTag() + settingsHelp[row] + "[-]") })
+		item.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			switch ev.Key() {
+			case tcell.KeyUp:
+				focusRow(row - 1)
+				return nil
+			case tcell.KeyDown:
+				focusRow(row + 1)
+				return nil
+			case tcell.KeyRight:
+				// The widgets already do the right thing on Enter: a checkbox
+				// toggles, a closed chooser opens. One verb, two controls.
+				return tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone)
+			}
+			return ev
+		})
+	}
+}
+
+// settingsModal builds the whole overlay: the form, then the focus-following
+// help line and the key hints under it. The border lives on the wrapper rather
+// than the form so the footer sits inside the box.
+func (a *App) settingsModal() (tview.Primitive, *tview.Form) {
+	form := a.settingsForm(a.currentConfig())
+
+	keys := newInertTextView()
+	keys.SetBorderPadding(0, 0, uiGutter+1, uiGutter)
+	keys.SetText(mutedTag() + settingsKeys + "[-]")
+
+	box := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(form, len(settingsRows)+2, 0, true). // rows + blank + buttons
+		AddItem(nil, 1, 0, false).                   // breathing room above the footer
+		AddItem(a.settingsHelp, 1, 0, false).
+		AddItem(keys, 1, 0, false)
+	box.SetBackgroundColor(activeTheme.Background)
+	titledBox(box.Box, " Settings ")
+	box.SetBorderColor(activeTheme.Accent)
+	box.SetTitleColor(activeTheme.Neutral)
+	return centeredModal(box, settingsWidth, settingsHeight), form
+}
+
+// showSettings opens the editor. It is rebuilt on every open rather than
 // cached on App, so it is always born in the current theme — the whole
 // repaint-miss class, dodged rather than handled.
 func (a *App) showSettings() {
-	form := a.settingsForm(a.currentConfig())
-	a.pushModal(centeredModal(form, settingsWidth, settingsHeight))
+	modal, form := a.settingsModal()
+	a.pushModal(modal)
 	a.app.SetFocus(form)
 }
 

@@ -44,8 +44,8 @@ func openSettings(t *testing.T, a *App, screen tcell.SimulationScreen) *tview.Fo
 	// runSim's cleanup quits with 'q', which a modal swallows.
 	t.Cleanup(func() { onLoop(t, a, func() any { a.popModal(); return nil }) })
 	return onLoop(t, a, func() *tview.Form {
-		form := a.settingsForm(a.currentConfig())
-		a.pushModal(centeredModal(form, settingsWidth, settingsHeight))
+		modal, form := a.settingsModal()
+		a.pushModal(modal)
 		a.app.SetFocus(form)
 		return form
 	})

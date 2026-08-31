@@ -217,6 +217,12 @@ show_unavailable_tabs = false
 start_view = "drives"
 ```
 
+Inside the modal, `↑` / `↓` move between settings and `⏎` or `→` changes the
+focused one — a checkbox flips, a chooser opens. `Tab` reaches Save and Cancel,
+`Esc` closes a chooser if one is open and otherwise cancels. A line under the
+form describes whichever setting you are on, and a `•` marks the ones you have
+edited but not yet saved.
+
 **The Settings modal (`S`) is the only thing that writes this file.** `T` and
 `+` / `-` change the current session and are deliberately *not* persisted, so a
 stray keypress cannot rewrite a file you hand-edited. Use `S` when you want a

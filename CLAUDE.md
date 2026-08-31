@@ -136,11 +136,40 @@ overridable with `--config PATH`. Five settings: `theme`, `refresh_interval`,
   comments and would strip the header off a hand-written file on the first save
   from the modal. Every interpolated value is a bool or validated against a
   closed set, so the output cannot be invalid TOML. The write is temp+rename.
+- **The Settings modal is a list, not a tview Form's default.** `↑`/`↓` move
+  between settings (clamped, the rule `stepTab` follows) and `⏎`/`→` activate
+  the focused one — a checkbox toggles, a chooser opens. Three tview facts make
+  this fiddlier than it looks: **`Form.Focus` delegates to the child item**, so
+  a capture on the Form is never in the key chain and the captures must be
+  per-item; a **closed `DropDown` opens on `↑`/`↓`/Home/End/PgUp/PgDn**, which
+  would otherwise swallow row navigation on the first keypress; and
+  **`NewForm()` defaults to `SetBorderPadding(1, 1, 1, 1)`**, so moving the
+  border onto a wrapper silently pushed the button row outside the form's clip
+  and the buttons vanished. `SetLabel` is not on the `FormItem` interface (each
+  widget returns its own type), so relabelling type-switches; `SetInputCapture`
+  and `SetFocusFunc` *are* promoted from the embedded `Box`, so one interface
+  covers both widgets. An open chooser is tview's own list — `↑↓` and `⏎` and
+  `Esc` are handled there and need nothing from us; `←` does not close it,
+  which is why the hint line does not claim it.
+- **The modal carries its own footer**: a help line that follows focus (the
+  only place a caveat like *ATA drives only* reaches someone editing the
+  setting — the config file and README do not) and a key hint line, because it
+  was the one surface in the app that taught no keys. A `•` in each row's
+  two-column label gutter marks it edited since the modal opened; the gutter is
+  constant width so the label column cannot jump, and it is on the left because
+  a Form row is label plus field with nothing after it.
 - **The Settings modal (`S`) is the only writer.** `T` and `+`/`-` stay
   session-only, as the README says. `App.currentConfig()` is *derived* from the
   live fields and never stored: a cached copy would drift the moment `T` changed
   the session outside the modal, and Save would then silently revert the theme
   the user is looking at.
+- **The hint bar's right-hand summary names the settings that have keys.** It
+  reads `<theme> · <interval>`, not `... · refresh every <interval>`: spelling
+  it out restated what `+/- rate` already teaches and cost 14 columns on a bar
+  that is *already* wider than the 100-column breakpoint it appears at (125
+  cells before this change). Dropping it is what paid for `S settings`, and the
+  bar came out narrower than it started. The pre-existing overflow is untouched
+  — a width-aware bar is still owed.
 
 ### Data flow
 

@@ -47,6 +47,11 @@ type App struct {
 	refreshCh  chan struct{}
 	wakeCh     chan struct{}      // 'R': refresh, waking spun-down drives
 	intervalCh chan time.Duration // runtime interval changes → poll-loop ticker reset
+	// settingsHelp is the settings modal's focus-following description line.
+	// Rebuilt with the modal on every open, so it never goes stale and is not
+	// a persistent widget.
+	settingsHelp *inertTextView
+
 	// save persists the settings modal's result. Injected so the UI never
 	// touches the filesystem and tests can assert on what would be written.
 	save func(config.Config) error
@@ -332,8 +337,13 @@ func (a *App) statusText() string {
 			aq + "r[-] refresh   " + aq + "q[-] quit"
 		hint += a.contextHints()
 	}
-	hint += "   " + aq + "+/-[-] rate   " + aq + "T[-] theme"
-	return hint + fmt.Sprintf("      %s · refresh every %s", a.themeName, a.interval)
+	hint += "   " + aq + "+/-[-] rate   " + aq + "T[-] theme   " + aq + "S[-] settings"
+	// The summary is the two settings that already have keys, so it says what
+	// they are set to and lets +/- and T say what changes them. Spelling out
+	// "refresh every" restated the rate key and cost 14 columns on a bar that
+	// is already wider than the 100-column breakpoint it appears at; dropping
+	// it is what pays for the S key.
+	return hint + fmt.Sprintf("      %s · %s", a.themeName, a.interval)
 }
 
 // fleetHints is the fleet comparison's key-hint bar, swapped in wholesale.
