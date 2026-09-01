@@ -380,9 +380,9 @@ func TestEmptyOutputIsReportedPlainly(t *testing.T) {
 		call func() error
 	}{
 		{"Scan", func() error { _, err := Scan(t.Context()); return err }},
-		{"Info", func() error { _, err := Info(t.Context(), "/dev/sda"); return err }},
+		{"Info", func() error { _, err := Info(t.Context(), Device{Name: "/dev/sda"}, WakeDrive); return err }},
 		{"Version", func() error { _, err := Version(t.Context()); return err }},
-		{"FarmLog", func() error { _, err := FarmLog(t.Context(), "/dev/sda"); return err }},
+		{"FarmLog", func() error { _, err := FarmLog(t.Context(), Device{Name: "/dev/sda"}, WakeDrive); return err }},
 		{"RunSelfTest", func() error { return RunSelfTest(t.Context(), "/dev/sda", SelfTestShort) }},
 		{"AbortSelfTest", func() error { return AbortSelfTest(t.Context(), "/dev/sda") }},
 	} {

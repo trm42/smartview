@@ -5,6 +5,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/rivo/tview"
 
@@ -324,4 +325,19 @@ func splitAtWidth(s string, col int) (head, tail string) {
 		}
 	}
 	return s, ""
+}
+
+// roundDuration renders an age at a sensible resolution: seconds under a
+// minute, minutes under an hour, then hours. The coarse units are formatted
+// rather than left to Duration.String, which would spell twelve minutes
+// "12m0s". A cached reading's age only needs to say roughly how stale it is.
+func roundDuration(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return d.Round(time.Second).String()
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Round(time.Minute).Minutes()))
+	default:
+		return fmt.Sprintf("%dh", int(d.Round(time.Hour).Hours()))
+	}
 }

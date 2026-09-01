@@ -11,6 +11,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
+	"github.com/trm42/smartview/internal/config"
 	"github.com/trm42/smartview/internal/smart"
 )
 
@@ -24,7 +25,15 @@ const testTimeout = 5 * time.Second
 // and the layout branch under test depends only on the terminal width.
 func newSimApp(t *testing.T, width, height int) (*App, tcell.SimulationScreen) {
 	t.Helper()
-	a := New(30*time.Second, "dark")
+	a, screen := newSimAppCfg(t, width, height, config.Default())
+	return a, screen
+}
+
+// newSimAppCfg is newSimApp with explicit settings. The saver only records:
+// no test may write a config file.
+func newSimAppCfg(t *testing.T, width, height int, cfg config.Config) (*App, tcell.SimulationScreen) {
+	t.Helper()
+	a := New(cfg, func(config.Config) error { return nil })
 	// New installs the theme globally; put it back so test order cannot matter.
 	t.Cleanup(func() { setTheme(themes["dark"]) })
 	screen := tcell.NewSimulationScreen("UTF-8")
@@ -289,6 +298,7 @@ func TestThemeCycleRegroundsPersistentWidgets(t *testing.T) {
 		{"bodyPages", a.bodyPages},
 		{"root", a.root},
 		{"detail", a.detail},
+		{"detail.note", a.detail.note},
 		{"detail.barRow", a.detail.barRow},
 		{"detail.bar", a.detail.bar},
 		{"detail.spinner", a.detail.spinner},

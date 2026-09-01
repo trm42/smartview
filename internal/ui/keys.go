@@ -88,6 +88,9 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 		case 'r':
 			a.triggerRefresh()
 			return nil
+		case 'R':
+			a.forceRefresh()
+			return nil
 		case '+', '-':
 			a.setInterval(nextInterval(a.interval, r == '-'))
 			return nil
@@ -105,6 +108,10 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 		case 'T':
 			// Uppercase cycles the theme; lowercase t (above) is the Tests tab.
 			a.cycleTheme()
+			return nil
+		case 'S':
+			// Uppercase opens Settings; lowercase s (attributes.go) sorts.
+			a.showSettings()
 			return nil
 		case '1', '2', '3', '4', '5', '6', '7', '8', '9':
 			a.openTab(int(r - '1'))
@@ -159,7 +166,7 @@ func (a *App) toggleFleet() {
 	}
 	a.fleetMode = true
 	// Render from the cache so entry doesn't wait for the next poll.
-	a.fleet.refresh(a.devices, a.reports, a.history)
+	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep)
 	a.bodyPages.SwitchToPage(pageFleet)
 	a.app.SetFocus(a.fleet.table)
 	a.refreshChrome()
@@ -209,7 +216,9 @@ func (a *App) focusDetail() {
 // click share it. From a mouse handler the event loop holds no draw lock, so
 // SetFocus is safe here where QueueUpdateDraw would deadlock.
 func (a *App) openTab(i int) {
-	a.detail.selectTab(i)
+	if !a.detail.selectTab(i) {
+		return
+	}
 	a.focusDetail()
 }
 
@@ -246,22 +255,35 @@ func (a *App) focusLeft() {
 	if a.list.HasFocus() {
 		return
 	}
-	if a.detail.active == 0 {
-		if a.narrow {
-			return
-		}
-		a.app.SetFocus(a.list)
-		a.refreshChrome()
+	// Ask stepTab rather than test active == 0: with show_unavailable_tabs
+	// there may be muted tabs to the left that it steps over, and only it
+	// knows whether any reachable one remains.
+	if a.detail.stepTab(-1) {
+		a.focusDetail()
 		return
 	}
-	a.detail.stepTab(-1)
-	a.focusDetail()
+	if a.narrow {
+		return
+	}
+	a.app.SetFocus(a.list)
+	a.refreshChrome()
 }
 
-// triggerRefresh asks the poll loop to fetch immediately (non-blocking).
+// triggerRefresh asks the poll loop to fetch immediately (non-blocking). It
+// honours the standby policy: 'r' must not spin a parked drive up.
 func (a *App) triggerRefresh() {
 	select {
 	case a.refreshCh <- struct{}{}:
+	default:
+	}
+}
+
+// forceRefresh asks the poll loop to fetch immediately and wake any parked
+// drive. This is the only path that overrides standby_aware — without it, a
+// cold start with every drive asleep could never show a reading.
+func (a *App) forceRefresh() {
+	select {
+	case a.wakeCh <- struct{}{}:
 	default:
 	}
 }

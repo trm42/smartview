@@ -52,7 +52,14 @@ func tag(c tcell.Color) string {
 	return fmt.Sprintf("#%06x", h)
 }
 
-func accentTag() string  { return "[" + tag(activeTheme.Accent) + "]" }
+func accentTag() string { return "[" + tag(activeTheme.Accent) + "]" }
+
+// unavailableTabTag styles a tab pill the current drive has no data for. Muted
+// plus the dim attribute: Muted is the right semantic role, but it collapses to
+// the terminal default under mono, where dim still separates the pill — the
+// same trick the ● glyph and bold play for severity there.
+func unavailableTabTag() string { return "[" + tag(activeTheme.Muted) + "::d]" }
+
 func mutedTag() string   { return "[" + tag(activeTheme.Muted) + "]" }
 func okTag() string      { return "[" + tag(activeTheme.OK) + "]" }
 func cautionTag() string { return "[" + tag(activeTheme.Caution) + "]" }

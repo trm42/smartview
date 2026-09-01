@@ -21,6 +21,7 @@ does. Long rationale belongs in this file's bullets, not inline.
 go build -o smartview .        # build
 go run .                       # run (refresh defaults to 30s; --interval 10s sets the
                                # starting cadence, runtime +/- keys adjust it live)
+go run . --config ./my.toml    # settings file (default: os.UserConfigDir()/smartview/)
 go test ./...                  # all tests
 go test ./internal/smart/ -run TestParseNVMe   # single test
 go vet ./... && gofmt -l .     # vet + format check (gofmt -l should print nothing)
@@ -49,6 +50,10 @@ This is the canonical way to verify UI changes without the drives attached. The
 committed fixtures are real `smartctl -j -x` captures from the SATA hardware
 this project is developed against, so a fixture run exercises what those drives
 actually report — it is not a synthetic stand-in.
+`smart-sdd-standby.json` is the envelope a parked drive produces, so the
+standby UI is drivable here even though `-n` never runs in fixture mode; the
+limitation is that the drive is asleep regardless of the policy and `R` cannot
+wake it.
 `--fixtures DIR` loads every `*.json` in DIR as drive data — the committed
 `internal/smart/testdata/` fixtures cover ATA, NVMe, sparse Apple NVMe, and a
 Seagate FARM log. Fixture mode **bypasses the smartctl preflight** entirely, so
@@ -65,9 +70,22 @@ hint (`rebuild with: go build -tags dev`).
 
 ## Architecture
 
-Two packages with a hard one-way boundary: **`internal/smart` is the data layer
-and has no tview dependency**; **`internal/ui` is the presentation layer**.
-`main.go` wires flags + a smartctl preflight and starts the UI. That preflight
+Three packages with a hard one-way boundary:
+
+```
+internal/config   <- imports nothing of ours (stdlib + BurntSushi/toml)
+internal/smart    <- no internal imports, no tview   (the data layer)
+internal/ui       -> internal/smart, internal/config (the presentation layer)
+main              -> all three
+```
+
+**`internal/smart` never learns that a config file exists.** The one setting it
+acts on, standby awareness, arrives as a call parameter (`smart.SkipStandby`),
+exactly as `interval` already reaches `pollLoop` rather than via a global. The
+UI never touches the filesystem either: `ui.New` takes a `save func` that main
+supplies and tests replace with a recorder.
+
+`main.go` wires flags + config + a smartctl preflight and starts the UI. That preflight
 is `smart.Preflight`: smartctl on PATH *and* smartmontools >= 7.0, run under a
 short deadline and the signal context so a wedged binary cannot hang startup
 and Ctrl-C still works. A missing binary comes back as `smart.ErrNoSmartctl`
@@ -87,6 +105,81 @@ and the fleet comparison — swapped by `App.bodyPages`.
 navigation it drives), `modals.go` (the overlay stack and its consumers) and
 `selftest.go` (the App's only smartctl-action path). The `App` receiver is
 shared across all four, so a method moves between them freely.
+
+### Configuration
+
+`internal/config` is a TOML file at `os.UserConfigDir()/smartview/config.toml`,
+overridable with `--config PATH`. Five settings: `theme`, `refresh_interval`,
+`standby_aware`, `show_unavailable_tabs`, `start_view`.
+
+- **Precedence is flag > file > default, resolved with `flag.Visit`.** A flag
+  sitting at its default is indistinguishable from an absent one by value, so
+  layering the flag vars unconditionally would let flag defaults silently
+  shadow the file. Only flags the user actually typed become `config.Overrides`.
+  `Load` likewise starts from `Default()` and decodes over it, so an omitted
+  *key* keeps its default instead of becoming a zero value.
+- **A bad file refuses startup**, naming every unknown key at once (that is why
+  BurntSushi/toml: `MetaData.Undecoded()` returns them all, where pelletier
+  stops at the first). Config load runs *before* the preflight so a typo is
+  reported at once rather than after a 5s smartctl timeout. `config.Load`
+  requires the file; `config.LoadIfPresent` tolerates a missing one — a path the
+  user named is a typo, a missing default path is the normal no-config case.
+- **`Validate` rejects an interval below one second.** `poll.go` hands the
+  interval straight to `time.NewTicker`, which *panics* on a non-positive
+  duration, so `refresh_interval = "0s"` would kill the poll goroutine on its
+  first tick. This is a guard, not a style choice.
+- **Which themes exist is main's knowledge**, so `Validate` returns
+  `config.ErrUnknownTheme` and `main` attaches the list — the same split as
+  `smart.ErrNoSmartctl`. Attaching it unconditionally put a twelve-theme list on
+  the end of an out-of-range interval error.
+- **`Save` renders a commented template, not `toml.Encoder`**, which emits no
+  comments and would strip the header off a hand-written file on the first save
+  from the modal. Every interpolated value is a bool or validated against a
+  closed set, so the output cannot be invalid TOML. The write is temp+rename.
+- **The Settings modal is a list, not a tview Form's default.** `↑`/`↓` move
+  between settings (clamped, the rule `stepTab` follows) and `⏎`/`→` activate
+  the focused one — a checkbox toggles, a chooser opens. Three tview facts make
+  this fiddlier than it looks: **`Form.Focus` delegates to the child item**, so
+  a capture on the Form is never in the key chain and the captures must be
+  per-item; a **closed `DropDown` opens on `↑`/`↓`/Home/End/PgUp/PgDn**, which
+  would otherwise swallow row navigation on the first keypress; and
+  **`NewForm()` defaults to `SetBorderPadding(1, 1, 1, 1)`**, so moving the
+  border onto a wrapper silently pushed the button row outside the form's clip
+  and the buttons vanished. `SetLabel` is not on the `FormItem` interface (each
+  widget returns its own type), so relabelling type-switches; `SetInputCapture`
+  and `SetFocusFunc` *are* promoted from the embedded `Box`, so one interface
+  covers both widgets. **An open chooser owns the arrows, and the capture has to
+  step aside for it.** `DropDown.InputHandler` handles `↑`/`↓` *itself* and
+  forwards them to its list, so tview delivers them to the DropDown even
+  though the list holds focus — a capture that acts unconditionally steals
+  them and the highlight can never move. Guard on `IsOpen()`.
+  `←` closes the chooser by returning an `Esc`, which works only because
+  `SetCancelFunc` declines while a chooser is open: `DropDown` runs the Form's
+  *finished* handler on its way out (with `d.open` still set) and that handler
+  is what calls cancel, so without the guard leaving a chooser would close the
+  whole modal — as `Esc` itself did.
+- **The modal carries its own footer**: a help line that follows focus (the
+  only place a caveat like *ATA drives only* reaches someone editing the
+  setting — the config file and README do not) and a key hint line, because it
+  was the one surface in the app that taught no keys. A `•` in each row's
+  two-column label gutter marks it edited since the modal opened; the gutter is
+  constant width so the label column cannot jump, and it is on the left because
+  a Form row is label plus field with nothing after it. Save and Cancel join
+  the same index space as the rows, so `↓` runs off the last setting onto the
+  buttons and `←`/`→` move between them; the buttons carry their own captures
+  because `GetButton` returns a `*tview.Button`, not a `FormItem`.
+- **The Settings modal (`S`) is the only writer.** `T` and `+`/`-` stay
+  session-only, as the README says. `App.currentConfig()` is *derived* from the
+  live fields and never stored: a cached copy would drift the moment `T` changed
+  the session outside the modal, and Save would then silently revert the theme
+  the user is looking at.
+- **The hint bar's right-hand summary names the settings that have keys.** It
+  reads `<theme> · <interval>`, not `... · refresh every <interval>`: spelling
+  it out restated what `+/- rate` already teaches and cost 14 columns on a bar
+  that is *already* wider than the 100-column breakpoint it appears at (125
+  cells before this change). Dropping it is what paid for `S settings`, and the
+  bar came out narrower than it started. The pre-existing overflow is untouched
+  — a width-aware bar is still owed.
 
 ### Data flow
 
@@ -124,6 +217,25 @@ goroutine (`setNarrow` in app.go is the pattern).
   sections decode to nil. Nil-check before dereferencing; never assume a section
   exists. New fixtures should preserve this — `testdata/smart-apple-nvme.json`
   is the deliberate graceful-degradation guard.
+- **Standby awareness is a call parameter, never a global.** With
+  `standby_aware`, a ticker poll passes `smart.SkipStandby` and smartctl gets
+  `-n standby,129 -d <Device.Type>`. Four things are easy to get wrong here:
+  **both** `Info` and `FarmLog` need it (each runs every poll, so guarding one
+  still wakes the drive); **no `STATUS2`** — the man page says `-n` is *ignored*
+  when the power-mode check is unsupported, which is exactly the fall-through we
+  want, and STATUS2 would turn it into an early exit carrying no data; **`-d` is
+  required, not optional**, because autodetection's own probing can spin the
+  drive up; and **129, not smartctl's default 2**, which the man page calls
+  ambiguous with "device open failed" (129 is bit 0, "command line did not
+  parse", with bit 7, "self-test log contains errors" — a parse failure exits
+  before any device is opened, so a real run cannot produce that pair).
+  A standby report arrives as a valid `*Report` with a **nil error**, because
+  `runJSON` only surfaces the exit error when stdout is empty and smartctl still
+  prints a full envelope; `Report.InStandby()` is the only signal. It carries no
+  drive data, so it **must never overwrite a good report** — `applyResults`
+  keeps `reports[name]` and `lastRead[name]` and only sets `asleep[name]`.
+  `-n` is ATA/SCSI only and a silent no-op on NVMe. `RunSelfTest`/`AbortSelfTest`
+  deliberately still wake the drive: starting a test is an instruction to use it.
 - **Device names are round-tripped verbatim** from `smartctl --scan-open` into
   `Info`. macOS uses `IOService:/...` paths, Linux uses `/dev/...`. Never
   construct or normalize a device name.
@@ -165,10 +277,23 @@ goroutine (`setNarrow` in app.go is the pattern).
   `SparePercent` also answers from `Report.SpareAvailable` and a grader that
   re-reads `NVMeHealth` both drifts from the value beside it and dereferences
   nil.
-- **Capability-driven tabs** (detail.go `visibleTabs`): a tab only appears when
-  its source data exists (the Logs tab hides for drives with no error/self-test
-  log; the Tests tab hides unless `Report.SupportsSelfTest()`). When adding a
-  view, gate it on data presence rather than always showing it.
+- **Capability-driven tabs** (detail.go). `allTabs` is the registry: one entry
+  per tab pairing its id and title with the predicate that decides whether this
+  drive has data for it, so adding a view is one entry plus a `buildTabView`
+  case rather than edits in two places that can disagree. By default an
+  unavailable tab is hidden (the Logs tab for a drive with no error/self-test
+  log; Tests unless `Report.SupportsSelfTest()`); with `show_unavailable_tabs`
+  all six are drawn, the unavailable ones muted and skipped by navigation, so a
+  tab keeps its number on every drive. Gate a new view on data presence, never
+  show it unconditionally.
+  **`sameTabs` compares availability, not just ids** — that is load-bearing. In
+  always-six mode the id list is constant across every drive and every poll, so
+  an id-only comparison would refresh in place and never replace an unavailable
+  tab's placeholder when the drive started reporting that data. Unavailable
+  pills take `Muted` **plus the dim attribute**, because Muted alone collapses
+  to the terminal default under `mono`. The ~43-column strip floor is unchanged:
+  it was already computed for the six-tab case, so always-six only makes the
+  worst case universal rather than moving it.
 - **The Tests tab is the only view that fires smartctl actions.** Most tabs are
   pure renderers (`tabView.refresh`). Two take input: the Attributes tab handles
   `s`/`f` (`attributes.go`) but these only toggle local view state (sort/filter)
@@ -183,7 +308,7 @@ goroutine (`setNarrow` in app.go is the pattern).
   `a.interval` and signals `intervalCh`, which `poll.go`'s loop drains to call
   `ticker.Reset` — the cadence changes live without restarting the poll loop.
   `--interval` only sets the starting value (default 30s).
-- **The `?` modal is the binding list of record** (`keysText` in app.go), and
+- **The `?` modal is the binding list of record** (`keysText` in modals.go), and
   `keys_test.go` parses the package for the runes the handlers match, so a new
   binding that is not documented there fails CI. Named keys (`tcell.Key`
   constants) are invisible to that scan and are pinned by a hand-kept list in
@@ -303,7 +428,10 @@ goroutine (`setNarrow` in app.go is the pattern).
   so the off-tree remainder is re-grounded by hand beside it through
   `applyBackground` (theme.go): the list or the rail (`applyLayout` mounts one,
   never both) and the banner (`build` mounts it only when we are not root).
-  `layout_test.go` enumerates the persistent widgets by hand on purpose — a
+  `layout_test.go` enumerates the persistent widgets by hand on purpose (it
+  includes `detail.note`, the standby caveat row; the Settings form is
+  deliberately absent because it is rebuilt on every open and so cannot go
+  stale) — a
   list derived from the walk would assert nothing — so extend it when one is
   added; the banner-class miss again. (3) Direct `screen.SetContent` calls
   carry a ground themselves: `scroll.go`'s viewport clear and its scroll

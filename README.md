@@ -39,7 +39,10 @@ and whether anything has ever failed.
 ### The tabs
 
 Tabs are capability-driven — only the ones backed by real data for the selected
-drive are shown.
+drive are shown. That means a tab's number changes between drives, so if you
+would rather they stayed put, set `show_unavailable_tabs`: all six are then
+always drawn, with the ones this drive cannot fill muted and skipped by
+navigation — their number does nothing and `←` / `→` steps over them.
 
 **Overview** — drive identity (model, serial, firmware, capacity, interface,
 power-on hours) and a live temperature-trend sparkline. ATA drives seed the
@@ -93,8 +96,9 @@ order, and `Enter` opens the highlighted drive's detail view.
 
 ATA and NVMe expose different counters, so a `—` means *this drive does not
 report that reading* — never a zero. A write total shown as `~1.5 TB` was
-derived from vendor attribute 241, whose unit is vendor-defined; the legend
-under each section spells out that section's caveats.
+derived from vendor attribute 241, whose unit is vendor-defined; a drive marked
+`◌` is spun down, so its values are as of the last read rather than current.
+The legend under each section spells out that section's caveats.
 
 ![smartview fleet comparison — every drive ranked by health, ATA and NVMe error counters side by side](docs/images/fleet.png)
 
@@ -170,12 +174,65 @@ go run .
 smartview                    # auto-refresh every 30s (default)
 smartview --interval 10s     # custom starting refresh interval
 smartview --theme phosphor   # start in a named colour theme
+smartview --config ~/sv.toml # use a specific settings file
 smartview --version          # print the version and exit
 sudo smartview               # if attributes require root
 ```
 
 The refresh interval can also be changed at runtime with the `+` / `-` keys (see
 below) — `--interval` only sets the starting cadence.
+
+### Configuration
+
+smartview reads a TOML settings file, and `S` opens an in-app editor for it.
+
+| Platform | Path |
+| -------- | ---- |
+| Linux    | `~/.config/smartview/config.toml` (honours `$XDG_CONFIG_HOME`) |
+| macOS    | `~/Library/Application Support/smartview/config.toml` |
+
+`--config PATH` overrides the location. Running with no file at all is normal;
+a file you name explicitly must exist. A command-line flag always wins over the
+file, and the file always wins over the built-in default. A malformed file or
+an unknown key stops startup with a message naming the problem, rather than
+being quietly ignored.
+
+```toml
+# Colour theme.
+theme = "dark"
+
+# Auto-refresh cadence, as a Go duration: "2s", "10s", "30s", "1m", "5m".
+refresh_interval = "30s"
+
+# Skip drives that are spun down instead of waking them to be read. The last
+# reading is kept and marked stale. ATA only: NVMe has no standby to check, so
+# this has no effect on an NVMe-only machine.
+standby_aware = false
+
+# Always draw all six detail tabs, muting the ones this drive reports no data
+# for, so a tab keeps the same number and position on every drive.
+show_unavailable_tabs = false
+
+# Which screen to open on: "drives" or "fleet".
+start_view = "drives"
+```
+
+Inside the modal, `↑` / `↓` move between settings and on to Save / Cancel, and
+`⏎` or `→` changes the focused one — a checkbox flips, a chooser opens. With a
+chooser open, `↑` / `↓` move through its values, `⏎` picks one and `←` backs
+out without changing anything. `←` / `→` move between the two buttons, and
+`Esc` closes a chooser if one is open and otherwise cancels. A line under the
+form describes whichever setting you are on, and a `•` marks the ones you have
+edited but not yet saved.
+
+**The Settings modal (`S`) is the only thing that writes this file.** `T` and
+`+` / `-` change the current session and are deliberately *not* persisted, so a
+stray keypress cannot rewrite a file you hand-edited. Use `S` when you want a
+change to stick.
+
+With `standby_aware`, smartview stops spinning idle disks up just to read them.
+A parked drive keeps its last reading, marked `◌` with the age of that reading,
+and `r` respects that — `R` is the one key that wakes a drive and reads it.
 
 Twelve colour themes ship. `--theme` picks the starting one and `T` cycles them
 live, in the order below — retro hardware first, then the modern dark schemes,
@@ -221,9 +278,10 @@ inherits the terminal's.
 | Click a tab                | Switch detail tab with the mouse                              |
 | `t`                        | Jump straight to the **Tests** tab                            |
 | `c`                        | Toggle the **Fleet** comparison (all drives side by side)     |
-| `r`                        | Refresh now                                                   |
+| `r` / `R`                  | Refresh now / wake spun-down drives and refresh               |
 | `+` / `-`                  | Slower / faster refresh (2s → 5s → 10s → 30s → 1m → 5m ladder)|
 | `T`                        | Cycle the colour theme                                        |
+| `S`                        | Open Settings (the only key that writes the config file)      |
 | `?`                        | Show every binding in a modal                                 |
 | `s` / `f` (Attributes)     | Cycle the attribute sort / filter                             |
 | `Enter` / `x` (Tests)      | Start the selected self-test / cancel the running test        |
@@ -241,7 +299,8 @@ alongside, so a binding cannot go undocumented.
 Mouse is supported: click a tab in the detail strip, click a drive in the list,
 and scroll any pane with the wheel. A tab click behaves exactly like `1`–`9` —
 it selects the tab and moves keyboard focus to its body — and the tab bar itself
-never takes focus. Below the width the full strip needs, inactive tabs shrink to
+never takes focus. A click on a muted (unavailable) pill is declined the same
+way its number is, leaving focus where it was. Below the width the full strip needs, inactive tabs shrink to
 their numbers so every tab stays visible and clickable. The wheel over the tab
 strip does nothing, and neither does a click on chrome that carries no keys (the
 rail, the banner, the hint bar, the fleet's section strip) — it leaves the

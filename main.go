@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/trm42/smartview/internal/config"
 	"github.com/trm42/smartview/internal/smart"
 	"github.com/trm42/smartview/internal/ui"
 )
@@ -28,6 +29,7 @@ func main() {
 	interval := flag.Duration("interval", 30*time.Second, "auto-refresh interval")
 	fixtures := flag.String("fixtures", "", "load drive data from JSON fixtures in DIR instead of smartctl (requires -tags dev build)")
 	theme := flag.String("theme", "dark", "colour theme: "+ui.ThemeNames())
+	cfgPath := flag.String("config", "", "settings file (default: "+defaultPathHint()+")")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
@@ -36,8 +38,11 @@ func main() {
 		return
 	}
 
-	if !ui.HasTheme(*theme) {
-		fmt.Fprintf(os.Stderr, "smartview: unknown theme %q (choices: %s)\n", *theme, ui.ThemeNames())
+	// Before the preflight, so a config typo is reported at once rather than
+	// after a 5s smartctl timeout.
+	cfg, err := loadConfig(*cfgPath, interval, theme)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "smartview:", err)
 		os.Exit(1)
 	}
 
@@ -56,11 +61,78 @@ func main() {
 		exitPreflight(err)
 	}
 
-	app := ui.New(*interval, *theme)
+	app := ui.New(cfg, func(c config.Config) error { return saveConfig(*cfgPath, c) })
 	if err := app.Run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "smartview:", err)
 		os.Exit(1)
 	}
+}
+
+// loadConfig resolves the settings: built-in defaults, then the config file,
+// then any flag the user actually typed. A flag left at its default must not
+// shadow the file, which is what flag.Visit distinguishes.
+func loadConfig(path string, interval *time.Duration, theme *string) (config.Config, error) {
+	cfg := config.Default()
+	switch resolved, err := configPath(path); {
+	case err != nil:
+		// No user config directory: run on defaults rather than refuse to start.
+	case path != "":
+		// A path the user named must exist; a missing default one need not.
+		if cfg, err = config.Load(resolved); err != nil {
+			return cfg, err
+		}
+	default:
+		if cfg, err = config.LoadIfPresent(resolved); err != nil {
+			return cfg, err
+		}
+	}
+
+	var o config.Overrides
+	flag.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "interval":
+			o.RefreshInterval = interval
+		case "theme":
+			o.Theme = theme
+		}
+	})
+	cfg = cfg.With(o)
+
+	// One validator for both sources, so a bad flag and a bad file read alike.
+	// Which themes exist is this program's knowledge, so the list is attached
+	// here and only to the error that wants it.
+	err := cfg.Validate(ui.HasTheme)
+	if errors.Is(err, config.ErrUnknownTheme) {
+		return cfg, fmt.Errorf("%w (choices: %s)", err, ui.ThemeNames())
+	}
+	return cfg, err
+}
+
+// configPath returns the file to read: the one the user named, else the
+// platform default.
+func configPath(named string) (string, error) {
+	if named != "" {
+		return named, nil
+	}
+	return config.Path()
+}
+
+// saveConfig writes the settings back to whichever file they came from.
+func saveConfig(named string, c config.Config) error {
+	path, err := configPath(named)
+	if err != nil {
+		return err
+	}
+	return config.Save(path, c)
+}
+
+// defaultPathHint names the default config file for -h. It degrades to a bare
+// description rather than failing: -h must always print.
+func defaultPathHint() string {
+	if p, err := config.Path(); err == nil {
+		return p
+	}
+	return "none; no user config directory"
 }
 
 // preflightTimeout bounds the startup check. It runs `smartctl -j -V`, which

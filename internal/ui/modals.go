@@ -50,6 +50,39 @@ func styleModal(m *tview.Modal) *tview.Modal {
 	return m
 }
 
+// styleForm grounds a Form in the active theme. tview builds fields and
+// buttons from its own contrast palette, and the ground does not reach the
+// field or button colours, so each is set here. Unlike Modal, Form does not
+// override SetBackgroundColor, so the one Box call covers the whole widget —
+// which is why this is not styleModal's two-call dance.
+func styleForm(f *tview.Form) *tview.Form {
+	f.SetBackgroundColor(activeTheme.Background)
+	f.SetBorderColor(activeTheme.Accent)
+	f.SetTitleColor(activeTheme.Neutral)
+	f.SetLabelColor(activeTheme.Neutral)
+	f.SetFieldBackgroundColor(activeTheme.SelectionBg)
+	f.SetFieldTextColor(activeTheme.SelectionFg)
+	f.SetButtonBackgroundColor(activeTheme.SelectionBg)
+	f.SetButtonTextColor(activeTheme.SelectionFg)
+	// Accent, not OK, and bold so focus survives mono — same rule as styleModal.
+	f.SetButtonActivatedStyle(tcell.StyleDefault.
+		Background(activeTheme.Accent).
+		Foreground(activeTheme.Inverse).
+		Attributes(tcell.AttrBold))
+	// A DropDown's open list is a separate widget; route it through
+	// selectedRowStyle so it matches every other selection in the app.
+	for i := range f.GetFormItemCount() {
+		if dd, ok := f.GetFormItem(i).(*tview.DropDown); ok {
+			dd.SetListStyles(
+				tcell.StyleDefault.
+					Background(activeTheme.Background).
+					Foreground(activeTheme.Neutral),
+				selectedRowStyle(activeTheme.SelectionFg))
+		}
+	}
+	return f
+}
+
 // confirm shows a two-button confirmation modal; onYes runs when the user picks
 // the affirmative label.
 func (a *App) confirm(text, yesLabel string, onYes func()) {
@@ -84,9 +117,10 @@ const keysText = "Keys\n\n" +
 	"c          fleet compare\n" +
 	"Enter      open drive\n" +
 	"Esc        back\n" +
-	"r          refresh now\n" +
+	"r / R      refresh / wake\n" +
 	"+ / -      refresh rate\n" +
 	"T          colour theme\n" +
+	"S          settings\n" +
 	"?          this list\n" +
 	"q          quit"
 

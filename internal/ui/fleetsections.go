@@ -22,6 +22,9 @@ type fleetRow struct {
 	dev    smart.Device
 	rep    *smart.Report
 	series []float64
+	// asleep marks a drive smartctl declined to wake: rep is the last good
+	// reading, not a current one.
+	asleep bool
 }
 
 // fleetCell is one rendered cell; text may carry intentional markup, and

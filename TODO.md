@@ -45,6 +45,12 @@ for drive health via smartmontools.
 
 ## Next up
 
+- [ ] **Validate standby-aware polling on real spun-down SATA hardware.** The
+      argv is pinned by stub-script tests and the rendering by a fixture, but
+      the live path — smartctl actually declining to wake a parked disk and
+      exiting 129 — has never run against a real drive. The dev Mac cannot
+      exercise it: its only drive is an Apple NVMe, where `-n` is ignored by
+      design. Needs the Linux SATA box, as FARM and self-tests did.
 - [x] **Validate the live self-test trigger**: started and tracked to completion on real
       self-test-capable hardware under `sudo` on the Linux SATA box.
 
@@ -58,7 +64,13 @@ for drive health via smartmontools.
       self-test support, so the tab is hidden there).
 - [ ] **Alerts / thresholds.** Optional notification or log when an attribute crosses
       into Caution/Failing; persist temperature history to disk for longer trends.
-- [ ] **Config file** for refresh interval, default device, and colour theme.
+- [x] **Config file / settings.** TOML at `os.UserConfigDir()/smartview/config.toml`
+      (`--config PATH` overrides), five settings — `theme`, `refresh_interval`,
+      `standby_aware`, `show_unavailable_tabs`, `start_view`. Precedence is
+      flag > file > default via `flag.Visit`; a bad file or unknown key refuses
+      startup. An in-app **Settings** modal (`S`) is the only writer, so `T` and
+      `+`/`-` stay session-only. "Default device" was deliberately **not**
+      implemented — drive selection stays per-session — and is not planned.
 - [x] **Packaging.** Tag-driven GoReleaser pipeline (`.goreleaser.yaml` +
       `.github/workflows/release.yml`): GitHub Release archives + checksums, a
       Homebrew formula (`trm42/homebrew-tap`), and Linux `.deb`/`.rpm`

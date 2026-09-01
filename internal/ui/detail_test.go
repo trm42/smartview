@@ -60,26 +60,10 @@ func TestVisibleTabs(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := tabIDs(visibleTabs(&c.r)); !eqStrs(got, c.want) {
+			if got := tabIDs(visibleTabs(&c.r, false)); !eqStrs(got, c.want) {
 				t.Errorf("visibleTabs = %v, want %v", got, c.want)
 			}
 		})
-	}
-}
-
-func TestSameTabIDs(t *testing.T) {
-	a := []tab{{id: "overview", title: "Overview"}, {id: "attributes", title: "Attributes"}}
-	if !sameTabIDs(nil, nil) {
-		t.Error("empty/empty should match")
-	}
-	if !sameTabIDs(a, []tab{{id: "overview", title: "x"}, {id: "attributes", title: "y"}}) {
-		t.Error("same ids should match regardless of title")
-	}
-	if sameTabIDs(a, []tab{{id: "attributes", title: ""}, {id: "overview", title: ""}}) {
-		t.Error("reordered ids should not match")
-	}
-	if sameTabIDs(a, a[:1]) {
-		t.Error("different lengths should not match")
 	}
 }
 

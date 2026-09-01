@@ -3,3 +3,6 @@
 *.out
 .context
 .DS_Store
+
+# Design canvases are working artefacts, not source: they live outside the repo.
+/design/

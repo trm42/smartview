@@ -17,6 +17,10 @@ import (
 type tab struct {
 	id    string
 	title string
+	// available is false when this drive reports no data for the tab. With
+	// show_unavailable_tabs the pill is still drawn, muted and unreachable, so
+	// a tab keeps its number and position on every drive.
+	available bool
 }
 
 // tabView is a detail sub-view that refreshes in place, preserving
@@ -104,10 +108,13 @@ func (b *tabBar) layout() {
 	spans := make([]tabSpan, 0, len(pills))
 	col := 0
 	for i, pill := range pills {
-		if i == b.active {
+		switch {
+		case i == b.active:
 			// activeTabTag falls back to black-on-white so the pill survives mono.
 			fmt.Fprintf(&s, " %s%s[-:-:-] ", activeTabTag(), pill)
-		} else {
+		case !b.tabs[i].available:
+			fmt.Fprintf(&s, " %s%s[-:-:-] ", unavailableTabTag(), pill)
+		default:
 			fmt.Fprintf(&s, " %s%s[-] ", accentTag(), pill)
 		}
 		// The span covers the separator spaces too, so pills are contiguous and
@@ -189,9 +196,17 @@ type detail struct {
 	// able to reach it.
 	barRow  *tview.Flex
 	spinner *inertTextView
-	pages   *tview.Pages
-	tabs    []tab
-	active  int
+	// note is a one-row caveat strip above the tab body, collapsed to height 0
+	// when empty. Staleness is judged against the poll interval, which the
+	// data layer does not know, so it is carried here rather than on Report.
+	note   *inertTextView
+	pages  *tview.Pages
+	tabs   []tab
+	active int
+
+	// showAllTabs draws every tab, muting the ones this drive has no data
+	// for, so a tab keeps its number on every drive.
+	showAllTabs bool
 
 	device string             // current drive name, to detect device switches
 	views  map[string]tabView // live view per visible tab id
@@ -210,6 +225,7 @@ func newDetail() *detail {
 		Flex:    tview.NewFlex().SetDirection(tview.FlexRow),
 		bar:     newTabBar(),
 		spinner: newInertTextView(),
+		note:    newInertTextView(),
 		pages:   tview.NewPages(),
 	}
 	d.spinner.SetTextAlign(tview.AlignRight)
@@ -224,10 +240,24 @@ func newDetail() *detail {
 	d.barRow = tview.NewFlex().
 		AddItem(d.bar, 0, 1, false).
 		AddItem(d.spinner, 2, 0, false)
+	d.note.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	d.AddItem(d.barRow, 1, 0, false)
+	d.AddItem(d.note, 0, 0, false) // height 0 until setNote fills it
 	d.AddItem(d.pages, 0, 1, true)
 	d.showPlaceholder("Scanning for drives…")
 	return d
+}
+
+// setNote shows a one-line caveat above the tab body, or hides the row when s
+// is empty. The row is resized rather than removed so the layout order cannot
+// drift.
+func (d *detail) setNote(s string) {
+	d.note.SetText(s)
+	height := 0
+	if s != "" {
+		height = 1
+	}
+	d.ResizeItem(d.note, height, 0)
 }
 
 // showPlaceholder displays a message when no drive is selected yet.
@@ -245,10 +275,10 @@ func (d *detail) showPlaceholder(msg string) {
 // view in place so selection/scroll/sort survive the poll; a device or
 // tab-set change triggers a full rebuild.
 func (d *detail) update(r *smart.Report, tempHistory []float64) {
-	newTabs := visibleTabs(r)
-	if d.device == r.Device.Name && d.device != "" && sameTabIDs(newTabs, d.tabs) {
+	newTabs := visibleTabs(r, d.showAllTabs)
+	if d.device == r.Device.Name && d.device != "" && sameTabs(newTabs, d.tabs) {
 		for _, t := range newTabs {
-			if v := d.views[t.id]; v != nil {
+			if v := d.views[t.id]; v != nil && t.available {
 				v.refresh(r, tempHistory)
 			}
 		}
@@ -265,15 +295,16 @@ func (d *detail) update(r *smart.Report, tempHistory []float64) {
 	d.tabs = newTabs
 	d.views = make(map[string]tabView, len(newTabs))
 	for _, t := range d.tabs {
-		v := d.buildTabView(t.id, r, tempHistory)
+		v := d.buildTabView(t, r, tempHistory)
 		d.views[t.id] = v
 		d.pages.AddPage(t.id, v, true, false)
 	}
 
-	// Keep the previously focused tab when still available.
+	// Keep the previously focused tab when still available. Index 0 is
+	// unconditionally available, so the fallback is always valid.
 	d.active = 0
 	for i, t := range d.tabs {
-		if t.id == prev {
+		if t.id == prev && t.available {
 			d.active = i
 			break
 		}
@@ -281,36 +312,55 @@ func (d *detail) update(r *smart.Report, tempHistory []float64) {
 	d.selectActive()
 }
 
-// sameTabIDs reports whether two tab slices have identical ids in the same order.
-func sameTabIDs(a, b []tab) bool {
-	return slices.EqualFunc(a, b, func(x, y tab) bool { return x.id == y.id })
+// sameTabs reports whether two tab slices are identical, availability
+// included. Availability is part of it because with show_unavailable_tabs the
+// ids alone never change, so an id-only comparison would refresh in place and
+// leave a newly-available tab showing its placeholder.
+func sameTabs(a, b []tab) bool { return slices.Equal(a, b) }
+
+// allTabs is the full strip in display order, each with the predicate that
+// decides whether this drive has data for it. Registering a new tab is one
+// entry here plus a case in buildTabView.
+var allTabs = []struct {
+	id, title string
+	available func(*smart.Report) bool
+}{
+	{"overview", "Overview", func(*smart.Report) bool { return true }},
+	{"attributes", "Attributes", hasAttributes},
+	{"statistics", "Statistics", (*smart.Report).HasDeviceStats},
+	{"farm", "FARM", (*smart.Report).HasFARM},
+	{"tests", "Tests", (*smart.Report).SupportsSelfTest},
+	{"logs", "Logs", hasLogs},
 }
 
-// visibleTabs returns the tabs applicable to the report, in display order.
-func visibleTabs(r *smart.Report) []tab {
-	tabs := []tab{{id: "overview", title: "Overview"}}
-	if (r.IsNVMe() && r.NVMeHealth != nil) || r.ATAAttributes != nil {
-		tabs = append(tabs, tab{id: "attributes", title: "Attributes"})
-	}
-	if r.HasDeviceStats() {
-		tabs = append(tabs, tab{id: "statistics", title: "Statistics"})
-	}
-	if r.HasFARM() {
-		tabs = append(tabs, tab{id: "farm", title: "FARM"})
-	}
-	if r.SupportsSelfTest() {
-		tabs = append(tabs, tab{id: "tests", title: "Tests"})
-	}
-	if hasLogs(r) {
-		tabs = append(tabs, tab{id: "logs", title: "Logs"})
+// hasAttributes reports whether either protocol's attribute view has data.
+func hasAttributes(r *smart.Report) bool {
+	return (r.IsNVMe() && r.NVMeHealth != nil) || r.ATAAttributes != nil
+}
+
+// visibleTabs returns the tabs to draw, in display order. showAll keeps the
+// ones this drive has no data for, marked unavailable, so tab numbers do not
+// shift between drives.
+func visibleTabs(r *smart.Report, showAll bool) []tab {
+	tabs := make([]tab, 0, len(allTabs))
+	for _, t := range allTabs {
+		ok := t.available(r)
+		if !ok && !showAll {
+			continue
+		}
+		tabs = append(tabs, tab{id: t.id, title: t.title, available: ok})
 	}
 	return tabs
 }
 
-// buildTabView constructs the view for a tab id; visibleTabs guarantees the
-// data each view needs is present.
-func (d *detail) buildTabView(id string, r *smart.Report, tempHistory []float64) tabView {
-	switch id {
+// buildTabView constructs the view for a tab. An unavailable tab still gets a
+// page so Pages is never asked for a name it does not hold; navigation makes
+// it unreachable, so the note is the safe landing rather than the norm.
+func (d *detail) buildTabView(t tab, r *smart.Report, tempHistory []float64) tabView {
+	if !t.available {
+		return staticView{centeredNote(t.title + " — not reported by this drive")}
+	}
+	switch t.id {
 	case "overview":
 		return newOverviewView(r, tempHistory)
 	case "attributes":
@@ -348,38 +398,38 @@ func (d *detail) selectActive() {
 	d.bar.render(d.tabs, d.active)
 }
 
-// stepTab moves the active tab by delta, clamped (no wrap), reporting whether
-// it changed so the caller can fall through to the drive list at the edge.
+// stepTab moves to the next available tab in direction delta, clamped (no
+// wrap), reporting whether it changed so the caller can fall through to the
+// drive list at the edge. Unavailable tabs are stepped over: their position is
+// reserved, not reachable.
 func (d *detail) stepTab(delta int) bool {
-	n := len(d.tabs)
-	if n == 0 {
-		return false
+	for i := d.active + delta; i >= 0 && i < len(d.tabs); i += delta {
+		if !d.tabs[i].available {
+			continue
+		}
+		d.active = i
+		d.selectActive()
+		return true
 	}
-	next := d.active + delta
-	if next < 0 || next >= n {
-		return false
-	}
-	d.active = next
-	d.selectActive()
-	return true
+	return false
 }
 
-// selectTab activates a tab by zero-based index if it exists.
-func (d *detail) selectTab(i int) {
-	if i < 0 || i >= len(d.tabs) {
-		return
+// selectTab activates the tab at a displayed position, reporting whether it
+// did: an unavailable pill is drawn but declines the digit and the click.
+func (d *detail) selectTab(i int) bool {
+	if i < 0 || i >= len(d.tabs) || !d.tabs[i].available {
+		return false
 	}
 	d.active = i
 	d.selectActive()
+	return true
 }
 
 // selectTabID activates the tab with the given id, reporting whether it was found.
 func (d *detail) selectTabID(id string) bool {
 	for i, t := range d.tabs {
 		if t.id == id {
-			d.active = i
-			d.selectActive()
-			return true
+			return d.selectTab(i)
 		}
 	}
 	return false
