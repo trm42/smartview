@@ -148,16 +148,26 @@ overridable with `--config PATH`. Five settings: `theme`, `refresh_interval`,
   and the buttons vanished. `SetLabel` is not on the `FormItem` interface (each
   widget returns its own type), so relabelling type-switches; `SetInputCapture`
   and `SetFocusFunc` *are* promoted from the embedded `Box`, so one interface
-  covers both widgets. An open chooser is tview's own list — `↑↓` and `⏎` and
-  `Esc` are handled there and need nothing from us; `←` does not close it,
-  which is why the hint line does not claim it.
+  covers both widgets. **An open chooser owns the arrows, and the capture has to
+  step aside for it.** `DropDown.InputHandler` handles `↑`/`↓` *itself* and
+  forwards them to its list, so tview delivers them to the DropDown even
+  though the list holds focus — a capture that acts unconditionally steals
+  them and the highlight can never move. Guard on `IsOpen()`.
+  `←` closes the chooser by returning an `Esc`, which works only because
+  `SetCancelFunc` declines while a chooser is open: `DropDown` runs the Form's
+  *finished* handler on its way out (with `d.open` still set) and that handler
+  is what calls cancel, so without the guard leaving a chooser would close the
+  whole modal — as `Esc` itself did.
 - **The modal carries its own footer**: a help line that follows focus (the
   only place a caveat like *ATA drives only* reaches someone editing the
   setting — the config file and README do not) and a key hint line, because it
   was the one surface in the app that taught no keys. A `•` in each row's
   two-column label gutter marks it edited since the modal opened; the gutter is
   constant width so the label column cannot jump, and it is on the left because
-  a Form row is label plus field with nothing after it.
+  a Form row is label plus field with nothing after it. Save and Cancel join
+  the same index space as the rows, so `↓` runs off the last setting onto the
+  buttons and `←`/`→` move between them; the buttons carry their own captures
+  because `GetButton` returns a `*tview.Button`, not a `FormItem`.
 - **The Settings modal (`S`) is the only writer.** `T` and `+`/`-` stay
   session-only, as the README says. `App.currentConfig()` is *derived* from the
   live fields and never stored: a cached copy would drift the moment `T` changed

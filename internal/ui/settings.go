@@ -38,6 +38,10 @@ var settingsHelp = []string{
 	"Which screen to open on. Next run.",
 }
 
+// settingsButtonHelp fills the description line while a button has focus, so
+// the row does not go blank when navigation leaves the settings.
+const settingsButtonHelp = "Save writes the file. Cancel discards."
+
 // settingsHeight is the border, one row per setting, a blank, the button row,
 // and the two-line footer (help + keys). Derived from settingsRows so adding a
 // setting cannot leave the box too short to show the buttons.
@@ -45,7 +49,7 @@ var settingsHeight = len(settingsRows) + 7
 
 // settingsKeys is the modal's hint line, in the status bar's vocabulary. The
 // modal was the one surface in the app that taught no keys.
-const settingsKeys = "↑↓ move   ⏎/→ change   Tab buttons   Esc cancel"
+const settingsKeys = "↑↓ move   ⏎/→ change   ← back   Esc cancel"
 
 // Checkbox state glyphs. Written unescaped here and escaped at the sink, so
 // what is intended is legible; see settingsForm for why escaping is required.
@@ -115,7 +119,16 @@ func (a *App) settingsForm(cfg config.Config) *tview.Form {
 		a.applySettings(cfg)
 	})
 	form.AddButton("Cancel", a.popModal)
-	form.SetCancelFunc(a.popModal) // Esc
+	// Esc arrives here from two places. A DropDown closing its list routes it
+	// through the Form's finished handler first, while d.open is still set, so
+	// declining then is what stops leaving a chooser from taking the whole
+	// modal with it.
+	form.SetCancelFunc(func() {
+		if chooserOpen(form) {
+			return
+		}
+		a.popModal()
+	})
 
 	// A chooser has to look pressable. currentPrefix/currentSuffix wrap only
 	// the value on the row, not the entries in the open list.
@@ -124,7 +137,7 @@ func (a *App) settingsForm(cfg config.Config) *tview.Form {
 			dd.SetTextOptions("", "", "‹ ", " ›", "")
 		}
 	}
-	a.installRowKeys(form, &cfg, original)
+	a.installRowKeys(form)
 
 	// tview draws an unchecked box as a bare space — a one-cell background
 	// tint that disappears under mono, where colour is all we would have.
@@ -186,40 +199,93 @@ type boxed interface {
 	SetFocusFunc(func()) *tview.Box
 }
 
-// installRowKeys gives the form a list model: up/down move between settings
-// and Enter or Right activates the focused one.
+// chooserOpen reports whether any chooser has its list open.
+func chooserOpen(form *tview.Form) bool {
+	for i := range form.GetFormItemCount() {
+		if dd, ok := form.GetFormItem(i).(*tview.DropDown); ok && dd.IsOpen() {
+			return true
+		}
+	}
+	return false
+}
+
+// installRowKeys gives the form a list model: up/down move through the
+// settings and on to the buttons, Enter or Right activates the focused row,
+// and Left backs out of an open chooser.
 //
-// It must be installed per item, not on the Form: Form.Focus delegates to the
+// The captures go per item, not on the Form: Form.Focus delegates to the
 // child, so the application focuses the item and a capture on the Form is
-// never in the chain. The capture is also what stops tview opening a closed
-// DropDown on Up/Down/Home/End/PgUp/PgDn, which would otherwise swallow row
-// navigation on the very first keypress.
-func (a *App) installRowKeys(form *tview.Form, cfg *config.Config, original config.Config) {
-	n := form.GetFormItemCount()
-	focusRow := func(i int) {
-		i = min(max(i, 0), n-1) // clamp, no wrap — the rule stepTab follows
+// never in the chain. They are also what stops tview opening a closed
+// DropDown on Up/Down/Home/End/PgUp/PgDn, which would swallow row navigation
+// on the very first keypress.
+func (a *App) installRowKeys(form *tview.Form) {
+	items, buttons := form.GetFormItemCount(), form.GetButtonCount()
+	total := items + buttons
+	// One index space over the settings and then the buttons, so the arrows
+	// do not dead-end at the last setting.
+	focusAt := func(i int) {
+		i = min(max(i, 0), total-1) // clamp, no wrap — the rule stepTab follows
 		form.SetFocus(i)
 		a.app.SetFocus(form)
 	}
-	for i := range n {
+
+	for i := range items {
 		item, ok := form.GetFormItem(i).(boxed)
 		if !ok {
 			continue
 		}
 		row := i
+		dd, _ := form.GetFormItem(i).(*tview.DropDown)
 		item.SetFocusFunc(func() { a.settingsHelp.SetText(mutedTag() + settingsHelp[row] + "[-]") })
 		item.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			// An open chooser owns the arrows. tview delivers Up/Down to the
+			// DropDown even while its list holds focus — the DropDown
+			// forwards them on — so without this the capture steals them and
+			// the highlight can never move.
+			if dd != nil && dd.IsOpen() {
+				if ev.Key() == tcell.KeyLeft {
+					// Escape is how the list closes; SetCancelFunc keeps it
+					// from cancelling the modal on the way out.
+					return tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone)
+				}
+				return ev
+			}
 			switch ev.Key() {
 			case tcell.KeyUp:
-				focusRow(row - 1)
+				focusAt(row - 1)
 				return nil
 			case tcell.KeyDown:
-				focusRow(row + 1)
+				focusAt(row + 1)
 				return nil
 			case tcell.KeyRight:
 				// The widgets already do the right thing on Enter: a checkbox
 				// toggles, a closed chooser opens. One verb, two controls.
 				return tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone)
+			}
+			return ev
+		})
+	}
+
+	for i := range buttons {
+		btn, ok := tview.Primitive(form.GetButton(i)).(boxed)
+		if !ok {
+			continue
+		}
+		at := items + i
+		btn.SetFocusFunc(func() { a.settingsHelp.SetText(mutedTag() + settingsButtonHelp + "[-]") })
+		btn.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			switch ev.Key() {
+			case tcell.KeyUp:
+				focusAt(items - 1) // back to the last setting
+				return nil
+			case tcell.KeyDown:
+				return nil // nothing below; clamp rather than wrap
+			case tcell.KeyLeft:
+				focusAt(at - 1)
+				return nil
+			case tcell.KeyRight:
+				focusAt(at + 1)
+				return nil
 			}
 			return ev
 		})

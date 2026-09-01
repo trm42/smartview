@@ -217,8 +217,10 @@ show_unavailable_tabs = false
 start_view = "drives"
 ```
 
-Inside the modal, `↑` / `↓` move between settings and `⏎` or `→` changes the
-focused one — a checkbox flips, a chooser opens. `Tab` reaches Save and Cancel,
+Inside the modal, `↑` / `↓` move between settings and on to Save / Cancel, and
+`⏎` or `→` changes the focused one — a checkbox flips, a chooser opens. With a
+chooser open, `↑` / `↓` move through its values, `⏎` picks one and `←` backs
+out without changing anything. `←` / `→` move between the two buttons, and
 `Esc` closes a chooser if one is open and otherwise cancels. A line under the
 form describes whichever setting you are on, and a `•` marks the ones you have
 edited but not yet saved.
