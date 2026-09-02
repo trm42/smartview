@@ -31,6 +31,9 @@ updates:
     # "ci" matches the prefix already used for workflow changes in this repo.
     commit-message:
       prefix: ci
+    # Actions are pinned to a full commit SHA with the version in a trailing
+    # comment; a tag is mutable and can be repointed at other code. Dependabot
+    # rewrites both the SHA and that comment, so pinning costs no upkeep.
     groups:
       actions:
         patterns:
