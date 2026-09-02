@@ -394,6 +394,66 @@ The data layer is fully decoupled from the UI and has no tview dependency.
 require additional visualisation work or tweaking. Please make PR's if it can improve
 the app for your disks. 
 
+## Contributing drive data
+
+smartview is developed against the drives its author owns, so the fastest way to
+improve support for *your* hardware is to send the JSON smartview reads. A dump
+from a drive that renders wrong — a missing tab, a blank value, a wrong health
+verdict, an unfamiliar vendor — is more useful than a bug report describing it,
+because it can be replayed here without the hardware.
+
+**1. Find the device name.** Never invent one; use what smartmontools reports
+(macOS uses `IOService:/...` paths, Linux `/dev/...`):
+
+```sh
+sudo smartctl --scan-open
+```
+
+**2. Capture the report.** This is the exact command smartview runs per poll:
+
+```sh
+sudo smartctl -j -x /dev/sda > smart-mydrive.json
+```
+
+On a Seagate drive that supports FARM, capture the log too — it is a second
+command and a separate file:
+
+```sh
+sudo smartctl -l farm -j /dev/sda > smart-mydrive-farm.json
+```
+
+**3. Redact the identifiers before sharing.** A SMART report carries the drive's
+`serial_number` and `wwn`, and the issue tracker is public. Replace them with
+placeholders the way the committed fixtures do (`EXAMPLE1`, `wwn.id` →
+`305419896`). One catch: a FARM log is matched to its report by the serial in
+`seagate_farm_log.page_1_drive_information.serial_number`, so if you send both
+files, redact the serial to the **same** placeholder in each or they won't pair
+up.
+
+**4. Send it.** Either is welcome:
+
+- **An issue** — attach the JSON, or paste it inside a collapsed
+  `<details>` block, and say what looks wrong and what the drive is.
+- **A PR** — drop the file into `internal/smart/testdata/` as
+  `smart-<something>.json` and it becomes a fixture everyone can develop
+  against. Reports are keyed by `device.name`, so give yours a name no existing
+  fixture uses. Check it renders:
+
+  ```sh
+  go build -tags dev -o smartview .
+  ./smartview --fixtures internal/smart/testdata
+  ```
+
+Fixtures are the project's test corpus: `internal/smart` parses them directly,
+so a captured drive keeps working as the code changes. What's most wanted is
+anything the current set doesn't cover — non-Seagate FARM-capable drives, SSDs
+with unusual vendor attributes, NVMe drives reporting a sparse schema, and
+anything that makes smartview show `—` where your drive clearly has data.
+
+Note that SMART data is drive-controlled and treated as untrusted input (see
+[SECURITY.md](SECURITY.md)); a dump that breaks rendering in an interesting way
+is worth reporting through the Security tab instead if it looks exploitable.
+
 ## Development
 
 What CI gates on, in the order it runs them:
@@ -431,6 +491,13 @@ is clean:
 ```sh
 GOTOOLCHAIN=go1.26.4 golangci-lint run ./...
 ```
+
+## Security
+
+Found a security bug? Report it privately through the repository's **Security**
+tab rather than in a public issue — [SECURITY.md](SECURITY.md) covers what is in
+scope (drive-controlled strings are the interesting boundary) and what to
+include.
 
 ## Roadmap
 
