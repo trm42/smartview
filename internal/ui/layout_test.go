@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -419,31 +420,38 @@ func TestChromeSurvivesAThemeCycle(t *testing.T) {
 		t.Fatalf("cycling with T stopped at theme %q, want %q", got, light)
 	}
 	// onLoop draws after its closure, and the loop runs queued work in order, so
-	// the second call returns only once the first one's frame is on the screen.
-	// (Calling Draw inside the closure instead self-deadlocks: the queued draw
-	// already holds the lock.)
+	// the second call's closure runs only once the first one's frame is on the
+	// screen. (Calling Draw inside the closure instead self-deadlocks: the
+	// queued draw already holds the lock.) Scanning the screen from inside that
+	// closure is not a convenience either: GetContents hands back the live cell
+	// array rather than a copy, so a scan on the test goroutine races every
+	// draw the loop is still doing — which is what CI caught and a local
+	// -race run did not.
 	onLoop(t, a, func() any { return nil })
-	onLoop(t, a, func() any { return nil })
-
-	cells, w, _ := screen.GetContents()
-	faint := 0
-	for i, c := range cells {
-		if len(c.Runes) == 0 || c.Runes[0] == 0 || c.Runes[0] == ' ' {
-			continue
-		}
-		fg, bg, _ := c.Style.Decompose()
-		if fg == tcell.ColorDefault || bg == tcell.ColorDefault {
-			continue // resolves only in a real terminal
-		}
-		if ratio := contrastRatio(fg, bg); ratio < minRatio {
-			faint++
-			if faint <= 3 {
-				t.Errorf("%q at (%d,%d) has contrast %.2f on its own cell, want >= %.1f",
-					string(c.Runes), i%w, i/w, ratio, minRatio)
+	faint := onLoop(t, a, func() []string {
+		var out []string
+		cells, w, _ := screen.GetContents()
+		for i, c := range cells {
+			if len(c.Runes) == 0 || c.Runes[0] == 0 || c.Runes[0] == ' ' {
+				continue
+			}
+			fg, bg, _ := c.Style.Decompose()
+			if fg == tcell.ColorDefault || bg == tcell.ColorDefault {
+				continue // resolves only in a real terminal
+			}
+			if ratio := contrastRatio(fg, bg); ratio < minRatio {
+				out = append(out, fmt.Sprintf("%q at (%d,%d) has contrast %.2f on its own cell",
+					string(c.Runes), i%w, i/w, ratio))
 			}
 		}
-	}
-	if faint > 3 {
-		t.Errorf("%d cells are drawn too faint to read after cycling to %q", faint, light)
+		return out
+	})
+
+	for i, f := range faint {
+		if i == 3 {
+			t.Errorf("... and %d more cells drawn too faint to read", len(faint)-3)
+			break
+		}
+		t.Errorf("%s, want >= %.1f", f, minRatio)
 	}
 }
