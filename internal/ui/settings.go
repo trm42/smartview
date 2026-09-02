@@ -38,6 +38,22 @@ var settingsHelp = []string{
 	"Which screen to open on. Next run.",
 }
 
+// settingsThemeApproxHelp replaces the theme row's help line on a terminal
+// without 24-bit colour, where the palette the user is choosing is not the one
+// they will see. The Settings modal is where someone picking a theme is
+// looking, so it is where the caveat belongs.
+const settingsThemeApproxHelp = "Palette. Approximated — set COLORTERM=truecolor"
+
+// settingsHelpLine is the description for row, with that one substitution.
+// truecolor is passed rather than read, because the terminal's answer is
+// process-global and a test could not vary it otherwise.
+func settingsHelpLine(row int, truecolor bool) string {
+	if row == 0 && !truecolor {
+		return settingsThemeApproxHelp
+	}
+	return settingsHelp[row]
+}
+
 // settingsButtonHelp fills the description line while a button has focus, so
 // the row does not go blank when navigation leaves the settings.
 const settingsButtonHelp = "Save writes the file. Cancel discards."
@@ -236,7 +252,7 @@ func (a *App) installRowKeys(form *tview.Form) {
 		}
 		row := i
 		dd, _ := form.GetFormItem(i).(*tview.DropDown)
-		item.SetFocusFunc(func() { a.settingsHelp.SetText(mutedTag() + settingsHelp[row] + "[-]") })
+		item.SetFocusFunc(func() { a.settingsHelp.SetText(mutedTag() + settingsHelpLine(row, hasTruecolor()) + "[-]") })
 		item.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			// An open chooser owns the arrows. tview delivers Up/Down to the
 			// DropDown even while its list holds focus — the DropDown
@@ -302,7 +318,8 @@ func (a *App) settingsModal() (tview.Primitive, *tview.Form) {
 	keys.SetBorderPadding(0, 0, uiGutter+1, uiGutter)
 	keys.SetText(mutedTag() + settingsKeys + "[-]")
 
-	box := tview.NewFlex().SetDirection(tview.FlexRow).
+	box := newOpaqueFlex()
+	box.SetDirection(tview.FlexRow).
 		AddItem(form, len(settingsRows)+2, 0, true). // rows + blank + buttons
 		AddItem(nil, 1, 0, false).                   // breathing room above the footer
 		AddItem(a.settingsHelp, 1, 0, false).
@@ -324,7 +341,7 @@ func (a *App) showSettings() {
 }
 
 // applySettings makes cfg live and persists it. It runs after popModal has
-// restored a.root, so repaintAll's groundTree walks the real tree.
+// restored a.root, so repaintAll's rethemeTree walks the real tree.
 func (a *App) applySettings(cfg config.Config) {
 	old := a.currentConfig()
 

@@ -105,8 +105,10 @@ func TestCheckedCheckboxIsVisible(t *testing.T) {
 	}
 }
 
-// TestThemeDropdownFitsOpen is the clipping risk: twelve options opening
-// downward inside a non-fullscreen root.
+// TestThemeDropdownFitsOpen is the clipping risk: the theme list is longer
+// than a short terminal, so tview clips the open list to the screen (see
+// DropDown.Draw) and the rest is reached by scrolling. What has to hold is
+// that both ends are selectable — the head on open, the tail after End.
 func TestThemeDropdownFitsOpen(t *testing.T) {
 	for _, h := range []int{24, 20} {
 		t.Run(fmt.Sprintf("80x%d", h), func(t *testing.T) {
@@ -117,23 +119,32 @@ func TestThemeDropdownFitsOpen(t *testing.T) {
 				t.Fatal("settings modal did not take focus")
 			}
 
-			onLoop(t, a, func() any {
-				dd := form.GetFormItem(0).(*tview.DropDown)
-				a.app.SetFocus(dd)
-				dd.InputHandler()(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone),
-					func(p tview.Primitive) { a.app.SetFocus(p) })
-				return nil
-			})
-			a.app.Draw()
+			send := func(key tcell.Key) {
+				onLoop(t, a, func() any {
+					dd := form.GetFormItem(0).(*tview.DropDown)
+					a.app.SetFocus(dd)
+					dd.InputHandler()(tcell.NewEventKey(key, 0, tcell.ModNone),
+						func(p tview.Primitive) { a.app.SetFocus(p) })
+					return nil
+				})
+				a.app.Draw()
+			}
+			visible := func(want string) bool {
+				return strings.Contains(strings.Join(screenText(screen), "\n"), want)
+			}
 
-			joined := strings.Join(screenText(screen), "\n")
-			// The first and last options must both be on screen, or the list
-			// is clipped and some themes are unreachable.
-			for _, want := range []string{themeCycle[0], themeCycle[len(themeCycle)-1]} {
-				if !strings.Contains(joined, want) {
-					t.Errorf("theme %q is not visible with the dropdown open at 80x%d:\n%s",
-						want, h, joined)
-				}
+			send(tcell.KeyEnter)
+			// themeCycle[0] is also the selected value in the closed field, so
+			// the head is checked on the second option instead.
+			if !visible(themeCycle[1]) {
+				t.Errorf("theme %q is not visible with the dropdown just opened at 80x%d:\n%s",
+					themeCycle[1], h, strings.Join(screenText(screen), "\n"))
+			}
+			send(tcell.KeyEnd)
+			if last := themeCycle[len(themeCycle)-1]; !visible(last) {
+				t.Errorf("theme %q is not visible after End at 80x%d; the list does not "+
+					"scroll to its tail and those themes are unreachable:\n%s",
+					last, h, strings.Join(screenText(screen), "\n"))
 			}
 		})
 	}
@@ -157,5 +168,29 @@ func TestSettingsModalShrinksBelowItsOwnWidth(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Errorf("label %q is clipped off the left edge:\n%s", want, joined)
 		}
+	}
+}
+
+// TestSettingsHelpLinesFit: the footer does not wrap, so a help line wider
+// than the modal's inner width is silently cut — taking the end of the advice
+// with it, which is where the actionable part sits.
+func TestSettingsHelpLinesFit(t *testing.T) {
+	// Border on both sides, then the help line's own padding.
+	const width = settingsWidth - 2 - (uiGutter + 1) - uiGutter
+	lines := append([]string{settingsThemeApproxHelp, settingsButtonHelp, settingsKeys}, settingsHelp...)
+	for _, l := range lines {
+		if got := tview.TaggedStringWidth(l); got > width {
+			t.Errorf("help line %q is %d cells, want <= %d", l, got, width)
+		}
+	}
+	if got := settingsHelpLine(0, false); got != settingsThemeApproxHelp {
+		t.Errorf("theme help on a 256-colour terminal is %q, want the caveat", got)
+	}
+	if got := settingsHelpLine(0, true); got != settingsHelp[0] {
+		t.Errorf("theme help on a truecolor terminal is %q, want the plain line", got)
+	}
+	if !strings.Contains(settingsThemeApproxHelp, "COLORTERM") {
+		t.Errorf("the approximation caveat %q does not name the variable that fixes it",
+			settingsThemeApproxHelp)
 	}
 }

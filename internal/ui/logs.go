@@ -181,6 +181,9 @@ func writeNVMeErrorEntries(b *strings.Builder, table []smart.NVMeErrorLogEntry) 
 		if status == "" {
 			status = fmt.Sprintf("0x%x", e.StatusField.Value)
 		}
+		// colorResult, not a bare escape: the status is the decoded outcome and
+		// a failing one has to read as one. It carries its own colour, so the
+		// entry number keeps the caution tag and the status closes it.
 		return fmt.Sprintf(nestIndent+cautionTag()+"#%d[-] %s %s(cmd %d)[-]\n",
 			e.ErrorCount, colorResult(status), mutedTag(), e.CommandID)
 	})
@@ -194,7 +197,7 @@ func writeATAErrorEntries(b *strings.Builder, r *smart.Report, table []smart.ATA
 		if e.ErrorDescription == "" {
 			desc = fmt.Sprintf("error %d", e.ErrorNumber)
 		}
-		return fmt.Sprintf(nestIndent+cautionTag()+"#%d[-] %s %s%s[-]\n",
+		return fmt.Sprintf(nestIndent+cautionTag()+"#%d %s[-] %s%s[-]\n",
 			e.ErrorNumber, desc, mutedTag(), driveAge(r, e.LifetimeHours))
 	})
 }
@@ -250,7 +253,9 @@ func writeSelfTestSummary(b *strings.Builder, r *smart.Report, tbl []smart.ATASe
 			failed++
 		}
 	}
-	verdict := okTag() + "all passed[-]"
+	// Muted for the same reason as the rows below it: the interesting summary
+	// is the failure count, and that one keeps its colour.
+	verdict := mutedTag() + "all passed[-]"
 	if failed > 0 {
 		verdict = fmt.Sprintf("%s%s failed[-]", failingTag(), plural(failed, "run", "runs"))
 	}
@@ -311,11 +316,16 @@ func selfTestPassed(s string) bool {
 
 // colorResult tints a self-test outcome by keyword; the test runs on the
 // original but the rendered copy is markup-escaped (drive-controlled string).
+// A pass takes the MUTED voice, not OK green: a drive with a long history
+// renders one row per run, and colouring every one of them green made the
+// passing runs the loudest thing on a tab whose actual errors sit above them
+// uncoloured. Colour marks exceptions, and the summary line already states
+// the verdict for the whole table.
 func colorResult(s string) string {
 	low := strings.ToLower(s)
 	switch {
 	case selfTestPassed(s):
-		return okTag() + esc(s) + "[-]"
+		return mutedTag() + esc(s) + "[-]"
 	case strings.Contains(low, "fail"), strings.Contains(low, "error"),
 		strings.Contains(low, "aborted"), strings.Contains(low, "interrupted"):
 		return failingTag() + esc(s) + "[-]"

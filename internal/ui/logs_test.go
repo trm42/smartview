@@ -85,8 +85,13 @@ func TestSelfTestPassedSharesColorResult(t *testing.T) {
 		if !selfTestPassed(s) {
 			t.Errorf("selfTestPassed(%q) = false, want true", s)
 		}
-		if !strings.Contains(colorResult(s), okTag()) {
+		// A pass reads as recessive, not healthy-green: colour marks
+		// exceptions, and one row per run is the least exceptional thing here.
+		if !strings.Contains(colorResult(s), mutedTag()) {
 			t.Errorf("colorResult(%q) does not read as a pass", s)
+		}
+		if strings.Contains(colorResult(s), okTag()) {
+			t.Errorf("colorResult(%q) is tinted with the healthy colour", s)
 		}
 	}
 	// "Completed" alone is not a pass: smartctl reports failures as

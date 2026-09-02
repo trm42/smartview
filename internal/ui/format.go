@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
 	"github.com/trm42/smartview/internal/smart"
@@ -124,9 +125,45 @@ func tempSeverity(celsius int) smart.Severity {
 	}
 }
 
-// healthGlyph is the coloured status dot shown beside each drive.
+// healthGlyph is the status mark shown beside each drive. The SHAPE carries
+// the severity, not just the colour: three palettes have no second hue to
+// spend (mono has none at all, phosphor and amber are monochrome by
+// construction), and on the selected row the band eats some of what is left.
+// A drive list of identical dots is no signal on any of them.
 func healthGlyph(s smart.Severity) string {
-	return sevText(s, "●")
+	return sevText(s, severityGlyph(s))
+}
+
+// severityGlyph is the bare mark for a severity, escalating by weight:
+// an outline dot, a warning triangle, a solid block.
+func severityGlyph(s smart.Severity) string {
+	switch s {
+	case smart.SeverityFailing:
+		return "■"
+	case smart.SeverityCaution:
+		return "▲"
+	default:
+		return "●"
+	}
+}
+
+// sevVerdict renders a severity's word for a summary line. Failing takes an
+// inverse chip rather than tinted text: red is darker than yellow on every
+// dark ground, so no hue assignment makes the worst state the loudest one —
+// 8 of the 11 coloured palettes have Caution out-contrasting Failing. Area
+// does what hue cannot, and it works in mono, where the chip degrades to
+// reverse video and stays the only marked thing on the row.
+func sevVerdict(sev smart.Severity, word string) string {
+	if sev != smart.SeverityFailing {
+		return sevBold(sev, word)
+	}
+	// mono has no colour to fill a chip with; reverse video is the same move
+	// by attribute, and it is what marks the selected row there too.
+	if activeTheme.Failing == tcell.ColorDefault {
+		return "[::rb]" + word + "[-:-:-]"
+	}
+	return fmt.Sprintf("[%s:%s:b]%s[-:-:-]",
+		tag(activeTheme.Inverse), tag(activeTheme.Failing), word)
 }
 
 // humanBytes renders a byte count as a human-readable capacity.

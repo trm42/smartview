@@ -234,35 +234,83 @@ With `standby_aware`, smartview stops spinning idle disks up just to read them.
 A parked drive keeps its last reading, marked `◌` with the age of that reading,
 and `r` respects that — `R` is the one key that wakes a drive and reads it.
 
-Twelve colour themes ship. `--theme` picks the starting one and `T` cycles them
-live, in the order below — retro hardware first, then the modern dark schemes,
-then the light pair, with `mono` last.
+Twenty-one colour themes ship. `--theme` picks the starting one and `T` cycles
+them live, in the order below — retro hardware first, then the modern dark
+schemes, then the coloured grounds, then the light set, with the two that
+inherit the terminal's own colours last.
 
-| Theme       | Palette                                                                  |
-| ----------- | ------------------------------------------------------------------------ |
-| `dark`      | The default: aqua chrome, green → yellow → red severity                  |
-| `electric`  | "Elite BBS" azure-cyan and white, amber caution                          |
-| `phosphor`  | Green-CRT, pure green — severity reads as brightness plus the `●` glyph  |
-| `amber`     | Hercules amber monitor, amber → orange → red severity                    |
-| `cga`       | The authentic IBM CGA 16, nothing interpolated                          |
-| `neon`      | Cyberpunk: electric blue chrome, magenta banner and bars, white text     |
-| `nord`      | Arctic blue-grey — frost for chrome, aurora for severity                 |
-| `gruvbox`   | Warm retro earth; chrome takes gruvbox blue, not its signature gold      |
-| `beacon`    | Colour-vision-safe: blue → yellow → rose, neutral chrome                 |
-| `daylight`  | Light: cool paper, azure chrome, burnt-amber → crimson severity          |
-| `parchment` | Light: warm paper, deep teal chrome, ochre → brick-red severity          |
-| `mono`      | No colour at all — the `●` glyph and bold carry severity alone           |
+| Theme         | Palette                                                                  |
+| ------------- | ------------------------------------------------------------------------ |
+| `dark`        | The default: aqua chrome, green → yellow → red severity                  |
+| `electric`    | "Elite BBS" azure-cyan and white, amber caution                          |
+| `phosphor`    | Green-CRT, pure green — severity reads as brightness plus its glyph      |
+| `amber`       | Hercules amber monitor, amber → orange → red severity                    |
+| `cga`         | The authentic IBM CGA 16, nothing interpolated                           |
+| `neon`        | Cyberpunk: electric blue chrome, magenta banner and bars, white text     |
+| `nord`        | Arctic blue-grey — frost for chrome, aurora for severity                 |
+| `gruvbox`     | Warm retro earth; chrome takes gruvbox blue, not its signature gold      |
+| `beacon`      | Colour-vision-safe: blue → yellow → rose, neutral chrome                 |
+| `cobalt`      | Royal-blue ground, ice-cyan chrome, rose failing                         |
+| `ultraviolet` | Blacklight violet ground, orchid chrome and bars, lime/amber/red ramp    |
+| `deepsea`     | Petrol-teal ground, aqua chrome, sand → coral severity                   |
+| `oxblood`     | Wine ground, gold chrome, severity moved off red onto rose               |
+| `daylight`    | Light: cool paper, azure chrome, burnt-amber → crimson severity          |
+| `parchment`   | Light: warm paper, deep teal chrome, ochre → brick-red severity          |
+| `sorbet`      | Light: blush paper, magenta chrome                                       |
+| `marigold`    | Light: gold paper, deep teal chrome                                      |
+| `seafoam`     | Light: mint paper, emerald chrome                                        |
+| `sky`         | Light: azure paper, indigo chrome                                        |
+| `terminal`    | Your terminal's own background and text, with severity colour added back |
+| `mono`        | No colour at all — the severity glyph and reverse video carry it alone   |
 
 `beacon` exists because green/red is the pair that collapses under
 deuteranopia, and severity is smartview's core signal; its ramp is Paul Tol's
 high-contrast set, and a test simulates a deuteranope's vision to prove the
 three stay separable.
 
-A theme paints its own background, so `daylight` and `parchment` read the same
-in a dark terminal as in a light one, and their palettes are tuned against that
-paper rather than against whatever the terminal happens to use. `mono` is the
-deliberate exception: it sets no colour at all, background included, and
-inherits the terminal's.
+The four coloured grounds are the same trick from the other end: blue, violet
+and red carry little of the luminance a contrast ratio is measured in, so a
+ground can be plainly a colour and still be dark enough for white text. A dark
+green cannot, which is why there isn't one.
+
+A theme paints its own background, so the six light palettes read the same
+in a dark terminal as in a light one, and they are tuned against that paper
+rather than against whatever the terminal happens to use. Every one of
+them names its colours in RGB for the same reason: a palette that paints a
+ground has to own every foreground on it, or the terminal's own scheme gets a
+vote and the two disagree.
+
+**Over SSH, tell the far end you have 24-bit colour.** The painted palettes are
+spelled in RGB, and tcell only emits RGB escapes when the terminal advertises
+that it understands them — through `COLORTERM`, or a `$TERM` whose terminfo
+carries the capability. `ssh` forwards `TERM` but *not* `COLORTERM`, so a
+palette that looks right locally has every colour snapped to the nearest
+xterm-256 index on the other side: grounds flatten, accents drift, and the
+whole set reads muted. Export it on the remote host:
+
+```sh
+export COLORTERM=truecolor
+```
+
+or forward it from the client — `SetEnv COLORTERM=truecolor` in `~/.ssh/config`,
+with `AcceptEnv COLORTERM` in the server's `sshd_config`. `TCELL_TRUECOLOR=1`
+does the same for smartview alone, and `TCELL_TRUECOLOR=disable` is how to see
+the 256-colour rendering deliberately.
+
+`terminal` and `mono` are the deliberate exceptions. Both take the terminal's
+background and body colour rather than painting their own; `terminal` adds the
+severity vocabulary back as the standard ANSI colours, so ground and foreground
+come from the same scheme and cannot fall out of step, while `mono` sets no
+colour at all. Neither can be held to the contrast floors the painted palettes
+are measured against — that is the trade for fitting into a terminal you have
+already themed yourself.
+
+**Severity is never colour alone.** A drive's health mark is a shape before it
+is a hue — `●` healthy, `▲` caution, `■` failing — and a failing verdict is
+drawn as a filled chip rather than tinted text. Red is darker than yellow on
+any dark ground, so no choice of hues makes the worst state the loudest one;
+area and shape do, and they survive `phosphor`, `amber` and `mono`, which have
+no second hue to spend.
 
 ### Keys
 
@@ -270,7 +318,8 @@ inherits the terminal's.
 | -------------------------- | ------------------------------------------------------------- |
 | `↑` / `↓`                  | Select a drive (list focus) or scroll content (detail focus)  |
 | `j` / `k`                  | Scroll the focused content line by line                       |
-| `PgUp` / `PgDn`, `Ctrl-B` / `Ctrl-F` | Page the scrollable content                       |
+| `PgUp` / `Ctrl-B`          | Page the scrollable content up                                |
+| `PgDn` / `Ctrl-F`          | Page the scrollable content down                              |
 | `g` / `G`, `Home` / `End`  | Jump to the top / bottom of scrollable content                |
 | `←` / `→`                  | Move between panes and step through detail tabs (no wrap)     |
 | `Tab`                      | Toggle focus between the drive list and the detail pane       |
