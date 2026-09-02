@@ -251,7 +251,7 @@ inherit the terminal's own colours last.
 | `gruvbox`     | Warm retro earth; chrome takes gruvbox blue, not its signature gold      |
 | `beacon`      | Colour-vision-safe: blue → yellow → rose, neutral chrome                 |
 | `cobalt`      | Royal-blue ground, ice-cyan chrome, rose failing                         |
-| `ultraviolet` | Deep violet ground, cyan chrome, magenta banner                          |
+| `ultraviolet` | Blacklight violet ground, orchid chrome and bars, lime/amber/red ramp    |
 | `deepsea`     | Petrol-teal ground, aqua chrome, sand → coral severity                   |
 | `oxblood`     | Wine ground, gold chrome, severity moved off red onto rose               |
 | `daylight`    | Light: cool paper, azure chrome, burnt-amber → crimson severity          |

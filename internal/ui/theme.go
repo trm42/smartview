@@ -596,24 +596,25 @@ var cobalt = Theme{
 	ListSecondary: tcell.NewHexColor(0x9aa9de), // periwinkle secondary line
 }
 
-// ultraviolet is a deep violet ground with cyan chrome and a magenta banner —
-// the warning colour has to leave the violet family or it reads as chrome.
+// ultraviolet is the blacklight palette: a violet ground with orchid chrome
+// and orchid bars. Severity leaves the purple family altogether — lime, amber,
+// red — since a magenta failing would read as more chrome.
 var ultraviolet = Theme{
 	Name:          "ultraviolet",
-	Background:    tcell.NewHexColor(0x2b0b52), // deep violet ground
-	Accent:        tcell.NewHexColor(0x67e8f9), // cyan: borders, headers, active tab, key hints
-	Muted:         tcell.NewHexColor(0xa78bc9), // dusty lilac: dashes, unfocused border, raw values
-	OK:            tcell.NewHexColor(0x4ade80), // green
-	Caution:       tcell.NewHexColor(0xfbbf24), // amber
-	Failing:       tcell.NewHexColor(0xff5c8a), // hot pink-red
-	Neutral:       tcell.NewHexColor(0xf3e9ff), // pale violet-white body text
-	Inverse:       tcell.NewHexColor(0x1a0433), // near-black violet: text drawn on Accent / BannerBg
-	SelectionBg:   tcell.NewHexColor(0x3a1070), // one step up from the ground
-	SelectionFg:   tcell.NewHexColor(0xfbeaff), // pale violet-white on selection
-	BannerBg:      tcell.NewHexColor(0xf472b6), // magenta banner
-	BarHealthy:    tcell.NewHexColor(0x22d3ee), // cyan FARM healthy bar
-	ScrollArrow:   tcell.NewHexColor(0x67e8f9), // cyan arrows
-	ListSecondary: tcell.NewHexColor(0xb39ddb), // lilac secondary line
+	Background:    tcell.NewHexColor(0x1e0736), // blacklight violet ground
+	Accent:        tcell.NewHexColor(0xc77dff), // orchid: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x8f77ad), // dusty lilac: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x7bea5c), // acid lime
+	Caution:       tcell.NewHexColor(0xffb703), // amber
+	Failing:       tcell.NewHexColor(0xff3b30), // red, the one hue no chrome here uses
+	Neutral:       tcell.NewHexColor(0xf0e4ff), // pale lavender body text
+	Inverse:       tcell.NewHexColor(0x14031f), // near-black violet: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0x33125e), // one step up from the ground
+	SelectionFg:   tcell.NewHexColor(0xf7e9ff), // pale lavender on selection
+	BannerBg:      tcell.NewHexColor(0xffb703), // amber banner: the root warning is a caution
+	BarHealthy:    tcell.NewHexColor(0xc77dff), // orchid FARM healthy bar
+	ScrollArrow:   tcell.NewHexColor(0xc77dff), // orchid arrows
+	ListSecondary: tcell.NewHexColor(0xa98cc4), // lilac secondary line
 }
 
 // deepsea is a petrol-teal ground with aqua chrome and a warm severity ramp,
