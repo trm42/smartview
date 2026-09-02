@@ -153,6 +153,10 @@ overridable with `--config PATH`. Five settings: `theme`, `refresh_interval`,
   forwards them to its list, so tview delivers them to the DropDown even
   though the list holds focus — a capture that acts unconditionally steals
   them and the highlight can never move. Guard on `IsOpen()`.
+  **The theme chooser is longer than a short terminal**, so tview clips the
+  open list to the screen (`DropDown.Draw`) and the embedded `List` scrolls to
+  whatever is current. `TestThemeDropdownFitsOpen` therefore pins reachability
+  — the head on open, the tail after `End` — not that every option fits.
   `←` closes the chooser by returning an `Esc`, which works only because
   `SetCancelFunc` declines while a chooser is open: `DropDown` runs the Form's
   *finished* handler on its way out (with `d.open` still set) and that handler
@@ -417,10 +421,20 @@ goroutine (`setNarrow` in app.go is the pattern).
   neutral chrome, since green/red is exactly the pair deuteranopia collapses;
   `theme_test.go` simulates a deuteranope and pins that beacon's three stay
   separable *and* that dark's green/red does not, so the test can't quietly
-  stop proving anything), `daylight` and `parchment` (light, cool and warm —
-  every role is tuned against the palette's own paper `Background`, not a
-  terminal's: yellow caution vanishes on paper, so the ramp runs burnt
-  amber/ochre → crimson/brick, darkening as it worsens), `terminal` and `mono`
+  stop proving anything), `cobalt`/`ultraviolet`/`deepsea`/`oxblood` (the
+  COLOURED GROUNDS — royal blue, violet, petrol teal, wine — which work only
+  because blue, violet and red carry almost none of the luminance a WCAG ratio
+  is measured in, so a ground can be plainly a colour and still clear the 0.15
+  ceiling `TestGroundsAreDecisivelyDarkOrLight` sets; a green one cannot, which
+  is why there is no dark green, and each moves `Failing` off its own ground's
+  hue so severity is never mistaken for furniture), `daylight`, `parchment`,
+  `sorbet`, `marigold`, `seafoam` and `sky` (light — cool, warm, blush, gold,
+  mint and azure: every role is tuned against the palette's own paper
+  `Background`, not a terminal's: yellow caution vanishes on paper, so the ramp
+  runs burnt amber/ochre → crimson/brick, darkening as it worsens; the tinted
+  ones put the colour in the ground because the 4:1 light floor forces the
+  chrome deep, and **`TestLightGroundsClearAHigherFloor` counts them** — a new
+  light palette means bumping that number), `terminal` and `mono`
   are the alternates. **`terminal` and `mono` are the two INHERITING palettes**
   (`inheritingThemes` in theme_test.go, which every ratio test skips): both take
   `Background` and `Neutral` from the terminal, `mono` adding nothing and

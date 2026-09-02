@@ -570,30 +570,209 @@ var parchment = Theme{
 	ListSecondary: tcell.NewHexColor(0x665d50), // warm gray secondary line, darker than Muted: it carries data
 }
 
+// The four palettes below take a strongly coloured ground rather than a
+// tinted near-black. Blue, violet and red carry little of the WCAG luminance
+// weight, so a ground can be plainly a colour and still sit inside the dark
+// band TestGroundsAreDecisivelyDarkOrLight requires; a green one cannot, which
+// is why there is no dark green here.
+
+// cobalt is CGA blue promoted from accent to ground, with ice-cyan chrome.
+// Failing is a rose rather than a pure red, which falls apart against blue.
+var cobalt = Theme{
+	Name:          "cobalt",
+	Background:    tcell.NewHexColor(0x05146b), // royal blue ground
+	Accent:        tcell.NewHexColor(0x7fd7ff), // ice cyan: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x8f9fd6), // periwinkle gray: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x4ade80), // green
+	Caution:       tcell.NewHexColor(0xffc233), // amber
+	Failing:       tcell.NewHexColor(0xff6b81), // rose red
+	Neutral:       tcell.NewHexColor(0xecf1ff), // cool white body text
+	Inverse:       tcell.NewHexColor(0x00103a), // deep navy: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0x12277f), // one step up from the ground
+	SelectionFg:   tcell.NewHexColor(0xeaf1ff), // cool white on selection
+	BannerBg:      tcell.NewHexColor(0xffc233), // amber banner (stands out from the blue)
+	BarHealthy:    tcell.NewHexColor(0x7fd7ff), // ice cyan FARM healthy bar
+	ScrollArrow:   tcell.NewHexColor(0x7fd7ff), // ice cyan arrows
+	ListSecondary: tcell.NewHexColor(0x9aa9de), // periwinkle secondary line
+}
+
+// ultraviolet is a deep violet ground with cyan chrome and a magenta banner —
+// the warning colour has to leave the violet family or it reads as chrome.
+var ultraviolet = Theme{
+	Name:          "ultraviolet",
+	Background:    tcell.NewHexColor(0x2b0b52), // deep violet ground
+	Accent:        tcell.NewHexColor(0x67e8f9), // cyan: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0xa78bc9), // dusty lilac: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x4ade80), // green
+	Caution:       tcell.NewHexColor(0xfbbf24), // amber
+	Failing:       tcell.NewHexColor(0xff5c8a), // hot pink-red
+	Neutral:       tcell.NewHexColor(0xf3e9ff), // pale violet-white body text
+	Inverse:       tcell.NewHexColor(0x1a0433), // near-black violet: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0x3a1070), // one step up from the ground
+	SelectionFg:   tcell.NewHexColor(0xfbeaff), // pale violet-white on selection
+	BannerBg:      tcell.NewHexColor(0xf472b6), // magenta banner
+	BarHealthy:    tcell.NewHexColor(0x22d3ee), // cyan FARM healthy bar
+	ScrollArrow:   tcell.NewHexColor(0x67e8f9), // cyan arrows
+	ListSecondary: tcell.NewHexColor(0xb39ddb), // lilac secondary line
+}
+
+// deepsea is a petrol-teal ground with aqua chrome and a warm severity ramp,
+// so the ramp never shares a hue with the ground it is drawn on.
+var deepsea = Theme{
+	Name:          "deepsea",
+	Background:    tcell.NewHexColor(0x012b3a), // petrol teal ground
+	Accent:        tcell.NewHexColor(0x35d6c0), // aqua: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x7d9fad), // sea gray: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x7ee081), // spring green
+	Caution:       tcell.NewHexColor(0xffc861), // sand
+	Failing:       tcell.NewHexColor(0xff7a6b), // coral
+	Neutral:       tcell.NewHexColor(0xe6f6fb), // pale ice body text
+	Inverse:       tcell.NewHexColor(0x00212c), // near-black teal: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0x053e50), // one step up from the ground
+	SelectionFg:   tcell.NewHexColor(0xdff4fb), // pale ice on selection
+	BannerBg:      tcell.NewHexColor(0xffb02e), // orange banner (stands out from the teal)
+	BarHealthy:    tcell.NewHexColor(0x35d6c0), // aqua FARM healthy bar
+	ScrollArrow:   tcell.NewHexColor(0x35d6c0), // aqua arrows
+	ListSecondary: tcell.NewHexColor(0x8fb6c4), // sea gray secondary line
+}
+
+// oxblood is a wine ground with gold chrome. Failing moves to rose: a red
+// severity on a red ground reads as part of the furniture.
+var oxblood = Theme{
+	Name:          "oxblood",
+	Background:    tcell.NewHexColor(0x300711), // wine ground
+	Accent:        tcell.NewHexColor(0xffc857), // gold: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0xb3808c), // dusty rose: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x7fd18a), // sage green
+	Caution:       tcell.NewHexColor(0xffa23a), // orange
+	Failing:       tcell.NewHexColor(0xff5470), // rose red, off the ground's own hue
+	Neutral:       tcell.NewHexColor(0xffeef0), // warm white body text
+	Inverse:       tcell.NewHexColor(0x250509), // near-black wine: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0x48101f), // one step up from the ground
+	SelectionFg:   tcell.NewHexColor(0xffe6ea), // warm white on selection
+	BannerBg:      tcell.NewHexColor(0xffa23a), // orange banner
+	BarHealthy:    tcell.NewHexColor(0xffc857), // gold FARM healthy bar
+	ScrollArrow:   tcell.NewHexColor(0xffc857), // gold arrows
+	ListSecondary: tcell.NewHexColor(0xc39aa4), // dusty rose secondary line
+}
+
+// The four light palettes below tint the paper rather than the ink. Every
+// foreground is held to the 4:1 light floor, which is why the chrome is deep
+// even where the ground is loud: on paper the colour lives in the ground.
+
+// sorbet is blush paper with magenta chrome.
+var sorbet = Theme{
+	Name:          "sorbet",
+	Background:    tcell.NewHexColor(0xffe4ec), // blush paper
+	Accent:        tcell.NewHexColor(0xb4126b), // magenta: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x8a5f70), // mauve gray: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x1a7f37), // dark green
+	Caution:       tcell.NewHexColor(0xa15c00), // burnt amber
+	Failing:       tcell.NewHexColor(0xb3123c), // crimson: darkest and most saturated of the ramp
+	Neutral:       tcell.NewHexColor(0x2b1a22), // warm ink body text
+	Inverse:       tcell.NewHexColor(0xfff5f8), // near-white: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0xf7bcd0), // deeper blush selected-row band
+	SelectionFg:   tcell.NewHexColor(0x3a1020), // dark wine ink on selection
+	BannerBg:      tcell.NewHexColor(0xa15c00), // the root warning is a caution, so it takes Caution
+	BarHealthy:    tcell.NewHexColor(0x177238), // green FARM healthy bar
+	ScrollArrow:   tcell.NewHexColor(0xb4126b), // magenta arrows
+	ListSecondary: tcell.NewHexColor(0x75505f), // mauve secondary line, darker than Muted: it carries data
+}
+
+// marigold is warm gold paper with deep teal chrome — the one cool role on the
+// page, so focus does not compete with the ground.
+var marigold = Theme{
+	Name:          "marigold",
+	Background:    tcell.NewHexColor(0xffeec2), // gold paper
+	Accent:        tcell.NewHexColor(0x0f5f6b), // deep teal: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x7a6a45), // khaki: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x2f6f2f), // forest green
+	Caution:       tcell.NewHexColor(0x9a4f00), // burnt ochre
+	Failing:       tcell.NewHexColor(0xa81020), // brick red: darkest and most saturated of the ramp
+	Neutral:       tcell.NewHexColor(0x33291a), // warm ink body text
+	Inverse:       tcell.NewHexColor(0xfffaf0), // cream: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0xf3d489), // deeper gold selected-row band
+	SelectionFg:   tcell.NewHexColor(0x3a2c10), // dark warm ink on selection
+	BannerBg:      tcell.NewHexColor(0x9a4f00), // the root warning is a caution, so it takes Caution
+	BarHealthy:    tcell.NewHexColor(0x2f7d3a), // green FARM healthy bar, one step lighter than OK
+	ScrollArrow:   tcell.NewHexColor(0x0f5f6b), // teal arrows
+	ListSecondary: tcell.NewHexColor(0x6a5c3c), // khaki secondary line, darker than Muted: it carries data
+}
+
+// seafoam is mint paper with emerald chrome; OK stays a darker green than the
+// ground so healthy still reads as a mark rather than as the page.
+var seafoam = Theme{
+	Name:          "seafoam",
+	Background:    tcell.NewHexColor(0xd9f5e8), // mint paper
+	Accent:        tcell.NewHexColor(0x0b6b4a), // emerald: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x5d7a70), // sage gray: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x10693a), // deep green
+	Caution:       tcell.NewHexColor(0x97530a), // burnt ochre
+	Failing:       tcell.NewHexColor(0xb01030), // crimson: darkest and most saturated of the ramp
+	Neutral:       tcell.NewHexColor(0x16261f), // cool ink body text
+	Inverse:       tcell.NewHexColor(0xf2fffa), // near-white: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0xa9e3cc), // deeper mint selected-row band
+	SelectionFg:   tcell.NewHexColor(0x123328), // dark green ink on selection
+	BannerBg:      tcell.NewHexColor(0x97530a), // the root warning is a caution, so it takes Caution
+	BarHealthy:    tcell.NewHexColor(0x10784a), // green FARM healthy bar, one step lighter than OK
+	ScrollArrow:   tcell.NewHexColor(0x0b6b4a), // emerald arrows
+	ListSecondary: tcell.NewHexColor(0x4c6b5f), // sage secondary line, darker than Muted: it carries data
+}
+
+// sky is azure paper with indigo chrome.
+var sky = Theme{
+	Name:          "sky",
+	Background:    tcell.NewHexColor(0xdbeafe), // azure paper
+	Accent:        tcell.NewHexColor(0x1046a0), // indigo: borders, headers, active tab, key hints
+	Muted:         tcell.NewHexColor(0x5a6b84), // slate: dashes, unfocused border, raw values
+	OK:            tcell.NewHexColor(0x14713a), // dark green
+	Caution:       tcell.NewHexColor(0x9a5300), // burnt amber
+	Failing:       tcell.NewHexColor(0xb3122f), // crimson: darkest and most saturated of the ramp
+	Neutral:       tcell.NewHexColor(0x16202e), // cool ink body text
+	Inverse:       tcell.NewHexColor(0xf5faff), // near-white: text drawn on Accent / BannerBg
+	SelectionBg:   tcell.NewHexColor(0xb6d4fb), // deeper azure selected-row band
+	SelectionFg:   tcell.NewHexColor(0x10243d), // deep navy ink on selection
+	BannerBg:      tcell.NewHexColor(0x9a5300), // the root warning is a caution, so it takes Caution
+	BarHealthy:    tcell.NewHexColor(0x1a7f46), // green FARM healthy bar, one step lighter than OK
+	ScrollArrow:   tcell.NewHexColor(0x1046a0), // indigo arrows
+	ListSecondary: tcell.NewHexColor(0x4b5f7a), // slate secondary line, darker than Muted: it carries data
+}
+
 // themes is the registry of built-in palettes; themeCycle gives the stable
 // order for the cycle key and ThemeNames.
 var themes = map[string]Theme{
-	"dark":      dark,
-	"mono":      mono,
-	"terminal":  terminal,
-	"electric":  electric,
-	"phosphor":  phosphor,
-	"amber":     amber,
-	"cga":       cga,
-	"neon":      neon,
-	"nord":      nord,
-	"gruvbox":   gruvbox,
-	"beacon":    beacon,
-	"daylight":  daylight,
-	"parchment": parchment,
+	"dark":        dark,
+	"mono":        mono,
+	"terminal":    terminal,
+	"electric":    electric,
+	"phosphor":    phosphor,
+	"amber":       amber,
+	"cga":         cga,
+	"neon":        neon,
+	"nord":        nord,
+	"gruvbox":     gruvbox,
+	"beacon":      beacon,
+	"daylight":    daylight,
+	"parchment":   parchment,
+	"cobalt":      cobalt,
+	"ultraviolet": ultraviolet,
+	"deepsea":     deepsea,
+	"oxblood":     oxblood,
+	"sorbet":      sorbet,
+	"marigold":    marigold,
+	"seafoam":     seafoam,
+	"sky":         sky,
 }
 
 // themeCycle groups the palettes by family — retro hardware, then the modern
-// dark schemes, then the light pair — so cycling walks related looks together.
+// dark schemes, then the coloured grounds, then the light set — so cycling
+// walks related looks together.
 var themeCycle = []string{
 	"dark", "electric", "phosphor", "amber", "cga",
 	"neon", "nord", "gruvbox", "beacon",
-	"daylight", "parchment", "terminal", "mono",
+	"cobalt", "ultraviolet", "deepsea", "oxblood",
+	"daylight", "parchment", "sorbet", "marigold", "seafoam", "sky",
+	"terminal", "mono",
 }
 
 // HasTheme reports whether name is a known built-in theme.

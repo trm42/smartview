@@ -542,8 +542,8 @@ func TestLightGroundsClearAHigherFloor(t *testing.T) {
 			}
 		}
 	}
-	if light != 2 {
-		t.Errorf("found %d light-ground themes, want 2 (daylight, parchment); "+
-			"a new one must be tuned to this floor too", light)
+	if light != 6 {
+		t.Errorf("found %d light-ground themes, want 6 (daylight, parchment, sorbet, "+
+			"marigold, seafoam, sky); a new one must be tuned to this floor too", light)
 	}
 }

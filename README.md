@@ -234,35 +234,48 @@ With `standby_aware`, smartview stops spinning idle disks up just to read them.
 A parked drive keeps its last reading, marked `◌` with the age of that reading,
 and `r` respects that — `R` is the one key that wakes a drive and reads it.
 
-Thirteen colour themes ship. `--theme` picks the starting one and `T` cycles
+Twenty-one colour themes ship. `--theme` picks the starting one and `T` cycles
 them live, in the order below — retro hardware first, then the modern dark
-schemes, then the light pair, with the two that inherit the terminal's own
-colours last.
+schemes, then the coloured grounds, then the light set, with the two that
+inherit the terminal's own colours last.
 
-| Theme       | Palette                                                                  |
-| ----------- | ------------------------------------------------------------------------ |
-| `dark`      | The default: aqua chrome, green → yellow → red severity                  |
-| `electric`  | "Elite BBS" azure-cyan and white, amber caution                          |
-| `phosphor`  | Green-CRT, pure green — severity reads as brightness plus its glyph      |
-| `amber`     | Hercules amber monitor, amber → orange → red severity                    |
-| `cga`       | The authentic IBM CGA 16, nothing interpolated                          |
-| `neon`      | Cyberpunk: electric blue chrome, magenta banner and bars, white text     |
-| `nord`      | Arctic blue-grey — frost for chrome, aurora for severity                 |
-| `gruvbox`   | Warm retro earth; chrome takes gruvbox blue, not its signature gold      |
-| `beacon`    | Colour-vision-safe: blue → yellow → rose, neutral chrome                 |
-| `daylight`  | Light: cool paper, azure chrome, burnt-amber → crimson severity          |
-| `parchment` | Light: warm paper, deep teal chrome, ochre → brick-red severity          |
-| `terminal`  | Your terminal's own background and text, with severity colour added back |
-| `mono`      | No colour at all — the severity glyph and reverse video carry it alone   |
+| Theme         | Palette                                                                  |
+| ------------- | ------------------------------------------------------------------------ |
+| `dark`        | The default: aqua chrome, green → yellow → red severity                  |
+| `electric`    | "Elite BBS" azure-cyan and white, amber caution                          |
+| `phosphor`    | Green-CRT, pure green — severity reads as brightness plus its glyph      |
+| `amber`       | Hercules amber monitor, amber → orange → red severity                    |
+| `cga`         | The authentic IBM CGA 16, nothing interpolated                           |
+| `neon`        | Cyberpunk: electric blue chrome, magenta banner and bars, white text     |
+| `nord`        | Arctic blue-grey — frost for chrome, aurora for severity                 |
+| `gruvbox`     | Warm retro earth; chrome takes gruvbox blue, not its signature gold      |
+| `beacon`      | Colour-vision-safe: blue → yellow → rose, neutral chrome                 |
+| `cobalt`      | Royal-blue ground, ice-cyan chrome, rose failing                         |
+| `ultraviolet` | Deep violet ground, cyan chrome, magenta banner                          |
+| `deepsea`     | Petrol-teal ground, aqua chrome, sand → coral severity                   |
+| `oxblood`     | Wine ground, gold chrome, severity moved off red onto rose               |
+| `daylight`    | Light: cool paper, azure chrome, burnt-amber → crimson severity          |
+| `parchment`   | Light: warm paper, deep teal chrome, ochre → brick-red severity          |
+| `sorbet`      | Light: blush paper, magenta chrome                                       |
+| `marigold`    | Light: gold paper, deep teal chrome                                      |
+| `seafoam`     | Light: mint paper, emerald chrome                                        |
+| `sky`         | Light: azure paper, indigo chrome                                        |
+| `terminal`    | Your terminal's own background and text, with severity colour added back |
+| `mono`        | No colour at all — the severity glyph and reverse video carry it alone   |
 
 `beacon` exists because green/red is the pair that collapses under
 deuteranopia, and severity is smartview's core signal; its ramp is Paul Tol's
 high-contrast set, and a test simulates a deuteranope's vision to prove the
 three stay separable.
 
-A theme paints its own background, so `daylight` and `parchment` read the same
-in a dark terminal as in a light one, and their palettes are tuned against that
-paper rather than against whatever the terminal happens to use. Every one of
+The four coloured grounds are the same trick from the other end: blue, violet
+and red carry little of the luminance a contrast ratio is measured in, so a
+ground can be plainly a colour and still be dark enough for white text. A dark
+green cannot, which is why there isn't one.
+
+A theme paints its own background, so the six light palettes read the same
+in a dark terminal as in a light one, and they are tuned against that paper
+rather than against whatever the terminal happens to use. Every one of
 them names its colours in RGB for the same reason: a palette that paints a
 ground has to own every foreground on it, or the terminal's own scheme gets a
 vote and the two disagree.
