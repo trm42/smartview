@@ -473,11 +473,13 @@ func (a *App) repaintAll() {
 	a.populateList()
 	// Widgets built once are not recreated by the rebuild, so they keep the
 	// ground tview baked in at construction until they are told again.
-	groundTree(a.rootPages)
+	rethemeTree(a.rootPages)
 	// The off-tree half: applyLayout mounts the list or the rail, never both, so
 	// the walk above can only have reached one of them, and build() mounts the
 	// banner only when we are not root.
 	applyBackground(a.list, a.rail, a.banner)
+	// Default ink, for the chrome whose text is not all tagged markup.
+	applyTextColor(a.status, a.rail, a.banner)
 	// The fleet table bakes a colour into every cell, same miss as the banner.
 	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep)
 	a.refreshChrome()

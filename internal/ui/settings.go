@@ -341,7 +341,7 @@ func (a *App) showSettings() {
 }
 
 // applySettings makes cfg live and persists it. It runs after popModal has
-// restored a.root, so repaintAll's groundTree walks the real tree.
+// restored a.root, so repaintAll's rethemeTree walks the real tree.
 func (a *App) applySettings(cfg config.Config) {
 	old := a.currentConfig()
 

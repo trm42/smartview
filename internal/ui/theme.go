@@ -191,6 +191,29 @@ func applyBackground(ws ...backgrounder) {
 	}
 }
 
+// textColorer is any widget whose default foreground can be re-set.
+type textColorer interface {
+	SetTextColor(tcell.Color) *tview.TextView
+}
+
+// applyTextColor re-pins the DEFAULT ink on widgets built before a theme
+// change — the other half of applyBackground, and the same miss. Markup that
+// names its colour survives a theme cycle; text that leans on the default does
+// not, because tview baked Styles.PrimaryTextColor in at construction. That is
+// what emptied the hint bar on a light palette: its keys are tagged with the
+// accent and stayed, its labels are plain and were left white on paper.
+func applyTextColor(ws ...textColorer) {
+	for _, w := range ws {
+		w.SetTextColor(activeTheme.Neutral)
+	}
+}
+
+// titler is any widget carrying a box title. Every tview widget promotes Box,
+// so this matches all of them; the ones with no title take the colour harmlessly.
+type titler interface {
+	SetTitleColor(tcell.Color) *tview.Box
+}
+
 // childHaver and pageHaver are the two ways a tview container holds children.
 // Both are satisfied by promotion, so *detail, *fleetView and the tab views
 // are walked as their embedded Flex.
@@ -204,30 +227,38 @@ type pageHaver interface {
 	GetPage(string) tview.Primitive
 }
 
-// groundTree re-grounds root and everything under it. This replaces a
-// hand-listed set of widgets, which is the miss CLAUDE.md names for the
-// banner: a widget added to the layout was themed only if someone remembered
-// to add it to the list too. Hidden pages are included (GetPageNames(false)),
-// so the fleet is re-grounded while off-screen.
+// rethemeTree re-applies the two colours tview bakes in at construction —
+// the ground and the box title — to root and everything under it. This
+// replaces a hand-listed set of widgets, which is the miss CLAUDE.md names for
+// the banner: a widget added to the layout was themed only if someone
+// remembered to add it to the list too. Hidden pages are included
+// (GetPageNames(false)), so the fleet is re-themed while off-screen.
+//
+// The title takes Neutral because that is what applyTviewStyles gives
+// Styles.TitleColor — a box title is chrome, not an accent — so the two cannot
+// disagree about a box built before the theme changed and one built after.
 //
 // It reaches only what is *in* the tree: the narrow and wide layouts swap
 // which drive selector is mounted, so the other one is passed separately by
 // the caller.
-func groundTree(root tview.Primitive) {
+func rethemeTree(root tview.Primitive) {
 	if root == nil {
 		return
 	}
 	if b, ok := root.(backgrounder); ok {
 		b.SetBackgroundColor(activeTheme.Background)
 	}
+	if t, ok := root.(titler); ok {
+		t.SetTitleColor(activeTheme.Neutral)
+	}
 	switch c := root.(type) {
 	case pageHaver:
 		for _, name := range c.GetPageNames(false) {
-			groundTree(c.GetPage(name))
+			rethemeTree(c.GetPage(name))
 		}
 	case childHaver:
 		for i := range c.GetItemCount() {
-			groundTree(c.GetItem(i))
+			rethemeTree(c.GetItem(i))
 		}
 	}
 }

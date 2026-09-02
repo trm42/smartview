@@ -493,10 +493,18 @@ goroutine (`setNarrow` in app.go is the pattern).
   theme, and it is the only lever on tvxwidgets' gauge, which re-reads them at
   draw time. (2) Widgets that outlive a theme cycle keep the ground they were
   built with, so `repaintAll` re-grounds them by walking the mounted widget
-  tree with `groundTree` (theme.go). The walk reaches only what is *mounted*,
+  tree with `rethemeTree` (theme.go). The walk reaches only what is *mounted*,
   so the off-tree remainder is re-grounded by hand beside it through
   `applyBackground` (theme.go): the list or the rail (`applyLayout` mounts one,
   never both) and the banner (`build` mounts it only when we are not root).
+  **The ground is not the only baked-in colour.** `rethemeTree` also re-pins
+  every box's `SetTitleColor`, and `applyTextColor` re-pins the DEFAULT ink on
+  the chrome that persists (`status`, `rail`, `banner`), because tview bakes
+  `Styles.TitleColor` and `Styles.PrimaryTextColor` in at construction too.
+  Markup that names its colour survives a cycle and untagged text does not, so
+  the failure is partial and easy to miss: cycling into a light palette left
+  the hint bar showing its accented keys with every label gone, and the drive
+  list showing its tagged `▲ 2 ◌ 1` counts with the word `Drives` gone.
   `layout_test.go` enumerates the persistent widgets by hand on purpose (it
   includes `detail.note`, the standby caveat row; the Settings form is
   deliberately absent because it is rebuilt on every open and so cannot go

@@ -315,7 +315,7 @@ func TestThemeCycleRegroundsPersistentWidgets(t *testing.T) {
 }
 
 // The root-warning banner is mounted only when euid != 0, so under sudo it is
-// not in the widget tree at all and groundTree cannot reach it. Tests run
+// not in the widget tree at all and rethemeTree cannot reach it. Tests run
 // non-root, where it *is* mounted — which is exactly why a walk-only repaint
 // looked correct here while leaving the banner stale for anyone running under
 // sudo. Unmount it to stand in for that layout and pin that repaintAll grounds
@@ -381,5 +381,69 @@ func TestThemeCycleKeepsThePlaceholderMessage(t *testing.T) {
 	}
 	if got := tv.GetText(true); !strings.Contains(got, msg) {
 		t.Errorf("placeholder after a theme cycle = %q, want it to still say %q", got, msg)
+	}
+}
+
+// TestChromeSurvivesAThemeCycle: tview bakes Styles.PrimaryTextColor and
+// Styles.TitleColor in at construction, so a widget that outlives a theme
+// change keeps the old palette's ink. The failure is partial and easy to miss
+// — markup that names its colour survives, untagged text does not — so this
+// cycles all the way onto a paper ground and asserts nothing on screen is
+// drawn too faint to read. Before applyTextColor and rethemeTree's title pass,
+// the hint bar kept its accented keys and lost every label, and the drive list
+// kept its tagged counts and lost the word "Drives".
+func TestChromeSurvivesAThemeCycle(t *testing.T) {
+	const light = "daylight" // the first light palette in themeCycle
+	const minRatio = 1.5     // stale white on paper is ~1.02; every role clears 3:1
+
+	a, screen := newSimApp(t, 120, 30)
+	runSim(t, a, screen)
+
+	theme := func() string { return onLoop(t, a, func() string { return a.themeName }) }
+	for range len(themeCycle) {
+		cur := theme()
+		if cur == light {
+			break
+		}
+		// InjectKey is asynchronous, so wait for the press to land before the
+		// next one: pressing blindly overshoots the palette we want.
+		screen.InjectKey(tcell.KeyRune, 'T', tcell.ModNone)
+		for deadline := time.Now().Add(testTimeout); theme() == cur; {
+			if time.Now().After(deadline) {
+				t.Fatalf("theme did not advance past %q within %s", cur, testTimeout)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if got := theme(); got != light {
+		t.Fatalf("cycling with T stopped at theme %q, want %q", got, light)
+	}
+	// onLoop draws after its closure, and the loop runs queued work in order, so
+	// the second call returns only once the first one's frame is on the screen.
+	// (Calling Draw inside the closure instead self-deadlocks: the queued draw
+	// already holds the lock.)
+	onLoop(t, a, func() any { return nil })
+	onLoop(t, a, func() any { return nil })
+
+	cells, w, _ := screen.GetContents()
+	faint := 0
+	for i, c := range cells {
+		if len(c.Runes) == 0 || c.Runes[0] == 0 || c.Runes[0] == ' ' {
+			continue
+		}
+		fg, bg, _ := c.Style.Decompose()
+		if fg == tcell.ColorDefault || bg == tcell.ColorDefault {
+			continue // resolves only in a real terminal
+		}
+		if ratio := contrastRatio(fg, bg); ratio < minRatio {
+			faint++
+			if faint <= 3 {
+				t.Errorf("%q at (%d,%d) has contrast %.2f on its own cell, want >= %.1f",
+					string(c.Runes), i%w, i/w, ratio, minRatio)
+			}
+		}
+	}
+	if faint > 3 {
+		t.Errorf("%d cells are drawn too faint to read after cycling to %q", faint, light)
 	}
 }
