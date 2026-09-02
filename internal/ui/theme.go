@@ -4,7 +4,9 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"sync"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -238,6 +240,25 @@ func attrTextColor(s smart.Severity) tcell.Color {
 	}
 	return severityColor(s)
 }
+
+// truecolorTerm reports whether tcell will emit 24-bit colour for this TERM.
+// The painted palettes are all hex, so without it every role is snapped to the
+// nearest xterm-256 index and the ratios they were tuned to no longer hold.
+// The verdict is terminfo's, not a rule of our own: tcell decides the same way
+// (SetFgRGB present after LookupTerminfo folds in COLORTERM and
+// TCELL_TRUECOLOR), so the two cannot drift apart.
+func truecolorTerm(term string) bool {
+	ti, err := tcell.LookupTerminfo(term)
+	if err != nil {
+		return false
+	}
+	return ti.SetFgRGB != "" || ti.SetBgRGB != "" || ti.SetFgBgRGB != ""
+}
+
+// hasTruecolor is the memoised verdict for the running terminal. Memoised
+// because an unknown TERM sends tcell to infocmp, and this is read from a
+// focus handler.
+var hasTruecolor = sync.OnceValue(func() bool { return truecolorTerm(os.Getenv("TERM")) })
 
 // activeTheme is the live palette every colour helper reads.
 var activeTheme Theme

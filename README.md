@@ -280,6 +280,23 @@ them names its colours in RGB for the same reason: a palette that paints a
 ground has to own every foreground on it, or the terminal's own scheme gets a
 vote and the two disagree.
 
+**Over SSH, tell the far end you have 24-bit colour.** The painted palettes are
+spelled in RGB, and tcell only emits RGB escapes when the terminal advertises
+that it understands them — through `COLORTERM`, or a `$TERM` whose terminfo
+carries the capability. `ssh` forwards `TERM` but *not* `COLORTERM`, so a
+palette that looks right locally has every colour snapped to the nearest
+xterm-256 index on the other side: grounds flatten, accents drift, and the
+whole set reads muted. Export it on the remote host:
+
+```sh
+export COLORTERM=truecolor
+```
+
+or forward it from the client — `SetEnv COLORTERM=truecolor` in `~/.ssh/config`,
+with `AcceptEnv COLORTERM` in the server's `sshd_config`. `TCELL_TRUECOLOR=1`
+does the same for smartview alone, and `TCELL_TRUECOLOR=disable` is how to see
+the 256-colour rendering deliberately.
+
 `terminal` and `mono` are the deliberate exceptions. Both take the terminal's
 background and body colour rather than painting their own; `terminal` adds the
 severity vocabulary back as the standard ANSI colours, so ground and foreground

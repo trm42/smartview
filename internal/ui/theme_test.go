@@ -3,8 +3,12 @@
 package ui
 
 import (
+	"fmt"
 	"math"
+	"os"
+	"os/exec"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
@@ -545,5 +549,34 @@ func TestLightGroundsClearAHigherFloor(t *testing.T) {
 	if light != 6 {
 		t.Errorf("found %d light-ground themes, want 6 (daylight, parchment, sorbet, "+
 			"marigold, seafoam, sky); a new one must be tuned to this floor too", light)
+	}
+}
+
+// TestTruecolorTermFollowsTheEnvironment runs in a child process on purpose:
+// terminfo's entry cache is process-global and LookupTerminfo *writes* the RGB
+// capabilities onto the cached entry, so a lookup made before the environment
+// was changed decides every lookup after it. One process per environment is
+// the only way to ask the question honestly.
+func TestTruecolorTermFollowsTheEnvironment(t *testing.T) {
+	if os.Getenv("SMARTVIEW_TRUECOLOR_CHILD") == "1" {
+		fmt.Printf("verdict:%v\n", truecolorTerm("xterm-256color"))
+		return
+	}
+	for _, tc := range []struct{ colorterm, want string }{
+		{"", "verdict:false"}, // the SSH case: TERM crosses over, COLORTERM does not
+		{"truecolor", "verdict:true"},
+	} {
+		cmd := exec.Command(os.Args[0], "-test.run=TestTruecolorTermFollowsTheEnvironment")
+		// Cmd.Env keeps the last of any duplicate key, so these win.
+		cmd.Env = append(os.Environ(), "SMARTVIEW_TRUECOLOR_CHILD=1",
+			"COLORTERM="+tc.colorterm, "TCELL_TRUECOLOR=")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("child with COLORTERM=%q: %v\n%s", tc.colorterm, err, out)
+		}
+		if !strings.Contains(string(out), tc.want) {
+			t.Errorf("xterm-256color with COLORTERM=%q: want %s, got:\n%s",
+				tc.colorterm, tc.want, out)
+		}
 	}
 }

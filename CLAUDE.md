@@ -164,7 +164,13 @@ overridable with `--config PATH`. Five settings: `theme`, `refresh_interval`,
   whole modal — as `Esc` itself did.
 - **The modal carries its own footer**: a help line that follows focus (the
   only place a caveat like *ATA drives only* reaches someone editing the
-  setting — the config file and README do not) and a key hint line, because it
+  setting — the config file and README do not; the theme row swaps its line for
+  `set COLORTERM=truecolor` when terminfo reports no RGB, since every painted
+  palette is hex and a 256-colour terminal snaps each role to the nearest
+  index — `truecolorTerm` asks tcell for that verdict rather than inventing a
+  rule, and `settingsHelpLine` takes it as a parameter because terminfo's entry
+  cache is process-global, mutated by lookup, and untestable otherwise) and a
+  key hint line, because it
   was the one surface in the app that taught no keys. A `•` in each row's
   two-column label gutter marks it edited since the modal opened; the gutter is
   constant width so the label column cannot jump, and it is on the left because

@@ -170,3 +170,27 @@ func TestSettingsModalShrinksBelowItsOwnWidth(t *testing.T) {
 		}
 	}
 }
+
+// TestSettingsHelpLinesFit: the footer does not wrap, so a help line wider
+// than the modal's inner width is silently cut — taking the end of the advice
+// with it, which is where the actionable part sits.
+func TestSettingsHelpLinesFit(t *testing.T) {
+	// Border on both sides, then the help line's own padding.
+	const width = settingsWidth - 2 - (uiGutter + 1) - uiGutter
+	lines := append([]string{settingsThemeApproxHelp, settingsButtonHelp, settingsKeys}, settingsHelp...)
+	for _, l := range lines {
+		if got := tview.TaggedStringWidth(l); got > width {
+			t.Errorf("help line %q is %d cells, want <= %d", l, got, width)
+		}
+	}
+	if got := settingsHelpLine(0, false); got != settingsThemeApproxHelp {
+		t.Errorf("theme help on a 256-colour terminal is %q, want the caveat", got)
+	}
+	if got := settingsHelpLine(0, true); got != settingsHelp[0] {
+		t.Errorf("theme help on a truecolor terminal is %q, want the plain line", got)
+	}
+	if !strings.Contains(settingsThemeApproxHelp, "COLORTERM") {
+		t.Errorf("the approximation caveat %q does not name the variable that fixes it",
+			settingsThemeApproxHelp)
+	}
+}
