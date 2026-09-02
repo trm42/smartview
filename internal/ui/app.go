@@ -20,10 +20,15 @@ import (
 
 // App is the smartview terminal application.
 type App struct {
-	app    *tview.Application
-	root   *tview.Flex // main layout, restored when a modal closes
-	list   *tview.List
-	detail *detail
+	app *tview.Application
+	// rootPages is the application root: the main layout on one page, a modal
+	// on a second one above it. A modal used to replace the root outright,
+	// which blanked the app behind it — including the Settings modal, whose
+	// own help line says the theme key cycles the palette live.
+	rootPages *tview.Pages
+	root      *tview.Flex // main layout, the page under any modal
+	list      *tview.List
+	detail    *detail
 	// status, banner and the rail below carry no key binding, so they decline
 	// the mouse rather than let a click strand focus on them (inertTextView).
 	status *inertTextView
@@ -85,6 +90,9 @@ type App struct {
 	// source for the Tests tab's time estimate — a test smartview did not start
 	// stays absent and gets none. Entries age out in observeSelfTest.
 	startedTests map[string]startedTest
+	// sharedModels marks the model names more than one attached drive reports,
+	// so the list can disambiguate those rows. Rebuilt with the list.
+	sharedModels map[string]bool
 	inModal      bool // true while a modal overlay is shown
 	fleetMode    bool // true while the fleet comparison is on screen
 
@@ -182,7 +190,8 @@ func (a *App) build() {
 	a.detail.onTabClick = a.openTab
 
 	a.root = root
-	a.app.SetRoot(root, true).EnableMouse(true)
+	a.rootPages = tview.NewPages().AddPage(pageMain, root, true, true)
+	a.app.SetRoot(a.rootPages, true).EnableMouse(true)
 	a.app.SetInputCapture(a.onKey)
 	// Width is only known at draw time, so the layout choice lives here.
 	a.app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
@@ -247,6 +256,33 @@ func (a *App) applyLayout(narrow bool) {
 
 // driveListWidth is the drive list's fixed column width in the wide layout.
 const driveListWidth = 38
+
+// alertCount is how many drives are not healthy. The rail has always shown
+// this; the wide layout, with far more room, showed nothing — so the layout
+// with the least space was the only one answering "is anything wrong?"
+// without reading every row.
+func (a *App) alertCount() int {
+	n := 0
+	for _, d := range a.devices {
+		if rep, ok := a.reports[d.Name]; ok && rep.Overall() != smart.SeverityOK {
+			n++
+		}
+	}
+	return n
+}
+
+// driveListTitle is the wide layout's list title, carrying the same attention
+// and standby counts the narrow rail ends with.
+func (a *App) driveListTitle() string {
+	title := " Drives "
+	if n := a.alertCount(); n > 0 {
+		title += fmt.Sprintf("%s▲ %d[-] ", cautionTag(), n)
+	}
+	if n := a.asleepCount(); n > 0 {
+		title += fmt.Sprintf("%s%s %d[-] ", mutedTag(), standbyGlyph, n)
+	}
+	return title
+}
 
 // asleepCount is how many of the current drives are spun down.
 func (a *App) asleepCount() int {
@@ -437,7 +473,7 @@ func (a *App) repaintAll() {
 	a.populateList()
 	// Widgets built once are not recreated by the rebuild, so they keep the
 	// ground tview baked in at construction until they are told again.
-	groundTree(a.root)
+	groundTree(a.rootPages)
 	// The off-tree half: applyLayout mounts the list or the rail, never both, so
 	// the walk above can only have reached one of them, and build() mounts the
 	// banner only when we are not root.
@@ -448,10 +484,12 @@ func (a *App) repaintAll() {
 	a.refreshBanner()
 }
 
-// Page names for bodyPages.
+// Page names for bodyPages, and for the two rootPages layers.
 const (
 	pageDrives = "drives"
 	pageFleet  = "fleet"
+	pageMain   = "main"
+	pageModal  = "modal"
 )
 
 // showSelected renders the cached report for the highlighted drive.
@@ -466,12 +504,16 @@ func (a *App) showDevice(i int) {
 		return
 	}
 	dev := a.devices[i]
-	a.detail.setNote(a.standbyNote(dev.Name))
 	if rep, ok := a.reports[dev.Name]; ok {
+		// The note dates values that are on screen. With none, there is nothing
+		// to caveat and the placeholder below says it all — setting both put the
+		// same sentence on the panel twice.
+		a.detail.setNote(a.standbyNote(dev.Name))
 		a.observeSelfTest(dev.Name, rep)
 		a.detail.update(rep, a.history[dev.Name])
 		return
 	}
+	a.detail.setNote("")
 	if a.asleep[dev.Name] {
 		// Never read and spun down: say so and name the way out, rather than
 		// sit on "Loading…" for a drive that will never answer on its own.
@@ -495,10 +537,15 @@ func (a *App) selectedDevice() (smart.Device, bool) {
 // updated in place with SetItemText: Clear()+AddItem() fires SetChangedFunc,
 // which would flip the detail to another drive and back, rebuilding every tab.
 func (a *App) populateList() {
+	a.sharedModels = a.duplicateModels()
 	// The rail renders the same rows in one line, so it is repainted wherever
 	// the list is — otherwise its glyphs, alert count and theme colours freeze
 	// at the moment the narrow layout was installed. No-op when not narrow.
-	defer func() { a.renderRail(a.list.GetCurrentItem()) }()
+	// The wide layout's counts live in the box title and go stale the same way.
+	defer func() {
+		a.renderRail(a.list.GetCurrentItem())
+		a.list.SetTitle(a.driveListTitle())
+	}()
 	if a.list.GetItemCount() != len(a.devices) {
 		cur := a.list.GetCurrentItem()
 		a.list.Clear()
@@ -515,6 +562,24 @@ func (a *App) populateList() {
 		main, sec := a.listRow(d)
 		a.list.SetItemText(i, main, sec)
 	}
+}
+
+// duplicateModels reports which model names are shared by more than one of the
+// drives currently reporting. The empty name is never shared: a drive with no
+// model falls back to its device name already.
+func (a *App) duplicateModels() map[string]bool {
+	seen, dup := map[string]bool{}, map[string]bool{}
+	for _, d := range a.devices {
+		rep, ok := a.reports[d.Name]
+		if !ok || rep.ModelName == "" {
+			continue
+		}
+		if seen[rep.ModelName] {
+			dup[rep.ModelName] = true
+		}
+		seen[rep.ModelName] = true
+	}
+	return dup
 }
 
 // standbyGlyph marks a drive smartctl declined to wake. Like the ~ on an
@@ -560,6 +625,13 @@ func (a *App) listRow(d smart.Device) (string, string) {
 		model = esc(shortName(d))
 	}
 	main := fmt.Sprintf("%s %s", healthGlyph(rep.Overall()), model)
+	// A matched set is the normal case for this tool, and there the model is
+	// the same string on every row while the one thing that tells them apart
+	// sits in the muted secondary line. Name the device on the main line when
+	// the model does not identify the drive on its own.
+	if a.sharedModels[rep.ModelName] {
+		main += mutedTag() + " · " + esc(railName(d)) + "[-]"
+	}
 	// Temperature goes last: tempCell ends with a style reset that would drop
 	// the secondary colour for anything after it. The standby mark therefore
 	// goes first, and the health glyph is deliberately left undimmed: a

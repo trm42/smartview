@@ -137,10 +137,15 @@ func healthSection() fleetSection {
 		cells: func(row fleetRow) []fleetCell {
 			r := row.rep
 			sev := r.Overall()
-			verdict := fleetCell{
-				text:  sevBold(sev, verdictWord(sev)),
-				color: activeTheme.Neutral,
+			// Healthy takes the muted voice, not OK green: this column renders
+			// on every drive, so colouring the majority state spends the accent
+			// on membership and leaves the one failing row nothing to stand out
+			// from. Colour marks exceptions.
+			word := sevVerdict(sev, verdictWord(sev))
+			if sev == smart.SeverityOK {
+				word = mutedTag() + verdictWord(sev) + "[-]"
 			}
+			verdict := fleetCell{text: word, color: activeTheme.Neutral}
 			e := r.ErrorCounts()
 			return []fleetCell{
 				verdict,

@@ -213,8 +213,8 @@ func writeFields(b *strings.Builder, fields []identityField, cols int) {
 // writeVerdict renders the health verdict plus the evidence behind it.
 func writeVerdict(b *strings.Builder, r *smart.Report) {
 	sev := r.Overall()
-	fmt.Fprintf(b, "[%s::b]%s[-:-:-]  %s%s[-]\n",
-		severityTag(sev), verdictWord(sev), mutedTag(), verdictEvidence(r))
+	fmt.Fprintf(b, "%s  %s%s[-]\n",
+		sevVerdict(sev, verdictWord(sev)), mutedTag(), verdictEvidence(r))
 
 	// The raw SMART pass/fail only adds signal on a failure.
 	if !r.SmartStatus.Passed {

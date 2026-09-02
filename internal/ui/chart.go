@@ -276,15 +276,22 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 		return
 	}
 
+	// The plot fills its box. It used to be capped at the integer span of the
+	// data on the grounds that "finer rows could never be landed in", which is
+	// not how the fill works: fillEighths resolves eight sub-levels per row, so
+	// extra rows do not invent precision, they space the same values further
+	// apart. The cap also bottom-anchored the result, so a 35-40 °C history
+	// drew six rows in a twenty-two-row panel and left the rest blank.
 	plotRows := h - 2 // one axis line, one caption line
-	// Cap resolution to the integer span: values are whole numbers, and finer
-	// rows could never be landed in.
-	if span := int(hi-lo) + 1; span > 0 && span < plotRows {
-		plotRows = span
-	}
-	top := y + (h - 2 - plotRows)
+	top := y
 	labels := axisLabels(plotRows, lo, hi)
-	gutter := len(fmt.Sprintf("%.0f", lo))
+	baseline := fmt.Sprintf("%.0f", lo)
+	// The axis line below prints the baseline itself, so a last row that rounds
+	// to the same value would print it twice, one above the other.
+	if n := len(labels); n > 0 && labels[n-1] == baseline {
+		labels[n-1] = ""
+	}
+	gutter := len(baseline)
 	for _, l := range labels {
 		gutter = max(gutter, len(l))
 	}
@@ -321,7 +328,7 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 	}
 
 	// The axis line carries the baseline value, so a non-zero start is obvious.
-	base := fmt.Sprintf("%*s ", gutter-2, fmt.Sprintf("%.0f", lo))
+	base := fmt.Sprintf("%*s ", gutter-2, baseline)
 	tview.Print(screen, esc(base), x, top+plotRows, gutter, tview.AlignLeft, muted)
 	tview.Print(screen, "└"+strings.Repeat("─", plotW-1), x+gutter-1, top+plotRows, plotW, tview.AlignLeft, muted)
 	if caption != "" {

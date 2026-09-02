@@ -302,7 +302,8 @@ func (a *App) settingsModal() (tview.Primitive, *tview.Form) {
 	keys.SetBorderPadding(0, 0, uiGutter+1, uiGutter)
 	keys.SetText(mutedTag() + settingsKeys + "[-]")
 
-	box := tview.NewFlex().SetDirection(tview.FlexRow).
+	box := newOpaqueFlex()
+	box.SetDirection(tview.FlexRow).
 		AddItem(form, len(settingsRows)+2, 0, true). // rows + blank + buttons
 		AddItem(nil, 1, 0, false).                   // breathing room above the footer
 		AddItem(a.settingsHelp, 1, 0, false).

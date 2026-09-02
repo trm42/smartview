@@ -308,12 +308,30 @@ goroutine (`setNarrow` in app.go is the pattern).
   `a.interval` and signals `intervalCh`, which `poll.go`'s loop drains to call
   `ticker.Reset` — the cadence changes live without restarting the poll loop.
   `--interval` only sets the starting value (default 30s).
-- **The `?` modal is the binding list of record** (`keysText` in modals.go), and
+- **The `?` modal is the binding list of record.** `keyBindings` (modals.go) is
+  the table; `keysText` is rendered from it into fixed-width columns, and
   `keys_test.go` parses the package for the runes the handlers match, so a new
   binding that is not documented there fails CI. Named keys (`tcell.Key`
   constants) are invisible to that scan and are pinned by a hand-kept list in
   the same test — extend it when a handler matches a new one. The README key
-  table is written from it.
+  table is written from it. Two things the parser depends on: the key column is
+  **left**-aligned and the separator is **two spaces** (`documentedKeys` cuts
+  the key out at the first double space), and every line is exactly
+  `keysColumnWidth` cells so the columns line up. An empty `key` starts a group;
+  `keysColumns` splits the list at the group break nearest the middle into the
+  two side-by-side columns `keysModal` draws. It is not a `tview.Modal`: that
+  wraps at a third of the screen, which forced one ragged 26-cell column, and
+  its height grows per binding, so the list had already outgrown 24 rows.
+- **A modal is a PAGE over the app, not a new root** (`pushModal`/`popModal` in
+  modals.go). `a.rootPages` holds the main layout on `pageMain` and the modal on
+  `pageModal`; `SetRoot(modal, false)` used to replace the tree, so the drive
+  list and detail vanished — worst on the Settings modal, whose own footer says
+  `T` cycles the theme live. Two consequences to keep in mind when adding one:
+  tview's `Flex` sets `dontClear`, so a modal built on a plain Flex lets the app
+  show through its interior — use `newOpaqueFlex` (`tview.Modal` clears itself);
+  and `Pages` passes an **unconsumed** click down to the page underneath, which
+  is why every modal is wrapped in `modalLayer`, whose `MouseHandler` swallows
+  what the modal declines.
 - **Mouse handlers run on the event-loop goroutine with no draw lock held** —
   the mirror image of the draw-hook rule above. `Application.SetFocus` and direct
   widget mutation are correct there; `QueueUpdate(Draw)` self-deadlocks, since the
@@ -369,18 +387,26 @@ goroutine (`setNarrow` in app.go is the pattern).
   (`accentTag()`, `mutedTag()`, `okTag()`, `sevText(sev,s)`/`sevBold(sev,s)`,
   `fgbgTag(fg,bg)`) for markup — `severityTag()` returns the bare token, for
   compound formats only — or read `activeTheme.X` for a `tcell.Color`. The
-  `dark` theme reproduces the original palette (pinned by `theme_test.go`)
-  apart from three roles: `ListSecondary`, which moved off green because it
-  equalled `OK` and painted a failing drive's metadata line the healthy
-  colour, and `Background`/`Neutral`, which are explicit black and white
-  because painting a ground and inheriting the text colour puts black on black
-  in a light terminal — a palette that grounds itself owns every foreground
-  too, which is what `TestThemesComplete` enforces; `electric` (an "elite BBS"
+  `dark` theme reproduces the original palette, in hex, pinned role by role by
+  `TestDarkThemePinned`. **Every painted palette is hex-only, and that is
+  load-bearing** (`TestPaintedThemesAreHexOnly`): a named `tcell` colour goes
+  to the terminal as a palette index, and `tag()` used to resolve it to RGB for
+  markup while every style path — `styleList`, cell colours, borders,
+  `tview.Print` — kept the index, so on a terminal whose scheme is not the
+  default the same role rendered two different colours. In `dark` that made the
+  list's secondary line invisible and painted the temperature fill green
+  instead of teal. Three roles depart from the pre-theming original:
+  `ListSecondary`, which moved off green because it equalled `OK` and painted a
+  failing drive's metadata line the healthy colour; `SelectionBg`, off
+  DarkSlateGray because it dropped `Failing` to 2.23:1 and `OK` to 1.74:1 on
+  the one row the cursor is always on; and `Background`, one step off pure
+  black so the palette has a ground to build layers *down* from and does not
+  paste a black rectangle into a terminal that is not itself black. `electric` (an "elite BBS"
   palette in blue/cyan/white/gray — bright azure-cyan borders, white body
   text, amber caution + red failing for legibility), `phosphor` (the classic
   monochrome green-CRT palette — *pure green only*, no amber/red; severity
-  reads via green intensity + the `●` glyph + bold, and the ramp must escalate
-  — `theme_test.go` pins that Failing is hotter than OK, not paler), `amber`
+  reads via green intensity + the severity glyph + bold, and the ramp must
+  escalate — `theme_test.go` pins that Failing is hotter than OK, not paler), `amber`
   (a Hercules monochrome amber-monitor palette — warm amber accent/text with a
   warm amber→orange→red severity ramp), `cga` (the authentic IBM CGA 16 —
   every role is one of those colours, none interpolated), `neon` (cyberpunk:
@@ -394,15 +420,29 @@ goroutine (`setNarrow` in app.go is the pattern).
   stop proving anything), `daylight` and `parchment` (light, cool and warm —
   every role is tuned against the palette's own paper `Background`, not a
   terminal's: yellow caution vanishes on paper, so the ramp runs burnt
-  amber/ochre → crimson/brick, darkening as it worsens), and `mono` are the
-  alternates. Five invariants hold across every palette but `mono` (which has
-  no colour to measure) and are pinned by tests: `ListSecondary` never equals
+  amber/ochre → crimson/brick, darkening as it worsens), `terminal` and `mono`
+  are the alternates. **`terminal` and `mono` are the two INHERITING palettes**
+  (`inheritingThemes` in theme_test.go, which every ratio test skips): both take
+  `Background` and `Neutral` from the terminal, `mono` adding nothing and
+  `terminal` adding the severity vocabulary back as NAMED colours — deliberately,
+  since here resolving through the user's scheme is what makes ground and
+  foreground agree rather than what breaks them. `tag()` renders anything in
+  `namedTags` as its markup *name* so the index survives; adding a named colour
+  to a palette means adding it there too. Neither has a `SelectionBg`, so
+  `selectedRowStyle` falls back to reverse video — the only highlight available
+  without knowing the ground. Six invariants hold across every painted palette
+  and are pinned by tests: `ListSecondary` never equals
   `OK`; `Inverse` clears 3:1 on both fields it is drawn on (`Accent` for the
   active-tab pill, `BannerBg` for the root warning); `Muted` reads at least
   1.8x quieter than `Neutral` on the ground, so the recessive voice stays
   recessive; `SelectionBg` sits in a 1.15–3:1 band against the ground — enough
   to tint the row, not enough to repaint it — with `SelectionFg`, the
-  selected-row foreground, clearing 4.5:1 (WCAG AA body text) on it; and a
+  selected-row foreground, clearing 4.5:1 (WCAG AA body text) on it; **each of
+  `OK`/`Caution`/`Failing` clears 3:1 on `SelectionBg` too**, because the
+  selected row keeps each cell's own foreground and repaints the ground, so
+  arrowing onto a failing drive is exactly what used to dim its red (this is
+  why four palettes moved their band, two of them *below* the ground rather
+  than above it); and a
   `Background` is plainly ink (luminance ≤ 0.15) or plainly paper (≥ 0.5),
   never between, since the light floor is keyed off that split and a mid-tone
   ground would silently take the lower one. Foregrounds clear 3:1 on the
@@ -416,8 +456,17 @@ goroutine (`setNarrow` in app.go is the pattern).
   colour (tview Lists default it to `Styles.TertiaryTextColor`, a green that
   otherwise leaks into every theme) and routes selection through
   `selectedRowStyle` so list and table selections match. Known limit: `mono`
-  drops all our colour (severity and the selected row survive via the `●`
-  glyph + bold).
+  drops all our colour — severity survives on the glyph and the reverse-video
+  failing chip, and the selected row on reverse video.
+- **Severity is encoded by SHAPE and AREA before colour** (`format.go`).
+  `severityGlyph` gives each state its own mark (`●` healthy, `▲` caution, `■`
+  failing) and `healthGlyph` tints it; `sevVerdict` draws a *failing* verdict as
+  an Inverse-on-`Failing` chip (reverse video under `mono`) rather than tinted
+  text. This is not decoration: red is darker than yellow on any dark ground, so
+  `Caution` out-contrasts `Failing` in 8 of the 11 coloured palettes and no hue
+  assignment fixes it — area and shape do, and they are the only encodings that
+  survive `phosphor`, `amber` and `mono`. A new severity sink uses these rather
+  than reaching for `severityColor` alone.
 - **The ground is `Theme.Background`, and it reaches widgets three ways.** (1)
   `applyTviewStyles` (theme.go) writes `tview.Styles` — tview reads those
   globals *at construction*, so everything built afterwards is born in the
@@ -447,7 +496,13 @@ goroutine (`setNarrow` in app.go is the pattern).
   health glyph and for bars, so a healthy fleet is not a wall of green and
   anything tinted is worth looking at. Corollary pinned by `theme_test.go`: no
   theme's `ListSecondary` may equal its `OK`, since that line renders on every
-  drive whatever its state.
+  drive whatever its state. The two sinks that broke this and are now muted:
+  the fleet's **State** column (every "Healthy" green left the one failing row
+  nothing to stand out from) and the Logs tab's self-test rows, where nineteen
+  green "Completed without error" lines were the loudest thing on a tab whose
+  actual logged errors rendered in body text — `colorResult` mutes a pass and
+  `logs_test.go` pins that it carries no `okTag()`. `TestAllClearLinesAreNotGreen`
+  is the guard for the "nothing to report" lines.
 - **Charts scale to their data, never to zero** (`chart.go`). `tvxwidgets`'
   Sparkline divides by the maximum and BarChart offers only `SetMaxValue` while
   drawing its own axis labels, so neither can take a baseline — a 35–40 °C
@@ -458,7 +513,14 @@ goroutine (`setNarrow` in app.go is the pattern).
   baseline mark instead of vanishing; the fill starts at the data minimum, not
   at zero, which is what keeps a filled 35–40 °C history from going back to
   being a solid block. `downsample` reduces by bucket *maximum* so a spike is
-  never averaged away, and the axis line always prints its baseline. The pad
+  never averaged away, and the axis line always prints its baseline — once:
+  `Draw` blanks a last-row label that rounds to the baseline, since the axis
+  prints it anyway. **The plot fills its box.** It used to cap `plotRows` at the
+  integer span of the data and bottom-anchor the result, on the grounds that
+  "finer rows could never be landed in" — which is not how the fill works, since
+  `fillEighths` resolves eight sub-levels per row: extra rows do not invent
+  precision, they space the same values further apart. The cap left a 35–40 °C
+  history drawing six rows in a twenty-two-row panel. The pad
   for a flat range lives in `fillEighths` alone, so a series with no spread
   cannot divide by zero into an all-NaN chart whatever calls it. The scaling is pure and unit tested; the NVMe
   percentage gauges still use `tvxwidgets`, where 0–100 is real. The fill is
@@ -502,6 +564,16 @@ goroutine (`setNarrow` in app.go is the pattern).
   `renderRail` wherever `populateList`/`showSelected` repaint the list, and
   `stepDrive` on `KeyUp`/`KeyDown` in `onKey`, since no list is on screen to
   receive them. `layout_test.go` exercises both widths on a simulation screen.
+  The rule cuts the other way too: the rail's `▲ N` / `◌ N` counts were the only
+  answer to "is anything wrong?" that did not require reading every row, and the
+  layout with 460 more columns had none — the wide list carries them in its box
+  title (`driveListTitle`), repainted with the list since the counts and the
+  theme tags both go stale otherwise.
+- **A matched set is the normal case, so the drive list disambiguates itself.**
+  `duplicateModels` marks the model names more than one attached drive reports,
+  and `listRow` appends the device to the main line for those rows. Without it a
+  NAS of identical disks is the same string repeated down the list, with the one
+  thing that tells them apart sitting in the muted secondary line.
 - **The FARM tab has a second, independent breakpoint.** Its four stat boxes
   pair into a 2×2 grid only while each column clears `farmColumnMin` inner
   cells; below that `relayout` stacks them into one full-width column

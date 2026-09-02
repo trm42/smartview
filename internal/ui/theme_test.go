@@ -4,31 +4,39 @@ package ui
 
 import (
 	"math"
+	"sort"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
 )
 
-// TestDarkThemeUnchanged pins every dark-theme role. Three are not the
-// pre-theming colour: ListSecondary moved off green (it equalled OK), and
-// Background/Neutral are explicit because a painted ground cannot be paired
-// with text inherited from the terminal.
-func TestDarkThemeUnchanged(t *testing.T) {
+// TestDarkThemePinned pins every dark-theme role as an explicit hex value.
+// The palette used to name tcell colours, which are sent to the terminal as
+// palette indices: markup resolved them to RGB and every style path did not,
+// so a role rendered two different colours on any terminal whose scheme is not
+// the default. These are the RGB values those names already resolved to, with
+// three deliberate departures from the pre-theming original, each noted below.
+func TestDarkThemePinned(t *testing.T) {
 	want := map[string]tcell.Color{
-		"Background":    tcell.ColorBlack,
-		"Accent":        tcell.ColorAqua,
-		"Muted":         tcell.ColorGray,
-		"OK":            tcell.ColorGreen,
-		"Caution":       tcell.ColorYellow,
-		"Failing":       tcell.ColorRed,
-		"Neutral":       tcell.ColorWhite,
-		"Inverse":       tcell.ColorBlack,
-		"SelectionBg":   tcell.ColorDarkSlateGray,
-		"SelectionFg":   tcell.ColorWhite,
-		"BannerBg":      tcell.ColorYellow,
-		"BarHealthy":    tcell.ColorTeal,
-		"ScrollArrow":   tcell.ColorWhite,
-		"ListSecondary": tcell.ColorGray,
+		// Was ColorBlack. A ground one step off #000 gives the palette
+		// somewhere to build layers down from, and stops the app pasting a
+		// black rectangle into a terminal that is not itself black.
+		"Background": tcell.NewHexColor(0x0b0d10),
+		"Accent":     tcell.NewHexColor(0x00ffff), // was ColorAqua
+		"Muted":      tcell.NewHexColor(0x808080), // was ColorGray
+		"OK":         tcell.NewHexColor(0x008000), // was ColorGreen
+		"Caution":    tcell.NewHexColor(0xffff00), // was ColorYellow
+		"Failing":    tcell.NewHexColor(0xff0000), // was ColorRed
+		"Neutral":    tcell.NewHexColor(0xffffff), // was ColorWhite
+		"Inverse":    tcell.NewHexColor(0x000000), // was ColorBlack
+		// Was ColorDarkSlateGray (#2f4f4f), bright enough to drop Failing to
+		// 2.23:1 and OK to 1.74:1 on the selected row.
+		"SelectionBg":   tcell.NewHexColor(0x16202a),
+		"SelectionFg":   tcell.NewHexColor(0xffffff), // was ColorWhite
+		"BannerBg":      tcell.NewHexColor(0xffff00), // was ColorYellow
+		"BarHealthy":    tcell.NewHexColor(0x008080), // was ColorTeal
+		"ScrollArrow":   tcell.NewHexColor(0xffffff), // was ColorWhite
+		"ListSecondary": tcell.NewHexColor(0x808080), // was ColorGreen, == OK
 	}
 	got := themeRoles(dark)
 	if len(want) != len(got) {
@@ -41,6 +49,27 @@ func TestDarkThemeUnchanged(t *testing.T) {
 	}
 	if dark.Name != "dark" {
 		t.Errorf("dark.Name = %q, want %q", dark.Name, "dark")
+	}
+}
+
+// TestPaintedThemesAreHexOnly: a palette that paints its own ground must spell
+// every role in RGB. A named colour resolves through the user's terminal
+// scheme, so pairing one with a painted ground lets the two disagree — the
+// defect dark carried. inheritingThemes are the deliberate exception: they take
+// the terminal's ground, so resolving through its scheme is what makes them
+// agree rather than what breaks them.
+func TestPaintedThemesAreHexOnly(t *testing.T) {
+	for name, th := range themes {
+		if inheritingThemes[name] {
+			continue
+		}
+		for role, c := range themeRoles(th) {
+			if c != c.TrueColor() {
+				t.Errorf("theme %q role %s is the named colour %v; a painted palette "+
+					"must use tcell.NewHexColor so the terminal scheme cannot redefine it",
+					name, role, c)
+			}
+		}
 	}
 }
 
@@ -65,6 +94,22 @@ func themeRoles(th Theme) map[string]tcell.Color {
 	}
 }
 
+// inheritingThemes are the palettes that take colours from the terminal rather
+// than painting them: mono drops colour entirely, terminal keeps the ground and
+// body colour and adds the severity vocabulary back as named colours. Neither
+// can be measured for contrast, so every ratio test below skips them.
+var inheritingThemes = map[string]bool{"mono": true, "terminal": true}
+
+// inheritingNames lists them for an error message, in a stable order.
+func inheritingNames() []string {
+	out := make([]string, 0, len(inheritingThemes))
+	for n := range inheritingThemes {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // TestThemesComplete asserts every theme names itself and assigns every role.
 // ColorDefault is allowed only in mono, which defers to the terminal wholesale:
 // a palette that paints its own ground has to paint every foreground too.
@@ -76,12 +121,13 @@ func TestThemesComplete(t *testing.T) {
 		if th.Name != name {
 			t.Errorf("theme registered as %q has Name %q", name, th.Name)
 		}
-		if name == "mono" {
-			continue // mono is intentionally all-default
+		if inheritingThemes[name] {
+			continue // these defer to the terminal on purpose
 		}
 		for role, c := range themeRoles(th) {
 			if c == tcell.ColorDefault {
-				t.Errorf("theme %q role %s is ColorDefault (only mono may degrade)", name, role)
+				t.Errorf("theme %q role %s is ColorDefault (only %v may degrade)",
+					name, role, inheritingNames())
 			}
 		}
 	}
@@ -109,13 +155,25 @@ func TestTagRoundTrip(t *testing.T) {
 	if got := tag(tcell.ColorDefault); got != "-" {
 		t.Errorf("tag(ColorDefault) = %q, want %q", got, "-")
 	}
-	// A real colour must render as #rrggbb that GetColor parses back identically.
-	tok := tag(tcell.ColorAqua)
-	if tok == "-" || tok[0] != '#' || len(tok) != 7 {
-		t.Fatalf("tag(ColorAqua) = %q, want a #rrggbb token", tok)
+	// An RGB colour must render as #rrggbb that GetColor parses back identically.
+	rgbTok := tag(tcell.NewHexColor(0x00ffff))
+	if rgbTok == "-" || rgbTok[0] != '#' || len(rgbTok) != 7 {
+		t.Fatalf("tag(#00ffff) = %q, want a #rrggbb token", rgbTok)
 	}
-	if back := tcell.GetColor(tok); back.TrueColor() != tcell.ColorAqua.TrueColor() {
-		t.Errorf("GetColor(%q) = %v, want %v", tok, back, tcell.ColorAqua)
+	if back := tcell.GetColor(rgbTok); back.TrueColor() != tcell.NewHexColor(0x00ffff) {
+		t.Errorf("GetColor(%q) = %v, want #00ffff", rgbTok, back)
+	}
+	// A named colour must render as its NAME and survive the round trip as the
+	// same palette index — resolving it to RGB is what broke the dark theme.
+	for c := range namedTags {
+		tok := tag(c)
+		if tok == "-" || tok[0] == '#' {
+			t.Errorf("tag(%v) = %q, want a colour name", c, tok)
+			continue
+		}
+		if back := tcell.GetColor(tok); back != c {
+			t.Errorf("GetColor(%q) = %v, want the same palette colour %v", tok, back, c)
+		}
 	}
 }
 
@@ -317,6 +375,37 @@ func TestMonoInheritsTheTerminal(t *testing.T) {
 	}
 }
 
+// TestTerminalInheritsGroundAndInk pins the terminal palette's contract: it
+// takes the ground, the body colour and the selection from the terminal, and
+// every colour it does supply is a NAMED one, so it resolves through the same
+// scheme as the ground it sits on.
+func TestTerminalInheritsGroundAndInk(t *testing.T) {
+	inherited := []string{"Background", "Neutral", "SelectionBg", "SelectionFg"}
+	roles := themeRoles(terminal)
+	for _, role := range inherited {
+		if roles[role] != tcell.ColorDefault {
+			t.Errorf("terminal role %s is %v, want ColorDefault: it must come from the terminal",
+				role, roles[role])
+		}
+	}
+	for role, c := range roles {
+		if c == tcell.ColorDefault {
+			continue
+		}
+		if _, ok := namedTags[c]; !ok {
+			t.Errorf("terminal role %s is %v, which tag() renders as RGB; use a colour "+
+				"from namedTags so markup and style agree on the terminal's scheme", role, c)
+		}
+	}
+	// Reverse video is the only highlight available without a known ground.
+	setTheme(terminal)
+	defer setTheme(dark)
+	if _, _, attrs := selectedRowStyle(tcell.ColorDefault).Decompose(); attrs&tcell.AttrReverse == 0 {
+		t.Error("terminal's selected row is not reverse video; with no SelectionBg " +
+			"nothing else marks it")
+	}
+}
+
 // TestForegroundsAreLegibleOnTheirBackground: every role that renders as text
 // or glyphs sits on Background, so a palette that picks one carelessly is
 // unreadable. 3:1 is the floor TestInverseIsLegibleOnItsFields already uses.
@@ -362,6 +451,31 @@ func TestSelectionIsVisibleOnBackground(t *testing.T) {
 		if got := contrastRatio(th.SelectionFg, th.SelectionBg); got < minPin {
 			t.Errorf("theme %q: SelectionFg on SelectionBg has contrast %.2f, want >= %.1f",
 				name, got, minPin)
+		}
+	}
+}
+
+// TestSeverityIsLegibleOnTheSelectionBand: the selected row keeps each cell's
+// own foreground and repaints the ground with SelectionBg, so the severity
+// colours are drawn on the band whenever the cursor is on a drive — which is
+// exactly the row the user cares about. Nothing pinned this, and four palettes
+// dropped a severity below the 3:1 floor every other pairing is held to; dark
+// put both ends of its ramp there (Failing 2.23, OK 1.74).
+func TestSeverityIsLegibleOnTheSelectionBand(t *testing.T) {
+	const minRatio = 3.0
+	for name, th := range themes {
+		if inheritingThemes[name] {
+			continue // no band to measure: the selection is reverse video
+		}
+		for _, r := range []struct {
+			role string
+			c    tcell.Color
+		}{{"OK", th.OK}, {"Caution", th.Caution}, {"Failing", th.Failing}} {
+			if got := contrastRatio(r.c, th.SelectionBg); got < minRatio {
+				t.Errorf("theme %q: %s on SelectionBg has contrast %.2f, want >= %.1f; "+
+					"selecting a drive must not dim its own health colour",
+					name, r.role, got, minRatio)
+			}
 		}
 	}
 }
