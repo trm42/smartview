@@ -75,8 +75,8 @@ jobs:
   goreleaser-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: actions/checkout@v7
+      - uses: goreleaser/goreleaser-action@v7
         with:
           # Keep in sync with the version pinned in release.yml.
           version: '~> v2'
