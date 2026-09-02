@@ -9,6 +9,13 @@ permissions:
   # Needed to create the GitHub Release and upload assets.
   contents: write
 
+# One release at a time: two tags pushed together would otherwise race for the
+# same GitHub Release and tap commit. Never cancel a run that may have already
+# published assets.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
@@ -28,5 +35,6 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # PAT with write access to trm42/homebrew-tap, for the brews: step.
+          # PAT with write access to trm42/homebrew-tap, for the cask step.
+          # When unset, .goreleaser.yaml skips the cask upload rather than failing.
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}

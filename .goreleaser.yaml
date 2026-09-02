@@ -3,7 +3,7 @@
 #
 # Release flow: push a SemVer tag (`v*`) and .github/workflows/release.yml runs
 # `goreleaser release --clean`, which builds the binaries, archives, checksums,
-# Linux packages, and the Homebrew formula declared below.
+# Linux packages, and the Homebrew cask declared below.
 #
 # Local dry-run (no publish, no tokens needed):
 #   goreleaser release --snapshot --clean
@@ -15,8 +15,11 @@ project_name: smartview
 
 before:
   hooks:
-    # Release-gate on a tidy module and a clean test run.
-    - go mod tidy
+    # Release-gate on a verified module and a clean test run. Deliberately NOT
+    # `go mod tidy`: GoReleaser validates git state *before* running these hooks,
+    # so a tidy that rewrote go.mod would slip past the dirty-tree check and
+    # release a module state nobody reviewed. Verify, don't mutate.
+    - go mod verify
     - go test ./...
 
 builds:
@@ -48,6 +51,7 @@ builds:
 archives:
   - id: smartview
     formats: [tar.gz]
+    # The release notes footer links these by name — keep the two in sync.
     name_template: smartview_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     files:
       - README.md
@@ -64,6 +68,9 @@ nfpms:
     formats:
       - deb
       - rpm
+    # Pinned rather than left to nfpm's default so the release notes footer can
+    # link the packages by name — keep the two in sync.
+    file_name_template: smartview_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     maintainer: trm42
     description: Cross-platform terminal UI for monitoring drive health via smartmontools.
     license: GPL-3.0-or-later
@@ -71,6 +78,18 @@ nfpms:
     dependencies:
       # smartview hard-requires smartctl at runtime (preflight exits without it).
       - smartmontools
+    contents:
+      # smartview is GPL-3.0-or-later, so the licence text has to travel with the
+      # binary. Debian policy also requires /usr/share/doc/<pkg>/copyright
+      # (lintian: no-copyright-file); the tarballs already bundle LICENSE.
+      - src: LICENSE
+        dst: /usr/share/doc/smartview/copyright
+        file_info:
+          mode: 0644
+      - src: README.md
+        dst: /usr/share/doc/smartview/README.md
+        file_info:
+          mode: 0644
 
 # Homebrew now distributes pre-built binaries as casks (GoReleaser v2 deprecated
 # the formula-based `brews:` in favour of `homebrew_casks:`). The cask installs
@@ -82,7 +101,15 @@ homebrew_casks:
       name: homebrew-tap
       # PAT with write access to the tap repo (the default GITHUB_TOKEN can't
       # push to another repo). Set in release.yml as HOMEBREW_TAP_GITHUB_TOKEN.
+      # GoReleaser validates this field's shape and accepts `{{ .Env.VAR }}`
+      # only, so the missing-variable case is handled by skip_upload below
+      # rather than by a defaulting template here.
       token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
+    # Publishing the cask needs a tap repo and a PAT that only the maintainer can
+    # provision. Without them, skip this step instead of failing the run: the
+    # GitHub Release with the binaries is created earlier in the publish phase,
+    # so a hard failure here leaves a published release under a red workflow.
+    skip_upload: '{{ if isEnvSet "HOMEBREW_TAP_GITHUB_TOKEN" }}false{{ else }}true{{ end }}'
     binaries:
       - smartview
     homepage: https://github.com/trm42/smartview
@@ -104,13 +131,16 @@ changelog:
   sort: asc
   filters:
     # Match the repo's conventional-commit style — drop noise from the notes.
+    # The `(\(.+\))?` arm matters: most commits here carry a scope, so a bare
+    # `^test:` misses `test(smart): …` and it lands in the notes anyway.
     exclude:
-      - '^docs:'
-      - '^test:'
-      - '^chore:'
-      - '^ci:'
-      - Merge pull request
-      - Merge branch
+      - '^docs(\(.+\))?!?:'
+      - '^test(\(.+\))?!?:'
+      - '^chore(\(.+\))?!?:'
+      - '^ci(\(.+\))?!?:'
+      # Covers "Merge pull request", "Merge branch" and "Merge remote-tracking
+      # branch" alike.
+      - '^Merge '
   groups:
     - title: Features
       regexp: '^.*?feat(\(.+\))??!?:.+$'
@@ -125,3 +155,27 @@ release:
   github:
     owner: trm42
     name: smartview
+  # Link every published artifact straight from the release notes. The file names
+  # are built from the `name_template`s above — change one, change both.
+  footer: |
+
+    ## Downloads
+
+    | Platform | Package |
+    | --- | --- |
+    | macOS (Apple Silicon) | [smartview_{{ .Version }}_darwin_arm64.tar.gz](https://github.com/trm42/smartview/releases/download/{{ .Tag }}/smartview_{{ .Version }}_darwin_arm64.tar.gz) |
+    | Linux (x86-64) | [smartview_{{ .Version }}_linux_amd64.tar.gz](https://github.com/trm42/smartview/releases/download/{{ .Tag }}/smartview_{{ .Version }}_linux_amd64.tar.gz) |
+    | Debian / Ubuntu | [smartview_{{ .Version }}_linux_amd64.deb](https://github.com/trm42/smartview/releases/download/{{ .Tag }}/smartview_{{ .Version }}_linux_amd64.deb) |
+    | Fedora / RHEL | [smartview_{{ .Version }}_linux_amd64.rpm](https://github.com/trm42/smartview/releases/download/{{ .Tag }}/smartview_{{ .Version }}_linux_amd64.rpm) |
+
+    macOS via Homebrew: `brew install trm42/tap/smartview`
+
+    Verify a download against
+    [checksums.txt](https://github.com/trm42/smartview/releases/download/{{ .Tag }}/checksums.txt):
+
+    ```sh
+    sha256sum -c checksums.txt --ignore-missing
+    ```
+
+    smartmontools is a runtime dependency. The `.deb`/`.rpm` packages and the
+    Homebrew cask pull it in; for the tarballs, install it yourself.

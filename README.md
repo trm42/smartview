@@ -118,7 +118,7 @@ run smartview with `sudo`.
 
 Pre-built binaries are published for **macOS (Apple Silicon)** and
 **Linux (x86-64)** on every release. smartmontools is a runtime dependency —
-the Homebrew formula and the `.deb`/`.rpm` packages pull it in for you.
+the Homebrew cask and the `.deb`/`.rpm` packages pull it in for you.
 
 ### Homebrew (macOS)
 
@@ -133,7 +133,7 @@ Download the `.deb` or `.rpm` for your distro from the
 
 ```sh
 sudo apt install ./smartview_*_linux_amd64.deb   # Debian/Ubuntu
-sudo dnf install ./smartview-*_linux_amd64.rpm    # Fedora/RHEL
+sudo dnf install ./smartview_*_linux_amd64.rpm   # Fedora/RHEL
 ```
 
 ### Direct binary download
