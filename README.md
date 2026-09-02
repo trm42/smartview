@@ -169,31 +169,9 @@ respects that. `R` is the one key that wakes a drive.
 
 ### Themes
 
-Twenty-one of them. `--theme` picks the starting one, `T` cycles live.
-
-| Theme | Palette |
-| ----- | ------- |
-| `dark` | The default: aqua chrome, green → yellow → red severity |
-| `electric` | Elite-BBS azure and white, amber caution |
-| `phosphor` | Green CRT, pure green — severity reads as brightness |
-| `amber` | Hercules amber monitor, amber → orange → red |
-| `cga` | The authentic IBM CGA 16, nothing interpolated |
-| `neon` | Cyberpunk: electric blue, magenta banner and bars |
-| `nord` | Arctic blue-grey, frost and aurora |
-| `gruvbox` | Warm retro earth, blue chrome rather than the signature gold |
-| `beacon` | Colour-vision-safe: blue → yellow → rose, neutral chrome |
-| `cobalt` | Royal-blue ground, ice-cyan chrome |
-| `ultraviolet` | Blacklight violet ground, orchid chrome |
-| `deepsea` | Petrol-teal ground, sand → coral severity |
-| `oxblood` | Wine ground, gold chrome, severity on rose |
-| `daylight` | Light, cool paper, azure chrome |
-| `parchment` | Light, warm paper, deep teal chrome |
-| `sorbet` | Light, blush paper, magenta chrome |
-| `marigold` | Light, gold paper, deep teal chrome |
-| `seafoam` | Light, mint paper, emerald chrome |
-| `sky` | Light, azure paper, indigo chrome |
-| `terminal` | Your terminal's own colours, with severity added back |
-| `mono` | No colour at all; the glyph and reverse video carry it |
+Twenty-one of them, from a green-CRT phosphor to a set of light paper
+palettes. `--theme` picks the starting one, `T` cycles them live, and
+`smartview -h` lists the names.
 
 Severity is never colour alone: `●` healthy, `▲` caution, `■` failing, and a
 failing verdict is a filled chip rather than tinted text. That's what keeps
