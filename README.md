@@ -39,7 +39,10 @@ and whether anything has ever failed.
 ### The tabs
 
 Tabs are capability-driven — only the ones backed by real data for the selected
-drive are shown.
+drive are shown. That means a tab's number changes between drives, so if you
+would rather they stayed put, set `show_unavailable_tabs`: all six are then
+always drawn, with the ones this drive cannot fill muted and skipped by
+navigation — their number does nothing and `←` / `→` steps over them.
 
 **Overview** — drive identity (model, serial, firmware, capacity, interface,
 power-on hours) and a live temperature-trend sparkline. ATA drives seed the
@@ -93,8 +96,9 @@ order, and `Enter` opens the highlighted drive's detail view.
 
 ATA and NVMe expose different counters, so a `—` means *this drive does not
 report that reading* — never a zero. A write total shown as `~1.5 TB` was
-derived from vendor attribute 241, whose unit is vendor-defined; the legend
-under each section spells out that section's caveats.
+derived from vendor attribute 241, whose unit is vendor-defined; a drive marked
+`◌` is spun down, so its values are as of the last read rather than current.
+The legend under each section spells out that section's caveats.
 
 ![smartview fleet comparison — every drive ranked by health, ATA and NVMe error counters side by side](docs/images/fleet.png)
 
@@ -170,6 +174,7 @@ go run .
 smartview                    # auto-refresh every 30s (default)
 smartview --interval 10s     # custom starting refresh interval
 smartview --theme phosphor   # start in a named colour theme
+smartview --config ~/sv.toml # use a specific settings file
 smartview --version          # print the version and exit
 sudo smartview               # if attributes require root
 ```
@@ -177,12 +182,135 @@ sudo smartview               # if attributes require root
 The refresh interval can also be changed at runtime with the `+` / `-` keys (see
 below) — `--interval` only sets the starting cadence.
 
-Five colour themes ship: `dark` (the default), `electric`, `phosphor`, `amber`
-and `mono`. `--theme` picks the starting one and `T` cycles them live, in that
-order. `phosphor` is a green-CRT palette in pure green, where severity reads as
-brightness plus the `●` glyph rather than as hue; `amber` is a Hercules
-amber-monitor palette with an amber → orange → red severity ramp; `mono` drops
-colour entirely and leans on the glyph and bold alone.
+### Configuration
+
+smartview reads a TOML settings file, and `S` opens an in-app editor for it.
+
+| Platform | Path |
+| -------- | ---- |
+| Linux    | `~/.config/smartview/config.toml` (honours `$XDG_CONFIG_HOME`) |
+| macOS    | `~/Library/Application Support/smartview/config.toml` |
+
+`--config PATH` overrides the location. Running with no file at all is normal;
+a file you name explicitly must exist. A command-line flag always wins over the
+file, and the file always wins over the built-in default. A malformed file or
+an unknown key stops startup with a message naming the problem, rather than
+being quietly ignored.
+
+```toml
+# Colour theme.
+theme = "dark"
+
+# Auto-refresh cadence, as a Go duration: "2s", "10s", "30s", "1m", "5m".
+refresh_interval = "30s"
+
+# Skip drives that are spun down instead of waking them to be read. The last
+# reading is kept and marked stale. ATA only: NVMe has no standby to check, so
+# this has no effect on an NVMe-only machine.
+standby_aware = false
+
+# Always draw all six detail tabs, muting the ones this drive reports no data
+# for, so a tab keeps the same number and position on every drive.
+show_unavailable_tabs = false
+
+# Which screen to open on: "drives" or "fleet".
+start_view = "drives"
+```
+
+Inside the modal, `↑` / `↓` move between settings and on to Save / Cancel, and
+`⏎` or `→` changes the focused one — a checkbox flips, a chooser opens. With a
+chooser open, `↑` / `↓` move through its values, `⏎` picks one and `←` backs
+out without changing anything. `←` / `→` move between the two buttons, and
+`Esc` closes a chooser if one is open and otherwise cancels. A line under the
+form describes whichever setting you are on, and a `•` marks the ones you have
+edited but not yet saved.
+
+**The Settings modal (`S`) is the only thing that writes this file.** `T` and
+`+` / `-` change the current session and are deliberately *not* persisted, so a
+stray keypress cannot rewrite a file you hand-edited. Use `S` when you want a
+change to stick.
+
+With `standby_aware`, smartview stops spinning idle disks up just to read them.
+A parked drive keeps its last reading, marked `◌` with the age of that reading,
+and `r` respects that — `R` is the one key that wakes a drive and reads it.
+
+Twenty-one colour themes ship. `--theme` picks the starting one and `T` cycles
+them live, in the order below — retro hardware first, then the modern dark
+schemes, then the coloured grounds, then the light set, with the two that
+inherit the terminal's own colours last.
+
+| Theme         | Palette                                                                  |
+| ------------- | ------------------------------------------------------------------------ |
+| `dark`        | The default: aqua chrome, green → yellow → red severity                  |
+| `electric`    | "Elite BBS" azure-cyan and white, amber caution                          |
+| `phosphor`    | Green-CRT, pure green — severity reads as brightness plus its glyph      |
+| `amber`       | Hercules amber monitor, amber → orange → red severity                    |
+| `cga`         | The authentic IBM CGA 16, nothing interpolated                           |
+| `neon`        | Cyberpunk: electric blue chrome, magenta banner and bars, white text     |
+| `nord`        | Arctic blue-grey — frost for chrome, aurora for severity                 |
+| `gruvbox`     | Warm retro earth; chrome takes gruvbox blue, not its signature gold      |
+| `beacon`      | Colour-vision-safe: blue → yellow → rose, neutral chrome                 |
+| `cobalt`      | Royal-blue ground, ice-cyan chrome, rose failing                         |
+| `ultraviolet` | Blacklight violet ground, orchid chrome and bars, lime/amber/red ramp    |
+| `deepsea`     | Petrol-teal ground, aqua chrome, sand → coral severity                   |
+| `oxblood`     | Wine ground, gold chrome, severity moved off red onto rose               |
+| `daylight`    | Light: cool paper, azure chrome, burnt-amber → crimson severity          |
+| `parchment`   | Light: warm paper, deep teal chrome, ochre → brick-red severity          |
+| `sorbet`      | Light: blush paper, magenta chrome                                       |
+| `marigold`    | Light: gold paper, deep teal chrome                                      |
+| `seafoam`     | Light: mint paper, emerald chrome                                        |
+| `sky`         | Light: azure paper, indigo chrome                                        |
+| `terminal`    | Your terminal's own background and text, with severity colour added back |
+| `mono`        | No colour at all — the severity glyph and reverse video carry it alone   |
+
+`beacon` exists because green/red is the pair that collapses under
+deuteranopia, and severity is smartview's core signal; its ramp is Paul Tol's
+high-contrast set, and a test simulates a deuteranope's vision to prove the
+three stay separable.
+
+The four coloured grounds are the same trick from the other end: blue, violet
+and red carry little of the luminance a contrast ratio is measured in, so a
+ground can be plainly a colour and still be dark enough for white text. A dark
+green cannot, which is why there isn't one.
+
+A theme paints its own background, so the six light palettes read the same
+in a dark terminal as in a light one, and they are tuned against that paper
+rather than against whatever the terminal happens to use. Every one of
+them names its colours in RGB for the same reason: a palette that paints a
+ground has to own every foreground on it, or the terminal's own scheme gets a
+vote and the two disagree.
+
+**Over SSH, tell the far end you have 24-bit colour.** The painted palettes are
+spelled in RGB, and tcell only emits RGB escapes when the terminal advertises
+that it understands them — through `COLORTERM`, or a `$TERM` whose terminfo
+carries the capability. `ssh` forwards `TERM` but *not* `COLORTERM`, so a
+palette that looks right locally has every colour snapped to the nearest
+xterm-256 index on the other side: grounds flatten, accents drift, and the
+whole set reads muted. Export it on the remote host:
+
+```sh
+export COLORTERM=truecolor
+```
+
+or forward it from the client — `SetEnv COLORTERM=truecolor` in `~/.ssh/config`,
+with `AcceptEnv COLORTERM` in the server's `sshd_config`. `TCELL_TRUECOLOR=1`
+does the same for smartview alone, and `TCELL_TRUECOLOR=disable` is how to see
+the 256-colour rendering deliberately.
+
+`terminal` and `mono` are the deliberate exceptions. Both take the terminal's
+background and body colour rather than painting their own; `terminal` adds the
+severity vocabulary back as the standard ANSI colours, so ground and foreground
+come from the same scheme and cannot fall out of step, while `mono` sets no
+colour at all. Neither can be held to the contrast floors the painted palettes
+are measured against — that is the trade for fitting into a terminal you have
+already themed yourself.
+
+**Severity is never colour alone.** A drive's health mark is a shape before it
+is a hue — `●` healthy, `▲` caution, `■` failing — and a failing verdict is
+drawn as a filled chip rather than tinted text. Red is darker than yellow on
+any dark ground, so no choice of hues makes the worst state the loudest one;
+area and shape do, and they survive `phosphor`, `amber` and `mono`, which have
+no second hue to spend.
 
 ### Keys
 
@@ -190,16 +318,19 @@ colour entirely and leans on the glyph and bold alone.
 | -------------------------- | ------------------------------------------------------------- |
 | `↑` / `↓`                  | Select a drive (list focus) or scroll content (detail focus)  |
 | `j` / `k`                  | Scroll the focused content line by line                       |
-| `PgUp` / `PgDn`, `Ctrl-B` / `Ctrl-F` | Page the scrollable content                       |
+| `PgUp` / `Ctrl-B`          | Page the scrollable content up                                |
+| `PgDn` / `Ctrl-F`          | Page the scrollable content down                              |
 | `g` / `G`, `Home` / `End`  | Jump to the top / bottom of scrollable content                |
 | `←` / `→`                  | Move between panes and step through detail tabs (no wrap)     |
 | `Tab`                      | Toggle focus between the drive list and the detail pane       |
 | `1`–`9`                    | Switch detail tab by number                                   |
+| Click a tab                | Switch detail tab with the mouse                              |
 | `t`                        | Jump straight to the **Tests** tab                            |
 | `c`                        | Toggle the **Fleet** comparison (all drives side by side)     |
-| `r`                        | Refresh now                                                   |
+| `r` / `R`                  | Refresh now / wake spun-down drives and refresh               |
 | `+` / `-`                  | Slower / faster refresh (2s → 5s → 10s → 30s → 1m → 5m ladder)|
 | `T`                        | Cycle the colour theme                                        |
+| `S`                        | Open Settings (the only key that writes the config file)      |
 | `?`                        | Show every binding in a modal                                 |
 | `s` / `f` (Attributes)     | Cycle the attribute sort / filter                             |
 | `Enter` / `x` (Tests)      | Start the selected self-test / cancel the running test        |
@@ -214,9 +345,15 @@ list on screen for them to scroll. `?` shows the authoritative list: a test
 parses the key handlers for the runes they match, and pins the named keys
 alongside, so a binding cannot go undocumented.
 
-Mouse is partly supported: click a drive in the list, and scroll any pane with
-the wheel. Switching tabs by clicking the tab bar is not implemented — use
-`←` / `→` or `1`–`9`.
+Mouse is supported: click a tab in the detail strip, click a drive in the list,
+and scroll any pane with the wheel. A tab click behaves exactly like `1`–`9` —
+it selects the tab and moves keyboard focus to its body — and the tab bar itself
+never takes focus. A click on a muted (unavailable) pill is declined the same
+way its number is, leaving focus where it was. Below the width the full strip needs, inactive tabs shrink to
+their numbers so every tab stays visible and clickable. The wheel over the tab
+strip does nothing, and neither does a click on chrome that carries no keys (the
+rail, the banner, the hint bar, the fleet's section strip) — it leaves the
+keyboard where it was rather than stranding it.
 
 ### Dev / fixture mode
 

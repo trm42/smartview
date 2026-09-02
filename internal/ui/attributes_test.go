@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rivo/tview"
+
 	"github.com/trm42/smartview/internal/smart"
 )
 
@@ -280,6 +282,34 @@ func TestNVMeKeyColumnIsNeutral(t *testing.T) {
 		fg, _, _ := cell.Style.Decompose()
 		if fg != activeTheme.Neutral {
 			t.Errorf("%s: key colour = %v, want Neutral %v", name, fg, activeTheme.Neutral)
+		}
+	}
+}
+
+// One padding rule for every table cell, header and body alike: padded both
+// sides, except a right-aligned cell, which takes a leading pad only. tview
+// already spaces columns, so a trailing pad pushes a right-aligned value off
+// its own edge -- and across eight fleet columns it costs real width. The
+// Attributes table used to double-pad its right-aligned Reading column while
+// the headers above it and the whole fleet table did not.
+func TestTableCellPaddingIsOneRule(t *testing.T) {
+	for _, c := range []struct {
+		align int
+		want  string
+	}{
+		{tview.AlignLeft, " 42 "},
+		{tview.AlignCenter, " 42 "},
+		{tview.AlignRight, " 42"},
+	} {
+		if got := cellPad("42", c.align); got != c.want {
+			t.Errorf("cellPad(align=%d) = %q, want %q", c.align, got, c.want)
+		}
+		// The header and body cells must agree, or a column's contents sit off
+		// its own heading.
+		hdr := headerCellAligned("42", c.align).Text
+		body := bodyCell("42", activeTheme.Neutral, c.align).Text
+		if hdr != c.want || body != c.want {
+			t.Errorf("align=%d: header %q, body %q, want both %q", c.align, hdr, body, c.want)
 		}
 	}
 }

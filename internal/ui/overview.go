@@ -33,7 +33,7 @@ type overviewView struct {
 func newOverviewView(r *smart.Report, tempHistory []float64) *overviewView {
 	id := newScrollTextView()
 	id.SetDynamicColors(true).SetScrollable(true).SetWrap(false)
-	id.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Drive ")
+	titledBox(id.Box, " Drive ")
 	v := &overviewView{
 		Flex:      tview.NewFlex().SetDirection(tview.FlexRow),
 		identity:  id,
@@ -55,10 +55,8 @@ func (v *overviewView) refresh(r *smart.Report, tempHistory []float64) {
 // relayout rebuilds the tab for a panel width of w: the identity box is sized
 // to its content and the temperature chart takes what is left.
 func (v *overviewView) relayout(w, h int) {
-	row, col := v.identity.GetScrollOffset()
-	text := hangingIndent(identityText(v.rep, w), identityValueCol, w)
-	v.identity.SetText(text)
-	v.identity.ScrollTo(row, col)
+	text := hangingIndent(identityText(v.rep, w), identityWrap, w)
+	v.identity.setTextKeepingScroll(text)
 
 	v.Clear()
 	mid := tview.NewFlex() // horizontal: identity | gauges
@@ -147,6 +145,8 @@ func identityText(r *smart.Report, cols int) string {
 			continue
 		}
 		b.WriteByte('\n')
+		// Accented, not bold like sectionHeader: these are sub-headings inside
+		// the one Drive panel, not top-level sections of their own.
 		fmt.Fprintf(&b, "%s%s[-]\n", accentTag(), sec.title)
 		writeFields(&b, sec.fields, cols)
 	}
@@ -159,6 +159,12 @@ const identityColumnWidth = 40
 
 // identityValueCol is the column values start in: a 14-cell key plus a space.
 const identityValueCol = 15
+
+// identityWrap: the Device row carries a 150-character macOS IOService path,
+// which WordWrap hard-splits when it has no break opportunity — below a
+// nine-cell value column that blows up the line count the panel is sized from,
+// so the text is left alone instead.
+var identityWrap = hangingWrap{valueCol: identityValueCol, minValueW: 9}
 
 // writeFields lays out fields in as many columns as fit; a value too long for
 // a column takes a full row of its own after the paired ones.
@@ -207,8 +213,8 @@ func writeFields(b *strings.Builder, fields []identityField, cols int) {
 // writeVerdict renders the health verdict plus the evidence behind it.
 func writeVerdict(b *strings.Builder, r *smart.Report) {
 	sev := r.Overall()
-	fmt.Fprintf(b, "[%s::b]%s[-:-:-]  %s%s[-]\n",
-		severityTag(sev), verdictWord(sev), mutedTag(), verdictEvidence(r))
+	fmt.Fprintf(b, "%s  %s%s[-]\n",
+		sevVerdict(sev, verdictWord(sev)), mutedTag(), verdictEvidence(r))
 
 	// The raw SMART pass/fail only adds signal on a failure.
 	if !r.SmartStatus.Passed {
@@ -381,36 +387,32 @@ func buildGauges(r *smart.Report) tview.Primitive {
 	}
 	h := r.NVMeHealth
 	col := tview.NewFlex().SetDirection(tview.FlexRow)
-	added := false
-
-	if h.PercentageUsed != nil {
+	// shown and graded are separate: a gauge can read "90% left" while being
+	// coloured by the 10% consumed behind it.
+	addGauge := func(title string, shown int, graded smart.Severity) {
 		g := tvxwidgets.NewPercentageModeGauge()
-		// Endurance remaining, not consumed: the fleet's endurance bar drains as
-		// the drive wears, and two surfaces showing the same reading with
-		// opposite polarity read as a contradiction.
-		g.SetTitle(" Life left ")
+		g.SetTitle(title)
 		g.SetBorder(true)
 		g.SetMaxValue(100)
-		g.SetValue(100 - clampPct(*h.PercentageUsed))
-		// Colour by the value itself, not the drive-wide verdict.
-		g.SetPgBgColor(severityColor(lifeUsedSeverity(*h.PercentageUsed)))
+		g.SetValue(clampPct(shown))
+		g.SetPgBgColor(severityColor(graded))
 		col.AddItem(g, 3, 0, false)
-		added = true
+	}
+
+	if h.PercentageUsed != nil {
+		// Endurance remaining, not consumed: the fleet's endurance bar drains as
+		// the drive wears, and two surfaces showing the same reading with
+		// opposite polarity read as a contradiction. Colour comes from the value
+		// itself, not the drive-wide verdict.
+		addGauge(" Life left ", 100-clampPct(*h.PercentageUsed), lifeUsedSeverity(*h.PercentageUsed))
 	}
 	if h.AvailableSpare != nil {
 		// SparePercent resolves both the reading and the threshold it is graded
 		// against; re-deriving either here is how the two surfaces drift apart.
 		pct, thr, _ := r.SparePercent()
-		g := tvxwidgets.NewPercentageModeGauge()
-		g.SetTitle(" Spare avail ")
-		g.SetBorder(true)
-		g.SetMaxValue(100)
-		g.SetValue(clampPct(pct))
-		g.SetPgBgColor(severityColor(spareSeverityPct(pct, thr)))
-		col.AddItem(g, 3, 0, false)
-		added = true
+		addGauge(" Spare avail ", pct, spareSeverityPct(pct, thr))
 	}
-	if !added {
+	if col.GetItemCount() == 0 {
 		return nil
 	}
 	return col
@@ -451,10 +453,17 @@ func buildTempSparkline(r *smart.Report, runtime []float64) tview.Primitive {
 	now := int(data[len(data)-1])
 	lo, hi, _ := dataRange(data)
 
+	// Colour by the current temperature, not the drive-wide verdict, and only
+	// once it leaves the band: a filled area painted OK green would make every
+	// healthy drive's Overview a wall of green (same rule as the FARM bars).
+	color := activeTheme.BarHealthy
+	if sev := tempSeverity(now); sev != smart.SeverityOK {
+		color = severityColor(sev)
+	}
+
 	c := newRangeChart().
 		setSeries(data, "°C", fmt.Sprintf("%d samples · oldest left, now right", len(data))).
-		// Colour by the current temperature, not the drive-wide verdict.
-		setColor(severityColor(tempSeverity(now)))
+		setColor(color)
 	c.SetBorder(true)
 	c.SetTitle(fmt.Sprintf(" Temperature — now %d°C · range %.0f–%.0f°C ", now, lo, hi))
 	return c
@@ -473,9 +482,4 @@ func temperatureSeries(r *smart.Report, runtime []float64) []float64 {
 		return out
 	}
 	return runtime
-}
-
-// clampPct bounds a percentage into the gauge's 0..100 range.
-func clampPct(v int) int {
-	return min(max(v, 0), 100)
 }

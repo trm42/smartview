@@ -5,6 +5,7 @@ package ui
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -34,10 +35,10 @@ type farmView struct {
 func newFarmView(r *smart.Report) *farmView {
 	box := func(title string) *tview.TextView {
 		tv := tview.NewTextView().SetDynamicColors(true)
-		// Wrapping is pre-computed (hangingIndentValues); tview's own wrap
+		// Wrapping is pre-computed (hangingIndent); tview's own wrap
 		// would re-break the text back to the left margin.
 		tv.SetWrap(false)
-		tv.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(title)
+		titledBox(tv.Box, title)
 		return tv
 	}
 	v := &farmView{
@@ -59,43 +60,6 @@ func (v *farmView) setFocused(focused bool) {
 	v.errors.SetBorderColor(c)
 	v.env.SetBorderColor(c)
 	v.workload.SetBorderColor(c)
-}
-
-// hangingIndentValues rewraps each farmRow line so an over-long value hangs
-// under the value column. Unchanged when innerW leaves no room for values.
-func hangingIndentValues(text string, innerW int) string {
-	const valueCol = 21 // 20-char %-20s label + one space, per farmRow
-	valueW := innerW - valueCol
-	if valueW <= 0 {
-		return text
-	}
-	const marker = "[-:-:-] "
-	indent := strings.Repeat(" ", valueCol)
-
-	var out strings.Builder
-	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
-	for i, line := range lines {
-		if i > 0 {
-			out.WriteByte('\n')
-		}
-		prefix, value, found := strings.Cut(line, marker)
-		if !found {
-			out.WriteString(line)
-			continue
-		}
-		prefix += marker
-		wrapped := tview.WordWrap(value, valueW)
-		if len(wrapped) == 0 {
-			out.WriteString(prefix)
-			continue
-		}
-		out.WriteString(prefix + wrapped[0])
-		for _, cont := range wrapped[1:] {
-			out.WriteByte('\n')
-			out.WriteString(indent + cont)
-		}
-	}
-	return out.String()
 }
 
 // refresh captures the box text and rebuilds the charts, deferring the grid
@@ -138,20 +102,27 @@ func (v *farmView) Draw(screen tcell.Screen) {
 	v.scrollView.Draw(screen)
 }
 
-// relayout builds the 2×2 grid above the charts for the given width and hands
-// the whole layout to the scroll container at its total height, so the bottom
-// charts stay reachable on a short terminal. Inner items are non-focusable —
-// focus stays on the scrollView.
+// relayout builds the boxes above the charts for the given width and hands the
+// whole layout to the scroll container at its total height, so the bottom
+// charts stay reachable on a short terminal. The four boxes pair into a 2×2
+// grid when the width affords it and stack into one column when it does not.
+// Inner items are non-focusable — focus stays on the scrollView.
 func (v *farmView) relayout(width int) {
 	leftW := width / 2
-	rightW := width - leftW
-	leftInner := leftW - 2 - 2*uiGutter // outer width minus borders and gutters
-	rightInner := rightW - 2 - 2*uiGutter
+	leftInner, rightInner := boxInner(leftW), boxInner(width-leftW)
 
-	topRowH, bottomRowH := v.wrapBoxes(leftInner, rightInner)
-	grid := buildFarmGrid(v.drive, v.env, v.errors, v.workload, topRowH, bottomRowH)
+	var grid tview.Primitive
+	var gridHeight int
+	if min(leftInner, rightInner) < farmColumnMin {
+		// Too narrow to pair: one full-width column gives every row back the
+		// space to stay on one line, which beats two columns of shredded values.
+		grid, gridHeight = v.stackBoxes(boxInner(width))
+	} else {
+		topRowH, bottomRowH := v.wrapBoxes(leftInner, rightInner)
+		grid = buildFarmGrid(v.drive, v.env, v.errors, v.workload, topRowH, bottomRowH)
+		gridHeight = topRowH + bottomRowH
+	}
 
-	gridHeight := topRowH + bottomRowH
 	outer := tview.NewFlex().SetDirection(tview.FlexRow)
 	outer.AddItem(grid, gridHeight, 0, false)
 	total := gridHeight
@@ -174,26 +145,57 @@ const farmChartHeight = 9
 // a bordered line, not a plot.
 const farmSummaryHeight = 3
 
-// wrapBoxes pre-wraps each box's text for its column width, sets the boxes,
-// and returns the shared top/bottom row heights (paired boxes grow to a
-// common height so the columns end level).
-func (v *farmView) wrapBoxes(leftInner, rightInner int) (topRowH, bottomRowH int) {
-	driveText := hangingIndentValues(v.driveText, leftInner)
-	envText := hangingIndentValues(v.envText, leftInner)
-	errorsText := hangingIndentValues(v.errorsText, rightInner)
-	workloadText := hangingIndentValues(v.workloadText, rightInner)
-	v.drive.SetText(driveText)
-	v.env.SetText(envText)
-	v.errors.SetText(errorsText)
-	v.workload.SetText(workloadText)
+// boxInner is the text width left inside a box of the given outer width, once
+// its border and gutters are taken.
+func boxInner(outerW int) int { return outerW - 2 - 2*uiGutter }
 
-	// Height is just the pre-wrapped line count plus the two borders.
-	boxHeight := func(text string) int {
-		return strings.Count(strings.TrimRight(text, "\n"), "\n") + 1 + 2
+// wrapBox pre-wraps one box's text for an inner width, sets it, and returns
+// the height the box needs: the wrapped line count plus its two borders.
+func (v *farmView) wrapBox(tv *tview.TextView, text string, innerW int) int {
+	wrapped := hangingIndent(text, farmWrap, innerW)
+	tv.SetText(wrapped)
+	return strings.Count(strings.TrimRight(wrapped, "\n"), "\n") + 1 + 2
+}
+
+// farmBoxes lists the four boxes in reading order: the grid's top row, then
+// its bottom row, so a stacked column presents them in the same sequence.
+func (v *farmView) farmBoxes() []struct {
+	tv   *tview.TextView
+	text string
+} {
+	return []struct {
+		tv   *tview.TextView
+		text string
+	}{
+		{v.drive, v.driveText},
+		{v.errors, v.errorsText},
+		{v.env, v.envText},
+		{v.workload, v.workloadText},
 	}
-	topRowH = max(boxHeight(driveText), boxHeight(errorsText))
-	bottomRowH = max(boxHeight(envText), boxHeight(workloadText))
-	return topRowH, bottomRowH
+}
+
+// wrapBoxes pre-wraps each box for its column width and returns the shared
+// top/bottom row heights (paired boxes grow to a common height so the columns
+// end level).
+func (v *farmView) wrapBoxes(leftInner, rightInner int) (topRowH, bottomRowH int) {
+	driveH := v.wrapBox(v.drive, v.driveText, leftInner)
+	errorsH := v.wrapBox(v.errors, v.errorsText, rightInner)
+	envH := v.wrapBox(v.env, v.envText, leftInner)
+	workloadH := v.wrapBox(v.workload, v.workloadText, rightInner)
+	return max(driveH, errorsH), max(envH, workloadH)
+}
+
+// stackBoxes lays the four boxes out in one full-width column, for a width too
+// narrow to pair them. Each keeps its own height; nothing is dropped.
+func (v *farmView) stackBoxes(innerW int) (tview.Primitive, int) {
+	col := tview.NewFlex().SetDirection(tview.FlexRow)
+	total := 0
+	for _, b := range v.farmBoxes() {
+		h := v.wrapBox(b.tv, b.text, innerW)
+		col.AddItem(b.tv, h, 0, false)
+		total += h
+	}
+	return col, total
 }
 
 // buildFarmGrid arranges the four boxes into the 2×2 grid: drive over env,
@@ -275,16 +277,39 @@ func writeFarmWorkload(b *strings.Builder, f *smart.FARM) {
 	farmRow(b, "Data written", humanBytes(w.LogicalSectorsWrite*sectorBytes))
 }
 
+// farmLabelWidth is the label field every farmRow pads to; farmValueCol is the
+// display column values therefore start in. hangingIndent cuts each line at
+// that column, so a label wider than the field would push the value past the
+// cut and the wrap would land inside the label —
+// TestFarmValuesStartAtTheValueColumn pins that none does.
+const (
+	farmLabelWidth = 20
+	farmValueCol   = farmLabelWidth + 1
+)
+
+// farmColumnMin is the narrowest inner width a *paired* box stays readable in:
+// the value column plus 13 cells, room for a whole reading like "12.29V now".
+// Rows already wrap above this floor — the widest the fixture renders is 49
+// cells, so a grid that never wrapped would need ~106 columns of terminal —
+// so what the floor protects is the reading itself, which 13 cells still hold
+// intact and 12 start slicing apart.
+const farmColumnMin = farmValueCol + 13
+
+// farmWrap: every value here is a short number or reading, so it stays worth
+// wrapping down to a one-cell column. Clipping instead would drop digits off a
+// counter, and a truncated number still reads as a number.
+var farmWrap = hangingWrap{valueCol: farmValueCol, minValueW: 1}
+
 // farmRow writes an aligned key/value line.
 func farmRow(b *strings.Builder, k, v string) {
-	fmt.Fprintf(b, "[::b]%-20s[-:-:-] %s\n", k, v)
+	fmt.Fprintf(b, "[::b]%-*s[-:-:-] %s\n", farmLabelWidth, k, v)
 }
 
 // farmCount writes a counter line, tinting by severity only when non-zero.
 func farmCount(b *strings.Builder, k string, v int64, sevWhenSet smart.Severity) {
 	val := fmt.Sprintf("%d", v)
 	if v > 0 {
-		val = fmt.Sprintf("[%s]%d[-]", severityTag(sevWhenSet), v)
+		val = sevText(sevWhenSet, fmt.Sprintf("%d", v))
 	}
 	farmRow(b, k, val)
 }
@@ -319,34 +344,50 @@ func farmHeadChart(title string, data []int, health bool) tview.Primitive {
 	}
 
 	c := newRangeChart().
-		setBars(vals, farmHeadPitch, "", farmHeadAxis(len(data))).
+		setBars(vals, farmHeadPitch, "", farmHeadAxis).
 		setColor(color)
 	c.SetBorder(true)
 	c.SetTitle(fmt.Sprintf("%s— %d–%d ", title, slices.Min(data), worst))
 	return c
 }
 
-// farmHeadPitch is the per-head bar pitch: one cell of bar, one of gap.
+// farmHeadPitch is the widest per-head bar pitch: one cell of bar, one of gap.
+// rangeChart narrows it toward 1 when the plot is too tight to seat every head.
 const farmHeadPitch = 2
 
 // farmHeadSummary states an all-zero fault chart's healthy answer in one line.
 func farmHeadSummary(title string, heads int) tview.Primitive {
 	tv := tview.NewTextView().SetDynamicColors(true)
-	tv.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(title)
+	titledBox(tv.Box, title)
 	tv.SetText(fmt.Sprintf("none on any of %d heads", heads))
 	return tv
 }
 
-// farmHeadAxis labels head indices under the bars; past ten heads two-digit
-// indices no longer fit the pitch, so every other one is labelled.
-func farmHeadAxis(heads int) string {
-	step := 1
-	if heads > 10 {
-		step = 2
+// farmHeadAxis labels head indices under the bars, naming the first head of
+// each bar (group heads share one when the plot is too tight for one apiece).
+// The pitch is chosen at draw time, so the label step is too: label every
+// step-th bar, where step is the fewest bars whose combined cells hold an
+// index plus a separating space.
+func farmHeadAxis(pitch, group, heads, width int) string {
+	if heads <= 0 || pitch <= 0 || group <= 0 || width <= 0 {
+		return ""
 	}
+	bars := (heads + group - 1) / group
+	labelW := len(strconv.Itoa((bars - 1) * group))
+	step := 1
+	for step*pitch < labelW+1 {
+		step++
+	}
+	// Stop at the last index that fits whole: cutting the finished strip to
+	// width would slice a multi-digit index and leave a digit that reads as a
+	// different head. Indices are ASCII, so b.Len() is also the column.
 	var b strings.Builder
-	for i := 0; i < heads; i += step {
-		fmt.Fprintf(&b, "%-*d", farmHeadPitch*step, i)
+	for i := 0; i < bars; i += step {
+		lbl := strconv.Itoa(i * group)
+		if b.Len()+len(lbl) > width {
+			break
+		}
+		fmt.Fprintf(&b, "%-*s", pitch*step, lbl)
 	}
 	return strings.TrimRight(b.String(), " ")
 }

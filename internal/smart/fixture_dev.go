@@ -78,9 +78,7 @@ func UseFixtures(dir string) error {
 			probe.ModelName == "" &&
 			probe.ATAAttributes == nil
 		if farmOnly {
-			var wrapper struct {
-				FARM *FARM `json:"seagate_farm_log"`
-			}
+			var wrapper farmWrapper
 			if err := json.Unmarshal(data, &wrapper); err != nil {
 				return fmt.Errorf("parse FARM fixture %s: %w", f, err)
 			}
@@ -162,12 +160,4 @@ func fixtureFarm(name string) (*FARM, error) {
 	}
 
 	return supportedFarm(fixtureFarms[0].farm), nil
-}
-
-// supportedFarm returns f only when present and Supported.
-func supportedFarm(f *FARM) *FARM {
-	if f == nil || !f.Supported {
-		return nil
-	}
-	return f
 }

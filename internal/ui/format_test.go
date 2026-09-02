@@ -88,7 +88,7 @@ func TestCapacity(t *testing.T) {
 	}
 	total := int64(2_000_398_934_016)
 	fallback := &smart.Report{NVMeTotalCapacity: &total}
-	if b, ok := capacityBytes(fallback); !ok || b != total {
+	if b, ok := fallback.CapacityBytes(); !ok || b != total {
 		t.Errorf("nvme fallback = %d,%v", b, ok)
 	}
 	if got := capacityString(&smart.Report{}); got != dash {
@@ -96,12 +96,12 @@ func TestCapacity(t *testing.T) {
 	}
 }
 
-func TestTempString(t *testing.T) {
+func TestTempCell(t *testing.T) {
 	c := 37
-	if got := tempString(&smart.Report{Temperature: &smart.Temperature{Current: &c}}); got != "37°C" {
+	if got := tempCell(&smart.Report{Temperature: &smart.Temperature{Current: &c}}); got != "37°C" {
 		t.Errorf("temp = %q", got)
 	}
-	if got := tempString(&smart.Report{}); got != dash {
+	if got := tempCell(&smart.Report{}); got != dash {
 		t.Errorf("no temp = %q, want dash", got)
 	}
 }
@@ -129,15 +129,27 @@ func TestDriveKind(t *testing.T) {
 	}
 }
 
+// TestAttrTextColor pins "colour marks exceptions" for attribute rows: a
+// healthy row takes the body colour and only a row needing attention is tinted.
+// Asserted against the roles, not literals, so it holds in every theme.
 func TestAttrTextColor(t *testing.T) {
-	if attrTextColor(smart.SeverityOK) != tcell.ColorDefault {
-		t.Error("OK should be neutral (default)")
+	cases := []struct {
+		sev  smart.Severity
+		role string
+		want tcell.Color
+	}{
+		{smart.SeverityOK, "Neutral", activeTheme.Neutral},
+		{smart.SeverityCaution, "Caution", activeTheme.Caution},
+		{smart.SeverityFailing, "Failing", activeTheme.Failing},
 	}
-	if attrTextColor(smart.SeverityCaution) != tcell.ColorYellow {
-		t.Error("caution should be yellow")
+	for _, c := range cases {
+		if got := attrTextColor(c.sev); got != c.want {
+			t.Errorf("attrTextColor(%v) = %v, want %s (%v)", c.sev, got, c.role, c.want)
+		}
 	}
-	if attrTextColor(smart.SeverityFailing) != tcell.ColorRed {
-		t.Error("failing should be red")
+	if attrTextColor(smart.SeverityOK) == attrTextColor(smart.SeverityCaution) ||
+		attrTextColor(smart.SeverityOK) == attrTextColor(smart.SeverityFailing) {
+		t.Error("a healthy row is tinted the same as one needing attention")
 	}
 }
 
@@ -220,7 +232,7 @@ func TestHangingIndentSplitsOnDisplayColumns(t *testing.T) {
 	t.Run("ioservice path", func(t *testing.T) {
 		const path = "IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@9600000/" +
 			"AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1"
-		got := hangingIndent(key+path, valueCol, 60)
+		got := hangingIndent(key+path, hangingWrap{valueCol: valueCol, minValueW: 9}, 60)
 		lines := strings.Split(got, "\n")
 		if len(lines) < 3 {
 			t.Fatalf("a 150-character path should wrap, got:\n%s", got)
@@ -246,7 +258,7 @@ func TestHangingIndentSplitsOnDisplayColumns(t *testing.T) {
 
 	t.Run("colour tags survive", func(t *testing.T) {
 		value := "193.6 TB " + cautionTag() + "(378186418521 sectors, checked twice)[-]"
-		got := hangingIndent(key+value, valueCol, 50)
+		got := hangingIndent(key+value, hangingWrap{valueCol: valueCol, minValueW: 9}, 50)
 		if !strings.Contains(got, cautionTag()) || !strings.Contains(got, "[-]") {
 			t.Errorf("a colour tag was mangled by the re-wrap:\n%s", got)
 		}
@@ -264,7 +276,7 @@ func TestHangingIndentSplitsOnDisplayColumns(t *testing.T) {
 
 	t.Run("multi-byte runes", func(t *testing.T) {
 		value := strings.Repeat("温度", 12) + " 37°C"
-		got := hangingIndent(key+value, valueCol, 40)
+		got := hangingIndent(key+value, hangingWrap{valueCol: valueCol, minValueW: 9}, 40)
 		if !strings.Contains(got, "37°C") {
 			t.Errorf("multi-byte tail was lost:\n%s", got)
 		}
@@ -286,7 +298,7 @@ func TestHangingIndentSplitsOnDisplayColumns(t *testing.T) {
 			"",
 			key + "one\n" + key + "two",
 		} {
-			if got := hangingIndent(line, valueCol, 120); got != line {
+			if got := hangingIndent(line, hangingWrap{valueCol: valueCol, minValueW: 9}, 120); got != line {
 				t.Errorf("a line that fits was rewritten:\n%q\n%q", line, got)
 			}
 		}
@@ -327,7 +339,7 @@ func TestHangingIndentBreaksLongTokens(t *testing.T) {
 	const path = "IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@9600000/" +
 		"AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1"
 	line := "Device         " + path
-	got := hangingIndent(line, 15, 40)
+	got := hangingIndent(line, hangingWrap{valueCol: 15, minValueW: 9}, 40)
 	lines := strings.Split(got, "\n")
 	if len(lines) < 4 {
 		t.Fatalf("a 150-character token should break across lines, got %d:\n%s", len(lines), got)

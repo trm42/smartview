@@ -27,7 +27,7 @@ type logsView struct {
 func newLogsView(r *smart.Report) *logsView {
 	v := &logsView{newScrollTextView()}
 	v.SetDynamicColors(true).SetScrollable(true)
-	v.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Logs ")
+	titledBox(v.Box, " Logs ")
 	v.refresh(r, nil)
 	return v
 }
@@ -39,9 +39,7 @@ func (v *logsView) setFocused(focused bool) {
 
 // refresh re-renders the log text, restoring the prior scroll offset.
 func (v *logsView) refresh(r *smart.Report, _ []float64) {
-	row, col := v.GetScrollOffset()
-	v.SetText(buildLogsText(r))
-	v.ScrollTo(row, col)
+	v.setTextKeepingScroll(buildLogsText(r))
 }
 
 // buildLogsText assembles the Logs tab body.
@@ -66,7 +64,7 @@ func buildLogsText(r *smart.Report) string {
 
 // writeSCTErc renders the SCT Error Recovery Control (TLER/ERC) time limits.
 func writeSCTErc(b *strings.Builder, e *smart.ATASCTErc) {
-	fmt.Fprintln(b, "[::b]SCT Error Recovery Control (TLER)[-:-:-]")
+	sectionHeader(b, "SCT Error Recovery Control (TLER)")
 	fmt.Fprintf(b, nestIndent+"%-6s %s\n", "Read", ercTimerString(e.Read))
 	fmt.Fprintf(b, nestIndent+"%-6s %s\n", "Write", ercTimerString(e.Write))
 }
@@ -91,7 +89,7 @@ func selfTestDurations(r *smart.Report) string {
 
 // writePhyCounters summarises the SATA PHY event counters.
 func writePhyCounters(b *strings.Builder, e *smart.SATAPhyEvents) {
-	fmt.Fprintln(b, "[::b]SATA link health[-:-:-]")
+	sectionHeader(b, "SATA link health")
 	nonzero := 0
 	for _, c := range e.Table {
 		if c.Value == 0 {
@@ -126,7 +124,7 @@ func phyCounterConcerning(name string) bool {
 // writeErrorLog summarises the drive's logged command errors with the most
 // recent decoded entries.
 func writeErrorLog(b *strings.Builder, r *smart.Report) {
-	fmt.Fprintln(b, "[::b]Error log[-:-:-]")
+	sectionHeader(b, "Error log")
 	switch {
 	case r.NVMeErrorLog != nil:
 		writeNVMeErrorCount(b, r.NVMeErrorLog)
@@ -163,36 +161,45 @@ func writeNVMeErrorCount(b *strings.Builder, l *smart.NVMeErrorLog) {
 // maxErrorEntries caps the decoded entries listed, newest first.
 const maxErrorEntries = 8
 
-// writeNVMeErrorEntries lists decoded NVMe error-log entries (newest first).
-func writeNVMeErrorEntries(b *strings.Builder, table []smart.NVMeErrorLogEntry) {
+// writeCapped writes at most maxErrorEntries rows of table via line, then says
+// how many it withheld. The cap and its "… N more" note are the same for ATA
+// and NVMe; only the row differs.
+func writeCapped[T any](b *strings.Builder, table []T, line func(T) string) {
 	for i, e := range table {
 		if i >= maxErrorEntries {
 			fmt.Fprintf(b, nestIndent+mutedTag()+"… %d more[-]\n", len(table)-maxErrorEntries)
-			break
+			return
 		}
+		b.WriteString(line(e))
+	}
+}
+
+// writeNVMeErrorEntries lists decoded NVMe error-log entries (newest first).
+func writeNVMeErrorEntries(b *strings.Builder, table []smart.NVMeErrorLogEntry) {
+	writeCapped(b, table, func(e smart.NVMeErrorLogEntry) string {
 		status := e.StatusField.String
 		if status == "" {
 			status = fmt.Sprintf("0x%x", e.StatusField.Value)
 		}
-		fmt.Fprintf(b, nestIndent+cautionTag()+"#%d[-] %s %s(cmd %d)[-]\n", e.ErrorCount, colorResult(status), mutedTag(), e.CommandID)
-	}
+		// colorResult, not a bare escape: the status is the decoded outcome and
+		// a failing one has to read as one. It carries its own colour, so the
+		// entry number keeps the caution tag and the status closes it.
+		return fmt.Sprintf(nestIndent+cautionTag()+"#%d[-] %s %s(cmd %d)[-]\n",
+			e.ErrorCount, colorResult(status), mutedTag(), e.CommandID)
+	})
 }
 
 // writeATAErrorEntries lists decoded ATA error-log entries (newest first)
 // with the lifetime hour each occurred at.
 func writeATAErrorEntries(b *strings.Builder, r *smart.Report, table []smart.ATAErrorLogEntry) {
-	for i, e := range table {
-		if i >= maxErrorEntries {
-			fmt.Fprintf(b, nestIndent+mutedTag()+"… %d more[-]\n", len(table)-maxErrorEntries)
-			break
-		}
+	writeCapped(b, table, func(e smart.ATAErrorLogEntry) string {
 		desc := esc(tidyErrorDescription(e.ErrorDescription))
 		if e.ErrorDescription == "" {
 			desc = fmt.Sprintf("error %d", e.ErrorNumber)
 		}
-		fmt.Fprintf(b, nestIndent+cautionTag()+"#%d[-] %s %s%s[-]\n",
+		return fmt.Sprintf(nestIndent+cautionTag()+"#%d %s[-] %s%s[-]\n",
 			e.ErrorNumber, desc, mutedTag(), driveAge(r, e.LifetimeHours))
-	}
+	})
 }
 
 // driveAge renders the drive's age at an event and how long ago it was; the
@@ -246,7 +253,9 @@ func writeSelfTestSummary(b *strings.Builder, r *smart.Report, tbl []smart.ATASe
 			failed++
 		}
 	}
-	verdict := okTag() + "all passed[-]"
+	// Muted for the same reason as the rows below it: the interesting summary
+	// is the failure count, and that one keeps its colour.
+	verdict := mutedTag() + "all passed[-]"
 	if failed > 0 {
 		verdict = fmt.Sprintf("%s%s failed[-]", failingTag(), plural(failed, "run", "runs"))
 	}
@@ -257,7 +266,7 @@ func writeSelfTestSummary(b *strings.Builder, r *smart.Report, tbl []smart.ATASe
 
 // writeSelfTestLog renders the self-test history for either protocol.
 func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
-	fmt.Fprintln(b, "[::b]Self-test history[-:-:-]")
+	sectionHeader(b, "Self-test history")
 	switch {
 	case r.NVMeSelfTestLog != nil:
 		if op := r.NVMeSelfTestLog.CurrentSelfTestOperation; op != nil && op.String != "" {
@@ -307,23 +316,20 @@ func selfTestPassed(s string) bool {
 
 // colorResult tints a self-test outcome by keyword; the test runs on the
 // original but the rendered copy is markup-escaped (drive-controlled string).
+// A pass takes the MUTED voice, not OK green: a drive with a long history
+// renders one row per run, and colouring every one of them green made the
+// passing runs the loudest thing on a tab whose actual errors sit above them
+// uncoloured. Colour marks exceptions, and the summary line already states
+// the verdict for the whole table.
 func colorResult(s string) string {
 	low := strings.ToLower(s)
 	switch {
 	case selfTestPassed(s):
-		return okTag() + esc(s) + "[-]"
+		return mutedTag() + esc(s) + "[-]"
 	case strings.Contains(low, "fail"), strings.Contains(low, "error"),
 		strings.Contains(low, "aborted"), strings.Contains(low, "interrupted"):
 		return failingTag() + esc(s) + "[-]"
 	default:
 		return esc(s)
 	}
-}
-
-// plural renders a count with the right noun.
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return fmt.Sprintf("%d %s", n, one)
-	}
-	return fmt.Sprintf("%d %s", n, many)
 }

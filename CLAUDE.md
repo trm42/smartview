@@ -21,6 +21,7 @@ does. Long rationale belongs in this file's bullets, not inline.
 go build -o smartview .        # build
 go run .                       # run (refresh defaults to 30s; --interval 10s sets the
                                # starting cadence, runtime +/- keys adjust it live)
+go run . --config ./my.toml    # settings file (default: os.UserConfigDir()/smartview/)
 go test ./...                  # all tests
 go test ./internal/smart/ -run TestParseNVMe   # single test
 go vet ./... && gofmt -l .     # vet + format check (gofmt -l should print nothing)
@@ -49,6 +50,10 @@ This is the canonical way to verify UI changes without the drives attached. The
 committed fixtures are real `smartctl -j -x` captures from the SATA hardware
 this project is developed against, so a fixture run exercises what those drives
 actually report — it is not a synthetic stand-in.
+`smart-sdd-standby.json` is the envelope a parked drive produces, so the
+standby UI is drivable here even though `-n` never runs in fixture mode; the
+limitation is that the drive is asleep regardless of the policy and `R` cannot
+wake it.
 `--fixtures DIR` loads every `*.json` in DIR as drive data — the committed
 `internal/smart/testdata/` fixtures cover ATA, NVMe, sparse Apple NVMe, and a
 Seagate FARM log. Fixture mode **bypasses the smartctl preflight** entirely, so
@@ -65,11 +70,126 @@ hint (`rebuild with: go build -tags dev`).
 
 ## Architecture
 
-Two packages with a hard one-way boundary: **`internal/smart` is the data layer
-and has no tview dependency**; **`internal/ui` is the presentation layer**.
-`main.go` wires flags + a smartctl preflight and starts the UI. The UI has two
-top-level screens — the per-drive view (drive list + tabbed detail) and the
-fleet comparison — swapped by `App.bodyPages`.
+Three packages with a hard one-way boundary:
+
+```
+internal/config   <- imports nothing of ours (stdlib + BurntSushi/toml)
+internal/smart    <- no internal imports, no tview   (the data layer)
+internal/ui       -> internal/smart, internal/config (the presentation layer)
+main              -> all three
+```
+
+**`internal/smart` never learns that a config file exists.** The one setting it
+acts on, standby awareness, arrives as a call parameter (`smart.SkipStandby`),
+exactly as `interval` already reaches `pollLoop` rather than via a global. The
+UI never touches the filesystem either: `ui.New` takes a `save func` that main
+supplies and tests replace with a recorder.
+
+`main.go` wires flags + config + a smartctl preflight and starts the UI. That preflight
+is `smart.Preflight`: smartctl on PATH *and* smartmontools >= 7.0, run under a
+short deadline and the signal context so a wedged binary cannot hang startup
+and Ctrl-C still works. A missing binary comes back as `smart.ErrNoSmartctl`
+and one below the floor as `smart.ErrOldSmartctl`, rather than messages to
+match on, because which package manager to name is main's knowledge, not the
+data layer's; `main` prints neither the raw `context.Canceled` (a quiet exit
+130) nor `DeadlineExceeded` (the timeout, named). Note the floor cannot be read
+off a version alone: the probe is `smartctl -j -V` and `-j` **is** what 7.0
+added, so a build old enough to fail rejects the flag instead of stating a
+version — a failed probe is therefore the verdict, and the branch that compares
+versions covers only hypothetical builds. Fixture mode makes it a no-op. The UI
+has two top-level screens — the per-drive view (drive list + tabbed detail)
+and the fleet comparison — swapped by `App.bodyPages`.
+
+`App` itself is spread over four files by topic: `app.go` (the struct, `build`,
+`Run`, layout, chrome, `repaintAll`), `keys.go` (key dispatch and the
+navigation it drives), `modals.go` (the overlay stack and its consumers) and
+`selftest.go` (the App's only smartctl-action path). The `App` receiver is
+shared across all four, so a method moves between them freely.
+
+### Configuration
+
+`internal/config` is a TOML file at `os.UserConfigDir()/smartview/config.toml`,
+overridable with `--config PATH`. Five settings: `theme`, `refresh_interval`,
+`standby_aware`, `show_unavailable_tabs`, `start_view`.
+
+- **Precedence is flag > file > default, resolved with `flag.Visit`.** A flag
+  sitting at its default is indistinguishable from an absent one by value, so
+  layering the flag vars unconditionally would let flag defaults silently
+  shadow the file. Only flags the user actually typed become `config.Overrides`.
+  `Load` likewise starts from `Default()` and decodes over it, so an omitted
+  *key* keeps its default instead of becoming a zero value.
+- **A bad file refuses startup**, naming every unknown key at once (that is why
+  BurntSushi/toml: `MetaData.Undecoded()` returns them all, where pelletier
+  stops at the first). Config load runs *before* the preflight so a typo is
+  reported at once rather than after a 5s smartctl timeout. `config.Load`
+  requires the file; `config.LoadIfPresent` tolerates a missing one — a path the
+  user named is a typo, a missing default path is the normal no-config case.
+- **`Validate` rejects an interval below one second.** `poll.go` hands the
+  interval straight to `time.NewTicker`, which *panics* on a non-positive
+  duration, so `refresh_interval = "0s"` would kill the poll goroutine on its
+  first tick. This is a guard, not a style choice.
+- **Which themes exist is main's knowledge**, so `Validate` returns
+  `config.ErrUnknownTheme` and `main` attaches the list — the same split as
+  `smart.ErrNoSmartctl`. Attaching it unconditionally put a twelve-theme list on
+  the end of an out-of-range interval error.
+- **`Save` renders a commented template, not `toml.Encoder`**, which emits no
+  comments and would strip the header off a hand-written file on the first save
+  from the modal. Every interpolated value is a bool or validated against a
+  closed set, so the output cannot be invalid TOML. The write is temp+rename.
+- **The Settings modal is a list, not a tview Form's default.** `↑`/`↓` move
+  between settings (clamped, the rule `stepTab` follows) and `⏎`/`→` activate
+  the focused one — a checkbox toggles, a chooser opens. Three tview facts make
+  this fiddlier than it looks: **`Form.Focus` delegates to the child item**, so
+  a capture on the Form is never in the key chain and the captures must be
+  per-item; a **closed `DropDown` opens on `↑`/`↓`/Home/End/PgUp/PgDn**, which
+  would otherwise swallow row navigation on the first keypress; and
+  **`NewForm()` defaults to `SetBorderPadding(1, 1, 1, 1)`**, so moving the
+  border onto a wrapper silently pushed the button row outside the form's clip
+  and the buttons vanished. `SetLabel` is not on the `FormItem` interface (each
+  widget returns its own type), so relabelling type-switches; `SetInputCapture`
+  and `SetFocusFunc` *are* promoted from the embedded `Box`, so one interface
+  covers both widgets. **An open chooser owns the arrows, and the capture has to
+  step aside for it.** `DropDown.InputHandler` handles `↑`/`↓` *itself* and
+  forwards them to its list, so tview delivers them to the DropDown even
+  though the list holds focus — a capture that acts unconditionally steals
+  them and the highlight can never move. Guard on `IsOpen()`.
+  **The theme chooser is longer than a short terminal**, so tview clips the
+  open list to the screen (`DropDown.Draw`) and the embedded `List` scrolls to
+  whatever is current. `TestThemeDropdownFitsOpen` therefore pins reachability
+  — the head on open, the tail after `End` — not that every option fits.
+  `←` closes the chooser by returning an `Esc`, which works only because
+  `SetCancelFunc` declines while a chooser is open: `DropDown` runs the Form's
+  *finished* handler on its way out (with `d.open` still set) and that handler
+  is what calls cancel, so without the guard leaving a chooser would close the
+  whole modal — as `Esc` itself did.
+- **The modal carries its own footer**: a help line that follows focus (the
+  only place a caveat like *ATA drives only* reaches someone editing the
+  setting — the config file and README do not; the theme row swaps its line for
+  `set COLORTERM=truecolor` when terminfo reports no RGB, since every painted
+  palette is hex and a 256-colour terminal snaps each role to the nearest
+  index — `truecolorTerm` asks tcell for that verdict rather than inventing a
+  rule, and `settingsHelpLine` takes it as a parameter because terminfo's entry
+  cache is process-global, mutated by lookup, and untestable otherwise) and a
+  key hint line, because it
+  was the one surface in the app that taught no keys. A `•` in each row's
+  two-column label gutter marks it edited since the modal opened; the gutter is
+  constant width so the label column cannot jump, and it is on the left because
+  a Form row is label plus field with nothing after it. Save and Cancel join
+  the same index space as the rows, so `↓` runs off the last setting onto the
+  buttons and `←`/`→` move between them; the buttons carry their own captures
+  because `GetButton` returns a `*tview.Button`, not a `FormItem`.
+- **The Settings modal (`S`) is the only writer.** `T` and `+`/`-` stay
+  session-only, as the README says. `App.currentConfig()` is *derived* from the
+  live fields and never stored: a cached copy would drift the moment `T` changed
+  the session outside the modal, and Save would then silently revert the theme
+  the user is looking at.
+- **The hint bar's right-hand summary names the settings that have keys.** It
+  reads `<theme> · <interval>`, not `... · refresh every <interval>`: spelling
+  it out restated what `+/- rate` already teaches and cost 14 columns on a bar
+  that is *already* wider than the 100-column breakpoint it appears at (125
+  cells before this change). Dropping it is what paid for `S settings`, and the
+  bar came out narrower than it started. The pre-existing overflow is untouched
+  — a width-aware bar is still owed.
 
 ### Data flow
 
@@ -96,12 +216,36 @@ goroutine (`setNarrow` in app.go is the pattern).
   *alongside* the error; `Info`/`Scan` parse the JSON regardless of exit code.
   Never gate parsing on the exit code. Real failures surface via
   `smartctl.messages` (`Report.FatalMessage`).
+- **A context deadline does not bound `run` on its own.** `cmd.Output()` waits
+  for the stdout pipe to close and `CommandContext` signals only the direct
+  child, so a descendant still holding that pipe outlives the cancel; `run`
+  sets `cmd.WaitDelay` for it. Without that, a stub that leaves a child behind
+  printed the 5s preflight timeout and then held the process a further 55s.
 - **The JSON schema is sparse and drive-dependent.** Only `device`, `smartctl`,
   and `smart_status` are reliably present (Apple internal SSDs omit capacity,
   logs, etc.). Every other field in `types.go` is a pointer or slice so absent
   sections decode to nil. Nil-check before dereferencing; never assume a section
   exists. New fixtures should preserve this — `testdata/smart-apple-nvme.json`
   is the deliberate graceful-degradation guard.
+- **Standby awareness is a call parameter, never a global.** With
+  `standby_aware`, a ticker poll passes `smart.SkipStandby` and smartctl gets
+  `-n standby,129 -d <Device.Type>`. Four things are easy to get wrong here:
+  **both** `Info` and `FarmLog` need it (each runs every poll, so guarding one
+  still wakes the drive); **no `STATUS2`** — the man page says `-n` is *ignored*
+  when the power-mode check is unsupported, which is exactly the fall-through we
+  want, and STATUS2 would turn it into an early exit carrying no data; **`-d` is
+  required, not optional**, because autodetection's own probing can spin the
+  drive up; and **129, not smartctl's default 2**, which the man page calls
+  ambiguous with "device open failed" (129 is bit 0, "command line did not
+  parse", with bit 7, "self-test log contains errors" — a parse failure exits
+  before any device is opened, so a real run cannot produce that pair).
+  A standby report arrives as a valid `*Report` with a **nil error**, because
+  `runJSON` only surfaces the exit error when stdout is empty and smartctl still
+  prints a full envelope; `Report.InStandby()` is the only signal. It carries no
+  drive data, so it **must never overwrite a good report** — `applyResults`
+  keeps `reports[name]` and `lastRead[name]` and only sets `asleep[name]`.
+  `-n` is ATA/SCSI only and a silent no-op on NVMe. `RunSelfTest`/`AbortSelfTest`
+  deliberately still wake the drive: starting a test is an instruction to use it.
 - **Device names are round-tripped verbatim** from `smartctl --scan-open` into
   `Info`. macOS uses `IOService:/...` paths, Linux uses `/dev/...`. Never
   construct or normalize a device name.
@@ -121,27 +265,45 @@ goroutine (`setNarrow` in app.go is the pattern).
   keys it rebinds while letting the rest fall through to the shared bindings.
   Selection is tracked by **device name**, not row index — the focus-metric sort
   reorders rows on every poll. Note `tview.List.SetCurrentItem` fires its
-  changed-func *before* storing the new index, so `openDrive` must call
-  `showSelected` itself.
+  changed-func *before* storing the new index, so the changed-func must render
+  the index it is handed (`showDevice`) and never `GetCurrentItem()`; `openDrive`
+  and `stepDrive` still render themselves, since no changed-func fires when the
+  index is unchanged.
 - **Cross-protocol readings live in `internal/smart/metrics.go`**, not in
-  rendering code: `PowerOnHours`, `PowerCycles`, `LifeUsedPercent`, `SparePercent`,
-  `TempRange`, `DataWritten`, `ErrorCounts`. Each resolves a fallback chain across
-  the sparse schema and **reports presence rather than substituting a zero** — on
-  this schema "not reported" and "reported as zero" are different answers, so
-  `ErrorCounts` fields are pointers and a comparison that shows 0 for an absent
-  counter is a bug. `DataWritten` also returns its `WriteSource`: only ATA
-  attribute 241 has vendor-defined units, so it is flagged `Approximate()` and the
-  UI marks it `~` with a legend caveat. Put new shared readings here — they get
-  fixture-backed tests against real captured drive JSON, which rendering code
-  only reaches indirectly. Rendering code must then consume what the accessor
-  resolved rather than re-resolving it: `spareSeverityPct` takes the
-  `(pct, threshold)` pair `SparePercent` returns, because `SparePercent` also
-  answers from `Report.SpareAvailable` and a grader that re-reads `NVMeHealth`
-  both drifts from the value beside it and dereferences nil.
-- **Capability-driven tabs** (detail.go `visibleTabs`): a tab only appears when
-  its source data exists (the Logs tab hides for drives with no error/self-test
-  log; the Tests tab hides unless `Report.SupportsSelfTest()`). When adding a
-  view, gate it on data presence rather than always showing it.
+  rendering code: `PowerOnHours`, `PowerCycles`, `LifeUsedPercent`,
+  `SparePercent`, `TempRange`, `CurrentTemp`, `CapacityBytes`, `SectorBytes`,
+  `DataWritten`, `ErrorCounts`, plus `DataUnitBytes` (the NVMe "thousands of
+  512-byte units" rule). Each resolves a fallback chain across the sparse
+  schema and **reports presence rather than substituting a zero** — on this
+  schema "not reported" and "reported as zero" are different answers, so
+  `ErrorCounts` fields are pointers and a comparison that shows 0 for an
+  absent counter is a bug. `DataWritten` also returns its `WriteSource`: only
+  ATA attribute 241 has vendor-defined units, so it is flagged `Approximate()`
+  and the UI marks it `~` with a legend caveat. Put new shared readings here —
+  they get fixture-backed tests against real captured drive JSON, which
+  rendering code only reaches indirectly. Rendering code must then consume
+  what the accessor resolved rather than re-resolving it: `spareSeverityPct`
+  takes the `(pct, threshold)` pair `SparePercent` returns, because
+  `SparePercent` also answers from `Report.SpareAvailable` and a grader that
+  re-reads `NVMeHealth` both drifts from the value beside it and dereferences
+  nil.
+- **Capability-driven tabs** (detail.go). `allTabs` is the registry: one entry
+  per tab pairing its id and title with the predicate that decides whether this
+  drive has data for it, so adding a view is one entry plus a `buildTabView`
+  case rather than edits in two places that can disagree. By default an
+  unavailable tab is hidden (the Logs tab for a drive with no error/self-test
+  log; Tests unless `Report.SupportsSelfTest()`); with `show_unavailable_tabs`
+  all six are drawn, the unavailable ones muted and skipped by navigation, so a
+  tab keeps its number on every drive. Gate a new view on data presence, never
+  show it unconditionally.
+  **`sameTabs` compares availability, not just ids** — that is load-bearing. In
+  always-six mode the id list is constant across every drive and every poll, so
+  an id-only comparison would refresh in place and never replace an unavailable
+  tab's placeholder when the drive started reporting that data. Unavailable
+  pills take `Muted` **plus the dim attribute**, because Muted alone collapses
+  to the terminal default under `mono`. The ~43-column strip floor is unchanged:
+  it was already computed for the six-tab case, so always-six only makes the
+  worst case universal rather than moving it.
 - **The Tests tab is the only view that fires smartctl actions.** Most tabs are
   pure renderers (`tabView.refresh`). Two take input: the Attributes tab handles
   `s`/`f` (`attributes.go`) but these only toggle local view state (sort/filter)
@@ -156,12 +318,48 @@ goroutine (`setNarrow` in app.go is the pattern).
   `a.interval` and signals `intervalCh`, which `poll.go`'s loop drains to call
   `ticker.Reset` — the cadence changes live without restarting the poll loop.
   `--interval` only sets the starting value (default 30s).
-- **The `?` modal is the binding list of record** (`keysText` in app.go), and
+- **The `?` modal is the binding list of record.** `keyBindings` (modals.go) is
+  the table; `keysText` is rendered from it into fixed-width columns, and
   `keys_test.go` parses the package for the runes the handlers match, so a new
   binding that is not documented there fails CI. Named keys (`tcell.Key`
   constants) are invisible to that scan and are pinned by a hand-kept list in
   the same test — extend it when a handler matches a new one. The README key
-  table is written from it.
+  table is written from it. Two things the parser depends on: the key column is
+  **left**-aligned and the separator is **two spaces** (`documentedKeys` cuts
+  the key out at the first double space), and every line is exactly
+  `keysColumnWidth` cells so the columns line up. An empty `key` starts a group;
+  `keysColumns` splits the list at the group break nearest the middle into the
+  two side-by-side columns `keysModal` draws. It is not a `tview.Modal`: that
+  wraps at a third of the screen, which forced one ragged 26-cell column, and
+  its height grows per binding, so the list had already outgrown 24 rows.
+- **A modal is a PAGE over the app, not a new root** (`pushModal`/`popModal` in
+  modals.go). `a.rootPages` holds the main layout on `pageMain` and the modal on
+  `pageModal`; `SetRoot(modal, false)` used to replace the tree, so the drive
+  list and detail vanished — worst on the Settings modal, whose own footer says
+  `T` cycles the theme live. Two consequences to keep in mind when adding one:
+  tview's `Flex` sets `dontClear`, so a modal built on a plain Flex lets the app
+  show through its interior — use `newOpaqueFlex` (`tview.Modal` clears itself);
+  and `Pages` passes an **unconsumed** click down to the page underneath, which
+  is why every modal is wrapped in `modalLayer`, whose `MouseHandler` swallows
+  what the modal declines.
+- **Mouse handlers run on the event-loop goroutine with no draw lock held** —
+  the mirror image of the draw-hook rule above. `Application.SetFocus` and direct
+  widget mutation are correct there; `QueueUpdate(Draw)` self-deadlocks, since the
+  loop is inside `fireMouseActions` and cannot drain its queue. Return
+  `consumed = true` or tview will not redraw, and always return a nil capture
+  primitive. tview's default `TextView.MouseHandler` focuses the view on a left
+  press, which is wrong for anything that handles no key: the tab bar
+  (`tabBar.MouseHandler`, detail.go) drops the `setFocus` closure and a click on a
+  pill goes through `App.openTab`, the same path as `1`-`9`, while every piece of
+  chrome that carries no binding — spinner, rail, banner, status bar, the fleet's
+  section strip and legend — is wrapped in `inertTextView` and declines the mouse
+  outright. Wrap a new keyless widget the same way: the rail, banner and status
+  bar sit outside `a.detail`, so `poll.go`'s re-focus never rescues focus parked
+  on one. `tabBar` records each pill's column span in the pass that emits it, so
+  the hit test cannot drift from the render; `tabPills` drops inactive titles when
+  the strip would not fit, because a pill drawn past the edge is also unclickable.
+  The compacted six-tab strip still needs ~43 columns, but the narrow hint bar
+  needs ~67, so the strip is never the first thing to overflow.
 - **Scroll arrows are a shared affordance** (`scroll.go`): every tab that can
   overflow shows the same cyan ▲/▼ off-screen cue via `drawScrollArrows`. The
   `scrollView` container (FARM, Overview's whole layout uses widget composition)
@@ -190,56 +388,199 @@ goroutine (`setNarrow` in app.go is the pattern).
   populated error log. NVMe `num_err_log_entries` is deliberately excluded — it
   increments for benign reasons, so it is surfaced as a count, not a verdict.
 - **Colour theming** (`theme.go`). All colour flows through a package-level
-  `var activeTheme Theme` of semantic roles (`Accent`, `Muted`, `OK`/`Caution`/
-  `Failing`, `Inverse`, `SelectionBg/Fg`, `BannerBg`, `BarHealthy`,
-  `ScrollArrow`, `ListSecondary` — the drive-list secondary line device ·
-  capacity · temp); `setTheme` swaps it (read/written only on the event-loop
-  goroutine, so no mutex — same as `App.reports`). Never write a raw `[aqua]`/
-  `[gray]`/`tcell.ColorRed` literal: use the tag helpers (`accentTag()`,
-  `mutedTag()`, `okTag()`, `severityTag()`, `fgbgTag(fg,bg)`) for markup or read
-  `activeTheme.X` for a `tcell.Color`. The `dark` theme reproduces the original
-  palette (pinned by `theme_test.go`) apart from `ListSecondary`, which moved off
-  green because it equalled `OK` and painted a failing drive's metadata line the
-  healthy colour;
-  `electric` (an "elite BBS" palette in blue/cyan/white/gray — bright azure-cyan
-  borders, white body text, amber caution + red failing for legibility),
-  `phosphor` (the classic monochrome green-CRT palette — *pure green only*, no
-  amber/red; severity reads via green intensity + the `●` glyph + bold, and the
-  ramp must escalate — `theme_test.go` pins that Failing is hotter than OK, not
-  paler),
-  `amber` (a Hercules monochrome amber-monitor palette — warm amber accent/text
-  with a warm amber→orange→red severity ramp), and `mono` are the alternates.
-  `--theme NAME` selects at startup, the `T` key cycles live
-  (`cycleTheme`→`repaintAll`, which forces a detail rebuild so widgets that baked
-  colour in at build time get re-coloured — the one-shot root-warning banner is
-  the easy miss, hence `refreshBanner`). List widgets (drive list, Tests-tab
-  selector) must be themed via `styleList` (format.go) at build **and** in
-  `repaintAll`: it pins the secondary-text colour (tview Lists default it to
-  `Styles.TertiaryTextColor`, a green that otherwise leaks into every theme) and
-  routes selection through `selectedRowStyle` so list and table selections match.
-  Known limit: `mono` drops all our colour (severity and the selected row survive
-  via the `●` glyph + bold).
+  `var activeTheme Theme` of semantic roles (`Background`, `Accent`, `Muted`,
+  `OK`/`Caution`/`Failing`, `Inverse`, `SelectionBg/Fg`, `BannerBg`,
+  `BarHealthy`, `ScrollArrow`, `ListSecondary` — the drive-list secondary line
+  device · capacity · temp); `setTheme` swaps it (read/written only on the
+  event-loop goroutine, so no mutex — same as `App.reports`). Never write a
+  raw `[aqua]`/ `[gray]`/`tcell.ColorRed` literal: use the tag helpers
+  (`accentTag()`, `mutedTag()`, `okTag()`, `sevText(sev,s)`/`sevBold(sev,s)`,
+  `fgbgTag(fg,bg)`) for markup — `severityTag()` returns the bare token, for
+  compound formats only — or read `activeTheme.X` for a `tcell.Color`. The
+  `dark` theme reproduces the original palette, in hex, pinned role by role by
+  `TestDarkThemePinned`. **Every painted palette is hex-only, and that is
+  load-bearing** (`TestPaintedThemesAreHexOnly`): a named `tcell` colour goes
+  to the terminal as a palette index, and `tag()` used to resolve it to RGB for
+  markup while every style path — `styleList`, cell colours, borders,
+  `tview.Print` — kept the index, so on a terminal whose scheme is not the
+  default the same role rendered two different colours. In `dark` that made the
+  list's secondary line invisible and painted the temperature fill green
+  instead of teal. Three roles depart from the pre-theming original:
+  `ListSecondary`, which moved off green because it equalled `OK` and painted a
+  failing drive's metadata line the healthy colour; `SelectionBg`, off
+  DarkSlateGray because it dropped `Failing` to 2.23:1 and `OK` to 1.74:1 on
+  the one row the cursor is always on; and `Background`, one step off pure
+  black so the palette has a ground to build layers *down* from and does not
+  paste a black rectangle into a terminal that is not itself black. `electric` (an "elite BBS"
+  palette in blue/cyan/white/gray — bright azure-cyan borders, white body
+  text, amber caution + red failing for legibility), `phosphor` (the classic
+  monochrome green-CRT palette — *pure green only*, no amber/red; severity
+  reads via green intensity + the severity glyph + bold, and the ramp must
+  escalate — `theme_test.go` pins that Failing is hotter than OK, not paler), `amber`
+  (a Hercules monochrome amber-monitor palette — warm amber accent/text with a
+  warm amber→orange→red severity ramp), `cga` (the authentic IBM CGA 16 —
+  every role is one of those colours, none interpolated), `neon` (cyberpunk:
+  electric-blue chrome, magenta banner/bars, white text), `nord` and `gruvbox`
+  (the editor schemes; gruvbox takes its blue rather than its signature gold
+  for chrome, since a gold border reads as a caution), `beacon`
+  (colour-vision-safe: Paul Tol's blue→yellow→rose ramp with deliberately
+  neutral chrome, since green/red is exactly the pair deuteranopia collapses;
+  `theme_test.go` simulates a deuteranope and pins that beacon's three stay
+  separable *and* that dark's green/red does not, so the test can't quietly
+  stop proving anything), `cobalt`/`ultraviolet`/`deepsea`/`oxblood` (the
+  COLOURED GROUNDS — royal blue, violet, petrol teal, wine — which work only
+  because blue, violet and red carry almost none of the luminance a WCAG ratio
+  is measured in, so a ground can be plainly a colour and still clear the 0.15
+  ceiling `TestGroundsAreDecisivelyDarkOrLight` sets; a green one cannot, which
+  is why there is no dark green, and each moves `Failing` off its own ground's
+  hue so severity is never mistaken for furniture), `daylight`, `parchment`,
+  `sorbet`, `marigold`, `seafoam` and `sky` (light — cool, warm, blush, gold,
+  mint and azure: every role is tuned against the palette's own paper
+  `Background`, not a terminal's: yellow caution vanishes on paper, so the ramp
+  runs burnt amber/ochre → crimson/brick, darkening as it worsens; the tinted
+  ones put the colour in the ground because the 4:1 light floor forces the
+  chrome deep, and **`TestLightGroundsClearAHigherFloor` counts them** — a new
+  light palette means bumping that number), `terminal` and `mono`
+  are the alternates. **`terminal` and `mono` are the two INHERITING palettes**
+  (`inheritingThemes` in theme_test.go, which every ratio test skips): both take
+  `Background` and `Neutral` from the terminal, `mono` adding nothing and
+  `terminal` adding the severity vocabulary back as NAMED colours — deliberately,
+  since here resolving through the user's scheme is what makes ground and
+  foreground agree rather than what breaks them. `tag()` renders anything in
+  `namedTags` as its markup *name* so the index survives; adding a named colour
+  to a palette means adding it there too. Neither has a `SelectionBg`, so
+  `selectedRowStyle` falls back to reverse video — the only highlight available
+  without knowing the ground. Six invariants hold across every painted palette
+  and are pinned by tests: `ListSecondary` never equals
+  `OK`; `Inverse` clears 3:1 on both fields it is drawn on (`Accent` for the
+  active-tab pill, `BannerBg` for the root warning); `Muted` reads at least
+  1.8x quieter than `Neutral` on the ground, so the recessive voice stays
+  recessive; `SelectionBg` sits in a 1.15–3:1 band against the ground — enough
+  to tint the row, not enough to repaint it — with `SelectionFg`, the
+  selected-row foreground, clearing 4.5:1 (WCAG AA body text) on it; **each of
+  `OK`/`Caution`/`Failing` clears 3:1 on `SelectionBg` too**, because the
+  selected row keeps each cell's own foreground and repaints the ground, so
+  arrowing onto a failing drive is exactly what used to dim its red (this is
+  why four palettes moved their band, two of them *below* the ground rather
+  than above it); and a
+  `Background` is plainly ink (luminance ≤ 0.15) or plainly paper (≥ 0.5),
+  never between, since the light floor is keyed off that split and a mid-tone
+  ground would silently take the lower one. Foregrounds clear 3:1 on the
+  ground everywhere and 4:1 on a light one, where ink loses to glare and
+  nothing falls back to the terminal. `--theme NAME` selects at startup, the
+  `T` key cycles live (`cycleTheme`→`repaintAll`, which forces a detail
+  rebuild so widgets that baked colour in at build time get re-coloured — the
+  one-shot root-warning banner is the easy miss, hence `refreshBanner`). List
+  widgets (drive list, Tests-tab selector) must be themed via `styleList`
+  (theme.go) at build **and** in `repaintAll`: it pins the secondary-text
+  colour (tview Lists default it to `Styles.TertiaryTextColor`, a green that
+  otherwise leaks into every theme) and routes selection through
+  `selectedRowStyle` so list and table selections match. Known limit: `mono`
+  drops all our colour — severity survives on the glyph and the reverse-video
+  failing chip, and the selected row on reverse video.
+- **Severity is encoded by SHAPE and AREA before colour** (`format.go`).
+  `severityGlyph` gives each state its own mark (`●` healthy, `▲` caution, `■`
+  failing) and `healthGlyph` tints it; `sevVerdict` draws a *failing* verdict as
+  an Inverse-on-`Failing` chip (reverse video under `mono`) rather than tinted
+  text. This is not decoration: red is darker than yellow on any dark ground, so
+  `Caution` out-contrasts `Failing` in 8 of the 11 coloured palettes and no hue
+  assignment fixes it — area and shape do, and they are the only encodings that
+  survive `phosphor`, `amber` and `mono`. A new severity sink uses these rather
+  than reaching for `severityColor` alone.
+- **The ground is `Theme.Background`, and it reaches widgets three ways.** (1)
+  `applyTviewStyles` (theme.go) writes `tview.Styles` — tview reads those
+  globals *at construction*, so everything built afterwards is born in the
+  theme, and it is the only lever on tvxwidgets' gauge, which re-reads them at
+  draw time. (2) Widgets that outlive a theme cycle keep the ground they were
+  built with, so `repaintAll` re-grounds them by walking the mounted widget
+  tree with `rethemeTree` (theme.go). The walk reaches only what is *mounted*,
+  so the off-tree remainder is re-grounded by hand beside it through
+  `applyBackground` (theme.go): the list or the rail (`applyLayout` mounts one,
+  never both) and the banner (`build` mounts it only when we are not root).
+  **The ground is not the only baked-in colour.** `rethemeTree` also re-pins
+  every box's `SetTitleColor`, and `applyTextColor` re-pins the DEFAULT ink on
+  the chrome that persists (`status`, `rail`, `banner`), because tview bakes
+  `Styles.TitleColor` and `Styles.PrimaryTextColor` in at construction too.
+  Markup that names its colour survives a cycle and untagged text does not, so
+  the failure is partial and easy to miss: cycling into a light palette left
+  the hint bar showing its accented keys with every label gone, and the drive
+  list showing its tagged `▲ 2 ◌ 1` counts with the word `Drives` gone.
+  `layout_test.go` enumerates the persistent widgets by hand on purpose (it
+  includes `detail.note`, the standby caveat row; the Settings form is
+  deliberately absent because it is rebuilt on every open and so cannot go
+  stale) — a
+  list derived from the walk would assert nothing — so extend it when one is
+  added; the banner-class miss again. (3) Direct `screen.SetContent` calls
+  carry a ground themselves: `scroll.go`'s viewport clear and its scroll
+  arrows both take it from the widget they paint into (never from
+  `activeTheme`, or the arrow disagrees with its own panel), and the
+  before-draw hook fills the screen so a non-fullscreen modal root has no
+  unpainted margin. `ColorDefault` is legal here and means "inherit the
+  terminal" — that is `mono`'s whole contract, and it is the only palette
+  allowed it.
 - **Colour marks exceptions, not membership.** A value renders in the
   surrounding colour while it is in band and takes caution/failing only when it
   leaves it (`tempMarkup` in format.go is the model). Green is reserved for the
   health glyph and for bars, so a healthy fleet is not a wall of green and
   anything tinted is worth looking at. Corollary pinned by `theme_test.go`: no
   theme's `ListSecondary` may equal its `OK`, since that line renders on every
-  drive whatever its state.
+  drive whatever its state. The two sinks that broke this and are now muted:
+  the fleet's **State** column (every "Healthy" green left the one failing row
+  nothing to stand out from) and the Logs tab's self-test rows, where nineteen
+  green "Completed without error" lines were the loudest thing on a tab whose
+  actual logged errors rendered in body text — `colorResult` mutes a pass and
+  `logs_test.go` pins that it carries no `okTag()`. `TestAllClearLinesAreNotGreen`
+  is the guard for the "nothing to report" lines.
 - **Charts scale to their data, never to zero** (`chart.go`). `tvxwidgets`'
   Sparkline divides by the maximum and BarChart offers only `SetMaxValue` while
   drawing its own axis labels, so neither can take a baseline — a 35–40 °C
   history rendered as a solid block and 20 per-head resistances of 350–495 as
-  identical bars. `seriesRows` traces a line, `barRows` fills categorical bars,
-  `downsample` reduces by bucket *maximum* so a spike is never averaged away,
-  and the axis line always prints its baseline. The scaling is pure and unit
-  tested; the NVMe percentage gauges still use `tvxwidgets`, where 0–100 is real.
+  identical bars. `seriesRows` fills the area under the series and `barRows`
+  fills categorical bars — both through the same `fillEighths`/`fillGlyph`
+  pair, so a column reads the same either way and the smallest value keeps its
+  baseline mark instead of vanishing; the fill starts at the data minimum, not
+  at zero, which is what keeps a filled 35–40 °C history from going back to
+  being a solid block. `downsample` reduces by bucket *maximum* so a spike is
+  never averaged away, and the axis line always prints its baseline — once:
+  `Draw` blanks a last-row label that rounds to the baseline, since the axis
+  prints it anyway. **The plot fills its box.** It used to cap `plotRows` at the
+  integer span of the data and bottom-anchor the result, on the grounds that
+  "finer rows could never be landed in" — which is not how the fill works, since
+  `fillEighths` resolves eight sub-levels per row: extra rows do not invent
+  precision, they space the same values further apart. The cap left a 35–40 °C
+  history drawing six rows in a twenty-two-row panel. The pad
+  for a flat range lives in `fillEighths` alone, so a series with no spread
+  cannot divide by zero into an all-NaN chart whatever calls it. The scaling is pure and unit tested; the NVMe
+  percentage gauges still use `tvxwidgets`, where 0–100 is real. The fill is
+  wide enough to shout, so it takes `BarHealthy` in band and a severity colour
+  only out of it — `buildTempSparkline` grades on the current temperature the
+  way the FARM bars grade on the worst head.
+- **A bar chart narrows its pitch before it drops a bar**
+  (`rangeChart.barFit`). The pitch and the label step are chosen in `Draw`,
+  not baked in with the data, because only `Draw` knows the plot width:
+  `setBars` takes the *widest* pitch to use and an `axis(pitch, shown, width)`
+  func that builds the caption once both are known. Bars touch at pitch 1
+  rather than fall off the right edge — a cramped chart beats a wrong one, and
+  the title states the whole drive's range, so a clipped peak would name a
+  maximum that is never drawn. When even one cell each will not fit, values
+  share a bar (`bucketMax`) rather than fall off the tail: buckets are uniform
+  and take the *maximum*, the same rule `downsample` follows for a filled
+  series, because the tail is exactly where a failing head sits and keeping
+  the first N would leave a flat row of minimum marks. The caption then says
+  how many share a bar, measured in cells before the labels are built so the
+  note cannot itself be clipped — the same contract as the fleet's dropped
+  columns. Labels name the first head of each bar and stop at the last index
+  that fits whole (`farmHeadAxis`) rather than cut the finished strip to
+  width: a sliced index still reads as a number, and a label naming the wrong
+  head is worse than one that is absent. `chart_test.go` drives this on a
+  simulation screen and each assertion is mutation-checked, since an assertion
+  the implementation satisfies unconditionally proves nothing.
 - **One bar vocabulary**: `pctBarWidth` cells wide, always filling toward
   healthy. A "consumed" percentage passes through `pctBarUsed` so it drains
   rather than filling (the fleet shows endurance beside spare, and opposite
   polarities in one colour read as a contradiction).
-- **One breakpoint at `narrowBreakpoint` (100 columns).** Below it the drive
-  list collapses to a one-row rail (`renderRail`) and the detail takes the full
+- **One *top-level* layout breakpoint, `narrowBreakpoint` (100 columns).**
+  Below it the drive list collapses to a one-row rail (`renderRail`) and the detail takes the full
   width; `Application.SetBeforeDrawFunc` picks the layout, since width is only
   known at draw time. Nothing may truncate silently: the hint bar shortens
   deliberately and offers `?`, and the fleet drops whole columns (measuring the
@@ -251,11 +592,43 @@ goroutine (`setNarrow` in app.go is the pattern).
   `renderRail` wherever `populateList`/`showSelected` repaint the list, and
   `stepDrive` on `KeyUp`/`KeyDown` in `onKey`, since no list is on screen to
   receive them. `layout_test.go` exercises both widths on a simulation screen.
+  The rule cuts the other way too: the rail's `▲ N` / `◌ N` counts were the only
+  answer to "is anything wrong?" that did not require reading every row, and the
+  layout with 460 more columns had none — the wide list carries them in its box
+  title (`driveListTitle`), repainted with the list since the counts and the
+  theme tags both go stale otherwise.
+- **A matched set is the normal case, so the drive list disambiguates itself.**
+  `duplicateModels` marks the model names more than one attached drive reports,
+  and `listRow` appends the device to the main line for those rows. Without it a
+  NAS of identical disks is the same string repeated down the list, with the one
+  thing that tells them apart sitting in the muted secondary line.
+- **The FARM tab has a second, independent breakpoint.** Its four stat boxes
+  pair into a 2×2 grid only while each column clears `farmColumnMin` inner
+  cells; below that `relayout` stacks them into one full-width column
+  (`stackBoxes`, in the grid's reading order). This is not `narrowBreakpoint`:
+  what matters is the width the *detail pane* gets, so a 100-column terminal
+  stacks — the drive list takes 38 of them, leaving a per-column inner width of
+  27 — while an 80-column one, where the narrow layout has already dropped the
+  list, still pairs at 36. Rows wrap either way: the widest the fixtures render
+  is 49 cells, so a grid that never wrapped would need ~106 columns. What
+  `farmColumnMin` protects is the reading, not the line — 13 cells of value
+  column still hold "12.29V now" intact, 12 start slicing it apart.
 - **Width-aware panels relayout in `Draw`**, not in `refresh`: farm.go,
   overview.go and statistics.go each cache `lastWidth` and rebuild when it
-  changes. Long values are pre-wrapped with `hangingIndent` (format.go) so they
-  hang under the value column instead of returning to the left margin, and the
-  widget's own `SetWrap` is disabled so it cannot re-break the result.
+  changes. Long values are pre-wrapped with `hangingIndent` (format.go) so
+  they hang under the value column instead of returning to the left margin,
+  and the widget's own `SetWrap` is disabled so it cannot re-break the result.
+  `hangingIndent` cuts each line at a **display column**, so each panel
+  carries a `hangingWrap` naming that column and the narrowest value column
+  still worth wrapping into (`farmWrap`, `identityWrap`, `statWrap`). The
+  column must match the width that panel's rows pad the label to — a wider
+  label pushes the value past the cut and the wrap lands inside the label;
+  `TestFarmValuesStartAtTheValueColumn` pins that against rendered fixture
+  output. The floor differs on purpose: FARM values are short numbers and wrap
+  down to one cell, because clipping would drop digits off a counter and a
+  truncated number still reads as a number, while the identity panel stops at
+  nine because its 150-character device path has no break opportunity and
+  WordWrap would explode the line count the panel is sized from.
 - Protocol branching is via `Report.IsNVMe()` / `IsATA()`; NVMe and ATA render
   different attribute tables and gauges.
 - **Temperature sparkline**: ATA seeds it instantly from
@@ -263,14 +636,14 @@ goroutine (`setNarrow` in app.go is the pattern).
   runtime ring buffer (`App.history`, capped at `maxHistory`) across polls — it
   only appears after ≥2 samples.
 - **Padding/gutters (TUI UX).** Every text/table/list box gets a uniform
-  horizontal gutter via `SetBorderPadding(0, 0, uiGutter, uiGutter)` (`uiGutter`
-  in `format.go`); never bake a left margin into format strings. Vertical
-  padding stays 0 for density. Nest a line under an in-box header with
-  `nestIndent` (2 spaces), not a custom amount. Two things are intentionally
-  exempt and must keep their spaces: table cell padding (`" "+val+" "`) and the
-  tab-bar highlight pills. Graphical widgets (gauges, sparkline, bar charts) opt
-  out of the gutter to stay full-width. Record new TUI spacing/UX conventions in
-  this bullet so they don't drift.
+  horizontal gutter via `SetBorderPadding(0, 0, uiGutter, uiGutter)`
+  (`uiGutter` in `format.go`); never bake a left margin into format strings.
+  Vertical padding stays 0 for density. Nest a line under an in-box header
+  with `nestIndent` (2 spaces), not a custom amount. Two things are
+  intentionally exempt and must keep their spaces: table cell padding (`"
+  "+val+" "`) and the tab-bar highlight pills. Graphical widgets (gauges,
+  sparkline, bar charts) opt out of the gutter to stay full-width. Record new
+  TUI spacing/UX conventions in this bullet so they don't drift.
 
 ## Tests
 

@@ -62,9 +62,10 @@ func (s *scrollView) Draw(screen tcell.Screen) {
 
 	// Clear the viewport: the inner Flex's spacer doesn't repaint on scroll,
 	// so stale rows would linger.
+	ground := tcell.StyleDefault.Background(s.GetBackgroundColor())
 	for cy := y; cy < y+h; cy++ {
 		for cx := x; cx < x+w; cx++ {
-			screen.SetContent(cx, cy, ' ', nil, tcell.StyleDefault)
+			screen.SetContent(cx, cy, ' ', nil, ground)
 		}
 	}
 
@@ -73,17 +74,28 @@ func (s *scrollView) Draw(screen tcell.Screen) {
 		s.inner.Draw(clipScreen{Screen: screen, top: y, bottom: y + h})
 	}
 
-	drawScrollArrows(screen, x, y, w, h, s.offset, s.contentHeight)
+	drawScrollArrows(screen, s, s.offset, s.contentHeight)
 }
 
-// drawScrollArrows overlays ▲/▼ at the right edge when content overflows —
-// the one scroll affordance every wrapper routes through. Callers pass an
-// inner rect (border/gutter already removed).
-func drawScrollArrows(screen tcell.Screen, x, y, w, h, offset, contentHeight int) {
+// scrollable is the geometry and ground drawScrollArrows reads off the widget
+// it overlays; every tview widget satisfies it through its Box.
+type scrollable interface {
+	GetInnerRect() (int, int, int, int)
+	GetBackgroundColor() tcell.Color
+}
+
+// drawScrollArrows overlays ▲/▼ at the right edge of b's inner rect when
+// content overflows — the one scroll affordance every wrapper routes through.
+func drawScrollArrows(screen tcell.Screen, b scrollable, offset, contentHeight int) {
+	x, y, w, h := b.GetInnerRect()
 	if w <= 0 || h <= 0 || contentHeight <= h {
 		return
 	}
-	arrow := tcell.StyleDefault.Foreground(activeTheme.ScrollArrow)
+	// SetContent replaces the cell whole, so the arrow carries the panel's own
+	// ground or it punches a terminal-default hole in it.
+	arrow := tcell.StyleDefault.
+		Foreground(activeTheme.ScrollArrow).
+		Background(b.GetBackgroundColor())
 	if offset > 0 {
 		screen.SetContent(x+w-1, y, '▲', nil, arrow)
 	}
@@ -102,11 +114,18 @@ func newScrollTextView() *scrollTextView {
 	return &scrollTextView{TextView: tview.NewTextView()}
 }
 
+// setTextKeepingScroll replaces the text without moving the viewport, so an
+// in-place refresh does not jump the view out from under the reader.
+func (s *scrollTextView) setTextKeepingScroll(text string) {
+	row, col := s.GetScrollOffset()
+	s.SetText(text)
+	s.ScrollTo(row, col)
+}
+
 func (s *scrollTextView) Draw(screen tcell.Screen) {
 	s.TextView.Draw(screen)
-	x, y, w, h := s.GetInnerRect()
 	row, _ := s.GetScrollOffset()
-	drawScrollArrows(screen, x, y, w, h, row, s.GetWrappedLineCount())
+	drawScrollArrows(screen, s, row, s.GetWrappedLineCount())
 }
 
 // scrollTable is a Table plus the shared scroll arrows; row offset/count are
@@ -121,9 +140,8 @@ func newScrollTable() *scrollTable {
 
 func (s *scrollTable) Draw(screen tcell.Screen) {
 	s.Table.Draw(screen)
-	x, y, w, h := s.GetInnerRect()
 	row, _ := s.GetOffset()
-	drawScrollArrows(screen, x, y, w, h, row, s.GetRowCount())
+	drawScrollArrows(screen, s, row, s.GetRowCount())
 }
 
 // scrollList is a List plus the shared scroll arrows; linesPerItem converts
@@ -139,9 +157,8 @@ func newScrollList(linesPerItem int) *scrollList {
 
 func (s *scrollList) Draw(screen tcell.Screen) {
 	s.List.Draw(screen)
-	x, y, w, h := s.GetInnerRect()
 	offset, _ := s.GetOffset()
-	drawScrollArrows(screen, x, y, w, h, offset*s.linesPerItem, s.GetItemCount()*s.linesPerItem)
+	drawScrollArrows(screen, s, offset*s.linesPerItem, s.GetItemCount()*s.linesPerItem)
 }
 
 // InputHandler scrolls the viewport with the keys App.onKey lets through to

@@ -1,0 +1,18 @@
+{
+  "json_format_version": [1, 0],
+  "smartctl": {
+    "version": [7, 5],
+    "pre_release": false,
+    "svn_revision": "5714",
+    "platform_info": "x86_64-linux",
+    "build_info": "(local build)",
+    "argv": ["smartctl", "-n", "standby,129", "-d", "sat", "-j", "-x", "/dev/sdd"],
+    "exit_status": 129
+  },
+  "device": {
+    "name": "/dev/sdd",
+    "info_name": "/dev/sdd [SAT]",
+    "type": "sat",
+    "protocol": "ATA"
+  }
+}

@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -84,8 +85,13 @@ func TestSelfTestPassedSharesColorResult(t *testing.T) {
 		if !selfTestPassed(s) {
 			t.Errorf("selfTestPassed(%q) = false, want true", s)
 		}
-		if !strings.Contains(colorResult(s), okTag()) {
+		// A pass reads as recessive, not healthy-green: colour marks
+		// exceptions, and one row per run is the least exceptional thing here.
+		if !strings.Contains(colorResult(s), mutedTag()) {
 			t.Errorf("colorResult(%q) does not read as a pass", s)
+		}
+		if strings.Contains(colorResult(s), okTag()) {
+			t.Errorf("colorResult(%q) is tinted with the healthy colour", s)
 		}
 	}
 	// "Completed" alone is not a pass: smartctl reports failures as
@@ -159,5 +165,47 @@ func TestAllClearLinesAreNotGreen(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("want %q in logs text, got:\n%s", want, got)
 		}
+	}
+}
+
+// The decoded-entry list is capped, and the tail is stated rather than
+// silently dropped — nothing in this UI may truncate without saying so. Both
+// protocols share the cap through writeCapped, so this pins the shared half.
+func TestErrorEntriesAreCappedAndSayHowMany(t *testing.T) {
+	const over = maxErrorEntries + 5
+	ata := make([]smart.ATAErrorLogEntry, over)
+	for i := range ata {
+		ata[i] = smart.ATAErrorLogEntry{ErrorNumber: i + 1, ErrorDescription: "UNC at LBA"}
+	}
+	nvme := make([]smart.NVMeErrorLogEntry, over)
+	for i := range nvme {
+		nvme[i] = smart.NVMeErrorLogEntry{ErrorCount: int64(i + 1)}
+	}
+
+	for _, c := range []struct {
+		name  string
+		write func(*strings.Builder)
+	}{
+		{"ata", func(b *strings.Builder) { writeATAErrorEntries(b, &smart.Report{}, ata) }},
+		{"nvme", func(b *strings.Builder) { writeNVMeErrorEntries(b, nvme) }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var b strings.Builder
+			c.write(&b)
+			got := b.String()
+			if n := strings.Count(got, "\n"); n != maxErrorEntries+1 {
+				t.Errorf("%d lines, want %d entries plus the note", n, maxErrorEntries)
+			}
+			if want := fmt.Sprintf("… %d more", over-maxErrorEntries); !strings.Contains(got, want) {
+				t.Errorf("cap note missing %q in:\n%s", want, got)
+			}
+		})
+	}
+
+	// A table under the cap says nothing about a remainder there isn't one of.
+	var b strings.Builder
+	writeATAErrorEntries(&b, &smart.Report{}, ata[:2])
+	if got := b.String(); strings.Contains(got, "more") {
+		t.Errorf("under the cap should not mention a remainder: %q", got)
 	}
 }

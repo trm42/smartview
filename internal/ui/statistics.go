@@ -25,7 +25,7 @@ type statisticsView struct {
 func newStatisticsView(r *smart.Report) *statisticsView {
 	v := &statisticsView{scrollTextView: newScrollTextView(), lastWidth: -1}
 	v.SetDynamicColors(true).SetScrollable(true).SetWrap(false)
-	v.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" Device statistics ")
+	titledBox(v.Box, " Device statistics ")
 	v.refresh(r, nil)
 	return v
 }
@@ -44,9 +44,7 @@ func (v *statisticsView) refresh(r *smart.Report, _ []float64) {
 // Draw re-wraps when the width changed (or a refresh invalidated it).
 func (v *statisticsView) Draw(screen tcell.Screen) {
 	if _, _, w, _ := v.GetInnerRect(); w != v.lastWidth {
-		row, col := v.GetScrollOffset()
-		v.SetText(hangingIndent(v.raw, statValueCol, w))
-		v.ScrollTo(row, col)
+		v.setTextKeepingScroll(hangingIndent(v.raw, statWrap, w))
 		v.lastWidth = w
 	}
 	v.scrollTextView.Draw(screen)
@@ -60,10 +58,7 @@ func buildStatisticsText(r *smart.Report) string {
 		return ""
 	}
 	// "Logical Sectors *" counts are in logical-block units (4096 B on 4Kn).
-	sectorBytes := int64(512)
-	if r.LogicalBlockSize != nil && *r.LogicalBlockSize > 0 {
-		sectorBytes = int64(*r.LogicalBlockSize)
-	}
+	sectorBytes := r.SectorBytes()
 	first := true
 	for _, p := range r.ATADeviceStatistics.Pages {
 		valid := validStatEntries(p.Table)
@@ -74,7 +69,7 @@ func buildStatisticsText(r *smart.Report) string {
 			b.WriteByte('\n')
 		}
 		first = false
-		fmt.Fprintf(&b, "[::b]%s[-:-:-]\n", orDash(esc(p.Name)))
+		sectionHeader(&b, orDash(esc(p.Name)))
 		for _, e := range valid {
 			fmt.Fprintf(&b, nestIndent+"%-*s %s\n", statLabelWidth, esc(e.Name), statValue(p, e, sectorBytes))
 		}
@@ -84,6 +79,10 @@ func buildStatisticsText(r *smart.Report) string {
 
 // statValueCol is the column values start in.
 const statValueCol = len(nestIndent) + statLabelWidth + 1
+
+// statWrap: counter names are long and the values short, so a value column
+// under nine cells means the panel is already too narrow to read.
+var statWrap = hangingWrap{valueCol: statValueCol, minValueW: 9}
 
 // statLabelWidth fits smartctl's longest counter names (up to 44 chars).
 const statLabelWidth = 46
@@ -115,7 +114,7 @@ func statValue(p smart.ATAStatPage, e smart.ATAStatEntry, sectorBytes int64) str
 		val = fmt.Sprintf("%d", e.Value)
 	}
 	if sev := statSeverity(e); sev != smart.SeverityOK && e.Value > 0 {
-		return fmt.Sprintf("[%s]%s[-]", severityTag(sev), val)
+		return sevText(sev, val)
 	}
 	return val
 }

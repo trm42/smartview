@@ -3,8 +3,13 @@
 package ui
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 )
 
 // The scaling is a pure function, so unlike the widgets it replaces it can be
@@ -36,18 +41,18 @@ func TestSeriesRowsScalesToRangeNotZero(t *testing.T) {
 	}
 }
 
-// TestSeriesRowsTracesTopEdge checks we draw a line, not a filled area: a single
-// sample must mark exactly one cell in one row, not a column down to the floor.
-func TestSeriesRowsTracesTopEdge(t *testing.T) {
-	rows := seriesRows([]float64{10}, 1, 4, 0, 10)
-	marked := 0
-	for _, r := range rows {
-		if strings.TrimSpace(r) != "" {
-			marked++
-		}
+// TestSeriesRowsFillsUnderTheLine: the area under the trace is filled so the
+// shape reads at a glance, and nothing is drawn above it — a column filled to
+// the top would be the old zero-anchored solid block.
+func TestSeriesRowsFillsUnderTheLine(t *testing.T) {
+	rows := seriesRows([]float64{5}, 1, 4, 0, 10)
+	if len(rows) != 4 {
+		t.Fatalf("got %d rows, want 4", len(rows))
 	}
-	if marked != 1 {
-		t.Errorf("want the top edge only (1 marked row), got %d:\n%s", marked, strings.Join(rows, "\n"))
+	for r, want := range []bool{false, false, true, true} {
+		if got := strings.TrimSpace(rows[r]) != ""; got != want {
+			t.Errorf("row %d filled=%v, want %v:\n%s", r, got, want, strings.Join(rows, "\n"))
+		}
 	}
 }
 
@@ -159,5 +164,209 @@ func TestAxisLabelsDeduplicate(t *testing.T) {
 	}
 	if got[0] != "40" {
 		t.Errorf("top label = %q, want the maximum 40", got[0])
+	}
+}
+
+// drawChart renders a primitive on a simulation screen and returns its rows.
+func drawChart(t *testing.T, p tview.Primitive, w, h int) []string {
+	t.Helper()
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	screen.SetSize(w, h)
+	p.SetRect(0, 0, w, h)
+	p.Draw(screen)
+	screen.Show()
+	cells, cw, _ := screen.GetContents()
+	rows := make([]string, h)
+	for y := range h {
+		var b strings.Builder
+		for x := range cw {
+			b.WriteRune(cells[y*cw+x].Runes[0])
+		}
+		rows[y] = strings.TrimRight(b.String(), " ")
+	}
+	return rows
+}
+
+// countBars counts painted bar cells (full block or any partial).
+func countBars(line string) int {
+	n := 0
+	for _, r := range line {
+		if r == '█' || (r >= '▁' && r <= '▇') {
+			n++
+		}
+	}
+	return n
+}
+
+func headSeries(n int) []int {
+	d := make([]int, n)
+	for i := range d {
+		d[i] = 350 + i*5
+	}
+	return d
+}
+
+// A chart must never drop bars off its right edge just because the default
+// pitch does not fit: the pitch narrows toward one cell first. Before this,
+// a 30-head drive at 60 columns painted 26 heads and said nothing -- and the
+// title's range named a maximum that was never drawn, which on a health
+// display is worse than a cramped chart.
+func TestChartNarrowsPitchRatherThanDropBars(t *testing.T) {
+	const w, h = 60, 12
+	heads := headSeries(30)
+	rows := drawChart(t, farmHeadChart(" heads ", heads, false), w, h)
+
+	baseline := rows[h-4] // last plot row, above the axis line
+	if got := countBars(baseline); got != len(heads) {
+		t.Errorf("painted %d of %d heads at width %d:\n%s",
+			got, len(heads), w, strings.Join(rows, "\n"))
+	}
+	// Nothing was dropped, so nothing should claim otherwise.
+	if caption := rows[h-2]; strings.Contains(caption, "more") {
+		t.Errorf("caption reports dropped bars when all fit: %q", caption)
+	}
+}
+
+// The gap between bars is worth keeping when there is room for it; narrowing
+// the pitch is a concession to width, not the new default.
+func TestChartKeepsItsPitchWhenThereIsRoom(t *testing.T) {
+	const w, h = 60, 12
+	rows := drawChart(t, farmHeadChart(" heads ", headSeries(10), false), w, h)
+	baseline := rows[h-4]
+	i := strings.IndexAny(baseline, "▁▂▃▄▅▆▇█")
+	if i < 0 {
+		t.Fatalf("no bars drawn:\n%s", strings.Join(rows, "\n"))
+	}
+	// At the default pitch of 2 the cell after the first bar is a gap.
+	if r := []rune(baseline[i:]); len(r) < 2 || r[1] != ' ' {
+		t.Errorf("bars are touching at a width that affords a gap: %q", baseline)
+	}
+}
+
+// When even one cell per bar will not fit, values share a bar rather than
+// fall off the tail, and the caption says how many share one -- the same
+// contract as the fleet's dropped columns: nothing changes silently.
+func TestChartGroupsBarsRatherThanDropTheTail(t *testing.T) {
+	const w, h = 40, 10
+	heads := headSeries(60)
+	rows := drawChart(t, farmHeadChart(" heads ", heads, false), w, h)
+
+	painted := countBars(rows[h-4])
+	if painted >= len(heads) {
+		t.Fatalf("width %d should not fit %d heads; painted %d", w, len(heads), painted)
+	}
+	group := (len(heads) + painted - 1) / painted
+	caption := rows[h-2]
+	if want := fmt.Sprintf("%d per bar", group); !strings.Contains(caption, want) {
+		t.Errorf("caption %q does not say %q:\n%s", caption, want, strings.Join(rows, "\n"))
+	}
+}
+
+// The grouping note must survive whatever width forced it; a note that is
+// itself clipped would be the same failure one level up. The labels are built
+// around the note for exactly this reason.
+func TestChartGroupingNoteIsNeverItselfClipped(t *testing.T) {
+	const h = 10
+	heads := headSeries(60)
+	sawGrouping := false
+	for _, w := range []int{30, 36, 40, 48, 60} {
+		rows := drawChart(t, farmHeadChart(" heads ", heads, false), w, h)
+		painted, caption := countBars(rows[h-4]), rows[h-2]
+		if painted >= len(heads) {
+			continue // wide enough for one bar each; nothing to report
+		}
+		sawGrouping = true
+		want := fmt.Sprintf("· %d per bar", (len(heads)+painted-1)/painted)
+		if !strings.Contains(caption, want) {
+			t.Errorf("width %d: painted %d bars for %d heads, caption %q lacks %q",
+				w, painted, len(heads), caption, want)
+		}
+	}
+	if !sawGrouping {
+		t.Fatal("no width grouped a bar; the test proves nothing")
+	}
+}
+
+// The whole point of grouping over truncation: a fault on a late head must
+// still be drawn. Keeping the first N values dropped heads 32-59 at this
+// width, so a single failing head at 47 left a flat row of minimum marks --
+// the chart's one interesting bar, gone. Buckets take the MAXIMUM, the same
+// rule downsample uses to keep a spike in a filled series.
+func TestChartKeepsAFaultInTheTail(t *testing.T) {
+	const w, h = 40, 10
+	const faulty = 47
+	heads := make([]int, 60)
+	heads[faulty] = 12
+	rows := drawChart(t, farmHeadChart(" faults ", heads, true), w, h)
+
+	painted := countBars(rows[h-4])
+	if painted >= len(heads) {
+		t.Fatalf("width %d should not fit %d heads; painted %d", w, len(heads), painted)
+	}
+	// Every other head is zero, so the peak is the only bar above the
+	// baseline's minimum marks: it must reach the top plot row.
+	top := h - 4 - (plotRowsOf(rows, h) - 1)
+	if countBars(rows[top]) != 1 {
+		t.Errorf("head %d is not drawn at full height; grouping lost the fault:\n%s",
+			faulty, strings.Join(rows, "\n"))
+	}
+}
+
+// plotRowsOf counts the rows of the plot: those above the axis line that the
+// baseline's minimum marks do not reach.
+func plotRowsOf(rows []string, h int) int {
+	n := 0
+	for r := h - 4; r >= 0 && strings.Contains(rows[r], "\u2524"); r-- {
+		n++
+	}
+	return n
+}
+
+// An axis label must name the head that starts the bar it sits over. Cutting
+// the finished strip to the caption width sliced multi-digit indices in half
+// -- 13 heads at width 21 ended "9  1", and that 1 sat over head 12. A wrong
+// label is worse than a missing one, so the strip stops at the last index
+// that fits whole.
+func TestHeadAxisLabelsNameTheHeadBeneathThem(t *testing.T) {
+	sawCut := false
+	for pitch := 1; pitch <= farmHeadPitch; pitch++ {
+		for _, group := range []int{1, 2, 3, 7} {
+			for heads := 2; heads <= 60; heads++ {
+				bars := (heads + group - 1) / group
+				full := bars * pitch
+				for width := 1; width <= full; width++ {
+					strip := farmHeadAxis(pitch, group, heads, width)
+					if len(strip) > width {
+						t.Fatalf("pitch %d, group %d, %d heads, width %d: %q is %d cells",
+							pitch, group, heads, width, strip, len(strip))
+					}
+					if strip != farmHeadAxis(pitch, group, heads, full) {
+						sawCut = true
+					}
+					for col := 0; col < len(strip); {
+						if strip[col] == ' ' {
+							col++
+							continue
+						}
+						end := col
+						for end < len(strip) && strip[end] != ' ' {
+							end++
+						}
+						i, err := strconv.Atoi(strip[col:end])
+						if err != nil || col%pitch != 0 || i != col/pitch*group {
+							t.Fatalf("pitch %d, group %d, %d heads, width %d: %q labels column %d %q, which starts head %d",
+								pitch, group, heads, width, strip, col, strip[col:end], col/pitch*group)
+						}
+						col = end
+					}
+				}
+			}
+		}
+	}
+	if !sawCut {
+		t.Fatal("no width ever shortened the strip; the test proves nothing")
 	}
 }

@@ -5,6 +5,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -46,6 +47,21 @@ const uiGutter = 1
 // nestIndent is the leading whitespace for a line under an in-box header.
 const nestIndent = "  "
 
+// sectionHeader writes a top-level section heading. Bold, not accented: the
+// accent marks focus and exceptions, and a heading is neither. Overview's
+// panel headings are accented on purpose — they are sub-headings inside one
+// box, a different thing from these.
+func sectionHeader(b *strings.Builder, title string) {
+	fmt.Fprintf(b, "[::b]%s[-:-:-]\n", title)
+}
+
+// titledBox applies the package's standard frame: a border, the uniform
+// horizontal gutter, and a title. uiGutter's rule is "every text/table/list
+// box"; this is where that is actually applied rather than re-typed.
+func titledBox(b *tview.Box, title string) *tview.Box {
+	return b.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(title)
+}
+
 // marginBar renders a severity-coloured headroom bar for a normalized SMART
 // value above its threshold: fuller means more margin, same polarity as every
 // other bar. base is the smallest standard top value (100/200/253) covering
@@ -64,38 +80,36 @@ func marginBar(value, worst, thresh int, sev smart.Severity) string {
 		frac = float64(value-thresh) / float64(span)
 	}
 	frac = min(max(frac, 0), 1)
-	filled := int(frac*float64(width) + 0.5)
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
-	return fmt.Sprintf("[%s]%s[-]", severityTag(sev), bar)
+	full, empty := barGlyphs(int(frac*float64(width)+0.5), width)
+	return sevText(sev, full+empty)
 }
 
 // pctBarWidth is the cell width of every bar in the UI.
 const pctBarWidth = 8
 
+// barGlyphs is the one bar vocabulary: filled cells then empty ones, to a
+// total of width. Returned as a pair so a caller that colours the two halves
+// differently (progressBar) still spells the bar the same way — under mono the
+// glyphs are all that survives.
+func barGlyphs(filled, width int) (full, empty string) {
+	filled = min(max(filled, 0), width)
+	return strings.Repeat("█", filled), strings.Repeat("░", width-filled)
+}
+
 // pctBar renders a percentage as a severity-coloured bar plus the value.
 // A FULLER BAR ALWAYS MEANS HEALTHIER; callers with a "consumed" percentage
 // use pctBarUsed so opposite polarities never share a colour.
 func pctBar(pct int, sev smart.Severity) string {
-	filled := (clampPct(pct)*pctBarWidth + 50) / 100
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", pctBarWidth-filled)
-	return fmt.Sprintf("[%s]%s[-] %d%%", severityTag(sev), bar, pct)
+	full, empty := barGlyphs((clampPct(pct)*pctBarWidth+50)/100, pctBarWidth)
+	return fmt.Sprintf("%s %d%%", sevText(sev, full+empty), pct)
 }
 
 // pctBarUsed renders a CONSUMED percentage: the bar drains as the drive wears
 // (matching every other bar's polarity) while the number stays the "used" figure.
 func pctBarUsed(pct int, sev smart.Severity) string {
 	used := clampPct(pct)
-	filled := ((100-used)*pctBarWidth + 50) / 100
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", pctBarWidth-filled)
-	return fmt.Sprintf("[%s]%s[-] %d%%", severityTag(sev), bar, used)
-}
-
-// borderColor returns the accent colour for a focused pane, muted otherwise.
-func borderColor(focused bool) tcell.Color {
-	if focused {
-		return activeTheme.Accent
-	}
-	return activeTheme.Muted
+	full, empty := barGlyphs(((100-used)*pctBarWidth+50)/100, pctBarWidth)
+	return fmt.Sprintf("%s %d%%", sevText(sev, full+empty), used)
 }
 
 // tempSeverity grades a temperature for display colouring only; health never
@@ -111,63 +125,45 @@ func tempSeverity(celsius int) smart.Severity {
 	}
 }
 
-// severityColor maps a health severity to its display colour.
-func severityColor(s smart.Severity) tcell.Color {
-	switch s {
-	case smart.SeverityFailing:
-		return activeTheme.Failing
-	case smart.SeverityCaution:
-		return activeTheme.Caution
-	default:
-		return activeTheme.OK
-	}
-}
-
-// severityTag returns the bare colour token, for callers interpolating into "[%s]".
-func severityTag(s smart.Severity) string {
-	return tag(severityColor(s))
-}
-
-// healthGlyph is the coloured status dot shown beside each drive.
+// healthGlyph is the status mark shown beside each drive. The SHAPE carries
+// the severity, not just the colour: three palettes have no second hue to
+// spend (mono has none at all, phosphor and amber are monochrome by
+// construction), and on the selected row the band eats some of what is left.
+// A drive list of identical dots is no signal on any of them.
 func healthGlyph(s smart.Severity) string {
-	return fmt.Sprintf("[%s]●[-]", severityTag(s))
+	return sevText(s, severityGlyph(s))
 }
 
-// selectedRowStyle is the selected-row highlight: an explicit background that
-// keeps the cell's own foreground (tview's default inversion makes neutral
-// rows vanish).
-func selectedRowStyle(fg tcell.Color) tcell.Style {
-	// Pin ColorDefault to SelectionFg — the terminal default can be illegible
-	// on the highlight.
-	if fg == tcell.ColorDefault {
-		fg = activeTheme.SelectionFg
-	}
-	return tcell.StyleDefault.
-		Background(activeTheme.SelectionBg).
-		Foreground(fg).
-		Attributes(tcell.AttrBold)
-}
-
-// styleList applies the theme to a List: pins the secondary-text colour
-// (tview defaults it to a green that leaks into every theme) and routes
-// selection through selectedRowStyle so list and table selections match.
-// Re-call after a theme change.
-func styleList(l *tview.List) {
-	l.SetSecondaryTextColor(activeTheme.ListSecondary)
-	l.SetSelectedStyle(selectedRowStyle(activeTheme.SelectionFg))
-}
-
-// attrTextColor colours attribute row text: neutral when healthy, so only
-// rows needing attention are tinted.
-func attrTextColor(s smart.Severity) tcell.Color {
+// severityGlyph is the bare mark for a severity, escalating by weight:
+// an outline dot, a warning triangle, a solid block.
+func severityGlyph(s smart.Severity) string {
 	switch s {
 	case smart.SeverityFailing:
-		return activeTheme.Failing
+		return "■"
 	case smart.SeverityCaution:
-		return activeTheme.Caution
+		return "▲"
 	default:
-		return activeTheme.Neutral
+		return "●"
 	}
+}
+
+// sevVerdict renders a severity's word for a summary line. Failing takes an
+// inverse chip rather than tinted text: red is darker than yellow on every
+// dark ground, so no hue assignment makes the worst state the loudest one —
+// 8 of the 11 coloured palettes have Caution out-contrasting Failing. Area
+// does what hue cannot, and it works in mono, where the chip degrades to
+// reverse video and stays the only marked thing on the row.
+func sevVerdict(sev smart.Severity, word string) string {
+	if sev != smart.SeverityFailing {
+		return sevBold(sev, word)
+	}
+	// mono has no colour to fill a chip with; reverse video is the same move
+	// by attribute, and it is what marks the selected row there too.
+	if activeTheme.Failing == tcell.ColorDefault {
+		return "[::rb]" + word + "[-:-:-]"
+	}
+	return fmt.Sprintf("[%s:%s:b]%s[-:-:-]",
+		tag(activeTheme.Inverse), tag(activeTheme.Failing), word)
 }
 
 // humanBytes renders a byte count as a human-readable capacity.
@@ -204,6 +200,20 @@ func humanMinutes(m int) string {
 	return fmt.Sprintf("~%d h", (m+30)/60)
 }
 
+// clampPct bounds a percentage into the 0..100 range every bar and gauge
+// assumes.
+func clampPct(v int) int {
+	return min(max(v, 0), 100)
+}
+
+// plural renders a count with the right noun.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, one)
+	}
+	return fmt.Sprintf("%d %s", n, many)
+}
+
 // orDash renders s, falling back to the dash placeholder when empty.
 func orDash(s string) string {
 	if s == "" {
@@ -212,29 +222,11 @@ func orDash(s string) string {
 	return s
 }
 
-// capacityBytes returns the usable size: user_capacity, else nvme_total_capacity.
-func capacityBytes(r *smart.Report) (int64, bool) {
-	if r.UserCapacity != nil && r.UserCapacity.Bytes > 0 {
-		return r.UserCapacity.Bytes, true
-	}
-	if r.NVMeTotalCapacity != nil && *r.NVMeTotalCapacity > 0 {
-		return *r.NVMeTotalCapacity, true
-	}
-	return 0, false
-}
-
 // capacityString formats a report's usable capacity, or a dash if unknown.
+// The fallback itself lives in smart.CapacityBytes.
 func capacityString(r *smart.Report) string {
-	if b, ok := capacityBytes(r); ok {
+	if b, ok := r.CapacityBytes(); ok {
 		return humanBytes(b)
-	}
-	return dash
-}
-
-// tempString formats the current temperature in Celsius, or a dash.
-func tempString(r *smart.Report) string {
-	if t, ok := r.CurrentTemp(); ok {
-		return fmt.Sprintf("%d°C", t)
 	}
 	return dash
 }
@@ -248,7 +240,7 @@ func tempMarkup(celsius int) string {
 	if sev == smart.SeverityOK {
 		return s
 	}
-	return fmt.Sprintf("[%s::b]%s[-:-:-]", severityTag(sev), s)
+	return sevBold(sev, s)
 }
 
 // tempCell is tempMarkup for a whole report, dash when unreported.
@@ -259,20 +251,49 @@ func tempCell(r *smart.Report) string {
 	return dash
 }
 
-// driveKind classifies the drive for the identity line (SSD vs HDD vs NVMe).
-func driveKind(r *smart.Report) string {
+// kindLabels names a drive kind at one verbosity. The classification itself is
+// in kindLabel: two switches over the same four cases drift, and the fleet's
+// short labels have to agree with the identity line's long ones.
+type kindLabels struct{ nvme, hdd, ssd string }
+
+var (
+	longKindLabels  = kindLabels{nvme: "NVMe SSD", hdd: "HDD @ %d rpm", ssd: "SATA SSD"}
+	shortKindLabels = kindLabels{nvme: "NVMe", hdd: "HDD", ssd: "SSD"}
+)
+
+// kindLabel classifies the drive and names it from the given label set. Only
+// the HDD label may take the rotation rate, so it alone is a format string.
+func kindLabel(r *smart.Report, l kindLabels) string {
 	switch {
 	case r.IsNVMe():
-		return "NVMe SSD"
+		return l.nvme
 	case r.RotationRate != nil && *r.RotationRate > 0:
-		return fmt.Sprintf("HDD @ %d rpm", *r.RotationRate)
+		if strings.Contains(l.hdd, "%d") {
+			return fmt.Sprintf(l.hdd, *r.RotationRate)
+		}
+		return l.hdd
 	case r.IsATA():
-		return "SATA SSD"
+		return l.ssd
 	default:
-		// Device.Protocol is smartctl's own enum, not free text, but shortKind
-		// escapes it at the same kind of sink; keep the two consistent.
+		// Device.Protocol is smartctl's own enum, not free text, but it reaches a
+		// markup-interpreting sink either way.
 		return esc(r.Device.Protocol)
 	}
+}
+
+// driveKind classifies the drive for the identity line (SSD vs HDD vs NVMe).
+func driveKind(r *smart.Report) string { return kindLabel(r, longKindLabels) }
+
+// hangingWrap is one panel's key/value geometry. valueCol is the display
+// column values start in — it must match the width that panel's rows pad the
+// label to, or the cut lands inside the label. minValueW is the narrowest
+// value column still worth wrapping into: a panel of short numbers can wrap
+// into almost nothing, but one carrying a 150-character device path cannot,
+// because WordWrap hard-splits a token with no break opportunity and the line
+// count is what the panel is sized from.
+type hangingWrap struct {
+	valueCol  int
+	minValueW int
 }
 
 // hangingIndent re-wraps over-long lines so overflow hangs under the value
@@ -282,9 +303,10 @@ func driveKind(r *smart.Report) string {
 // valueCol is a display column, so the key is cut with splitAtWidth and the
 // value re-wrapped by tview.WordWrap — both measure cells and treat style tags
 // as zero-width.
-func hangingIndent(text string, valueCol, innerW int) string {
+func hangingIndent(text string, w hangingWrap, innerW int) string {
+	valueCol := w.valueCol
 	valueW := innerW - valueCol
-	if valueW <= 8 || text == "" {
+	if valueW < w.minValueW || text == "" {
 		return text
 	}
 	indent := strings.Repeat(" ", valueCol)
@@ -340,4 +362,19 @@ func splitAtWidth(s string, col int) (head, tail string) {
 		}
 	}
 	return s, ""
+}
+
+// roundDuration renders an age at a sensible resolution: seconds under a
+// minute, minutes under an hour, then hours. The coarse units are formatted
+// rather than left to Duration.String, which would spell twelve minutes
+// "12m0s". A cached reading's age only needs to say roughly how stale it is.
+func roundDuration(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return d.Round(time.Second).String()
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Round(time.Minute).Minutes()))
+	default:
+		return fmt.Sprintf("%dh", int(d.Round(time.Hour).Hours()))
+	}
 }

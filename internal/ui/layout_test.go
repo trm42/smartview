@@ -3,12 +3,16 @@
 package ui
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 
+	"github.com/trm42/smartview/internal/config"
 	"github.com/trm42/smartview/internal/smart"
 )
 
@@ -22,7 +26,15 @@ const testTimeout = 5 * time.Second
 // and the layout branch under test depends only on the terminal width.
 func newSimApp(t *testing.T, width, height int) (*App, tcell.SimulationScreen) {
 	t.Helper()
-	a := New(30*time.Second, "dark")
+	a, screen := newSimAppCfg(t, width, height, config.Default())
+	return a, screen
+}
+
+// newSimAppCfg is newSimApp with explicit settings. The saver only records:
+// no test may write a config file.
+func newSimAppCfg(t *testing.T, width, height int, cfg config.Config) (*App, tcell.SimulationScreen) {
+	t.Helper()
+	a := New(cfg, func(config.Config) error { return nil })
 	// New installs the theme globally; put it back so test order cannot matter.
 	t.Cleanup(func() { setTheme(themes["dark"]) })
 	screen := tcell.NewSimulationScreen("UTF-8")
@@ -249,5 +261,197 @@ func TestRailRepaintsAfterUpdate(t *testing.T) {
 	a.cycleTheme()
 	if got := a.rail.GetText(false); got == themed {
 		t.Errorf("rail markup unchanged after a theme cycle: %q", got)
+	}
+}
+
+// TestThemeCycleRegroundsPersistentWidgets guards the same class of miss
+// CLAUDE.md names for the banner: tview bakes the ground into a widget at
+// construction, and repaintAll rebuilds only the detail's tab views, so every
+// widget that outlives a theme change has to be re-grounded.
+//
+// repaintAll walks the tree for this; the list below stays hand-written on
+// purpose. If both sides derived from the walk the test would assert nothing,
+// so production walks and the test enumerates — that is what catches a widget
+// the walk cannot reach and nobody grounded (the rail, in the narrow layout).
+func TestThemeCycleRegroundsPersistentWidgets(t *testing.T) {
+	a, _ := newSimApp(t, 120, 40)
+	for range themeCycle {
+		a.cycleTheme()
+		if activeTheme.Background != dark.Background {
+			break
+		}
+	}
+	if activeTheme.Background == dark.Background {
+		t.Fatal("no theme in the cycle grounds differently from dark; nothing is under test")
+	}
+
+	type grounded interface{ GetBackgroundColor() tcell.Color }
+	want := activeTheme.Background
+	for _, c := range []struct {
+		name string
+		w    grounded
+	}{
+		{"list", a.list},
+		{"status", a.status},
+		{"banner", a.banner},
+		{"rail", a.rail},
+		{"body", a.body},
+		{"bodyPages", a.bodyPages},
+		{"root", a.root},
+		{"detail", a.detail},
+		{"detail.note", a.detail.note},
+		{"detail.barRow", a.detail.barRow},
+		{"detail.bar", a.detail.bar},
+		{"detail.spinner", a.detail.spinner},
+		{"detail.pages", a.detail.pages},
+		{"fleet", a.fleet},
+		{"fleet.bar", a.fleet.bar},
+		{"fleet.table", a.fleet.table},
+		{"fleet.legend", a.fleet.legend},
+	} {
+		if got := c.w.GetBackgroundColor(); got != want {
+			t.Errorf("%s ground = %v after a theme cycle, want %v", c.name, got, want)
+		}
+	}
+}
+
+// The root-warning banner is mounted only when euid != 0, so under sudo it is
+// not in the widget tree at all and rethemeTree cannot reach it. Tests run
+// non-root, where it *is* mounted — which is exactly why a walk-only repaint
+// looked correct here while leaving the banner stale for anyone running under
+// sudo. Unmount it to stand in for that layout and pin that repaintAll grounds
+// it anyway. The same holds for whichever of list/rail the layout left out.
+func TestThemeCycleRegroundsWidgetsTheWalkCannotReach(t *testing.T) {
+	a, _ := newSimApp(t, 120, 40)
+
+	// Stand in for the euid == 0 layout: build() would never have added it.
+	a.root.RemoveItem(a.banner)
+
+	offTree := []struct {
+		name string
+		w    interface {
+			GetBackgroundColor() tcell.Color
+			SetBackgroundColor(tcell.Color) *tview.Box
+		}
+	}{
+		{"banner", a.banner},
+		{"rail", a.rail}, // never mounted in the wide layout
+	}
+	// A ground nothing in the theme uses, so "still stale" is unmistakable.
+	for _, c := range offTree {
+		c.w.SetBackgroundColor(tcell.ColorFuchsia)
+	}
+
+	for range themeCycle {
+		a.cycleTheme()
+		if activeTheme.Background != dark.Background {
+			break
+		}
+	}
+	if activeTheme.Background == dark.Background {
+		t.Fatal("no theme in the cycle grounds differently from dark; nothing is under test")
+	}
+
+	for _, c := range offTree {
+		if got := c.w.GetBackgroundColor(); got != activeTheme.Background {
+			t.Errorf("%s ground = %v after a theme cycle, want %v — it is not in the "+
+				"widget tree, so repaintAll has to ground it explicitly",
+				c.name, got, activeTheme.Background)
+		}
+	}
+}
+
+// TestThemeCycleKeepsThePlaceholderMessage: with no drives the detail holds a
+// placeholder, and repaintAll has to rebuild it in the new theme without
+// changing what it says — "No drives found" is the actionable one and nothing
+// ever sets it a second time.
+func TestThemeCycleKeepsThePlaceholderMessage(t *testing.T) {
+	a, _ := newSimApp(t, 120, 40)
+	const msg = "No drives found. Try running with sudo."
+	a.detail.showPlaceholder(msg)
+
+	a.cycleTheme()
+
+	name, page := a.detail.pages.GetFrontPage()
+	if name != "placeholder" {
+		t.Fatalf("front page after a theme cycle = %q, want %q", name, "placeholder")
+	}
+	tv, ok := page.(*tview.TextView)
+	if !ok {
+		t.Fatalf("placeholder page is %T, want *tview.TextView", page)
+	}
+	if got := tv.GetText(true); !strings.Contains(got, msg) {
+		t.Errorf("placeholder after a theme cycle = %q, want it to still say %q", got, msg)
+	}
+}
+
+// TestChromeSurvivesAThemeCycle: tview bakes Styles.PrimaryTextColor and
+// Styles.TitleColor in at construction, so a widget that outlives a theme
+// change keeps the old palette's ink. The failure is partial and easy to miss
+// — markup that names its colour survives, untagged text does not — so this
+// cycles all the way onto a paper ground and asserts nothing on screen is
+// drawn too faint to read. Before applyTextColor and rethemeTree's title pass,
+// the hint bar kept its accented keys and lost every label, and the drive list
+// kept its tagged counts and lost the word "Drives".
+func TestChromeSurvivesAThemeCycle(t *testing.T) {
+	const light = "daylight" // the first light palette in themeCycle
+	const minRatio = 1.5     // stale white on paper is ~1.02; every role clears 3:1
+
+	a, screen := newSimApp(t, 120, 30)
+	runSim(t, a, screen)
+
+	theme := func() string { return onLoop(t, a, func() string { return a.themeName }) }
+	for range len(themeCycle) {
+		cur := theme()
+		if cur == light {
+			break
+		}
+		// InjectKey is asynchronous, so wait for the press to land before the
+		// next one: pressing blindly overshoots the palette we want.
+		screen.InjectKey(tcell.KeyRune, 'T', tcell.ModNone)
+		for deadline := time.Now().Add(testTimeout); theme() == cur; {
+			if time.Now().After(deadline) {
+				t.Fatalf("theme did not advance past %q within %s", cur, testTimeout)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if got := theme(); got != light {
+		t.Fatalf("cycling with T stopped at theme %q, want %q", got, light)
+	}
+	// onLoop draws after its closure, and the loop runs queued work in order, so
+	// the second call's closure runs only once the first one's frame is on the
+	// screen. (Calling Draw inside the closure instead self-deadlocks: the
+	// queued draw already holds the lock.) Scanning the screen from inside that
+	// closure is not a convenience either: GetContents hands back the live cell
+	// array rather than a copy, so a scan on the test goroutine races every
+	// draw the loop is still doing — which is what CI caught and a local
+	// -race run did not.
+	onLoop(t, a, func() any { return nil })
+	faint := onLoop(t, a, func() []string {
+		var out []string
+		cells, w, _ := screen.GetContents()
+		for i, c := range cells {
+			if len(c.Runes) == 0 || c.Runes[0] == 0 || c.Runes[0] == ' ' {
+				continue
+			}
+			fg, bg, _ := c.Style.Decompose()
+			if fg == tcell.ColorDefault || bg == tcell.ColorDefault {
+				continue // resolves only in a real terminal
+			}
+			if ratio := contrastRatio(fg, bg); ratio < minRatio {
+				out = append(out, fmt.Sprintf("%q at (%d,%d) has contrast %.2f on its own cell",
+					string(c.Runes), i%w, i/w, ratio))
+			}
+		}
+		return out
+	})
+
+	for i, f := range faint {
+		if i == 3 {
+			t.Errorf("... and %d more cells drawn too faint to read", len(faint)-3)
+			break
+		}
+		t.Errorf("%s, want >= %.1f", f, minRatio)
 	}
 }

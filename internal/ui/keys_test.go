@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 	"unicode"
 
+	"github.com/trm42/smartview/internal/config"
 	"github.com/trm42/smartview/internal/smart"
 )
 
@@ -221,6 +221,7 @@ func TestKeysModalSpecificBindings(t *testing.T) {
 		"G",
 		"j",
 		"k",
+		"R", // the only way to read a drive standby_aware is skipping
 	} {
 		if !documentedKeys(t)[want] {
 			t.Errorf("%q missing from the '?' modal", want)
@@ -228,16 +229,47 @@ func TestKeysModalSpecificBindings(t *testing.T) {
 	}
 }
 
-// modalWrapWidth is what tview.Modal allows its text at the narrowest terminal
-// smartview supports: it word-wraps at a third of the screen width, so at 80
-// columns a line over 26 cells is split and the two-column layout collapses.
-const modalWrapWidth = 80 / 3
-
-func TestKeysModalFitsTheNarrowestTerminal(t *testing.T) {
+// TestKeysModalColumnsAreAligned: the list is rendered from keyBindings into
+// fixed-width columns, and both the width and the two-space separator are
+// contracts — documentedKeys reads the key out of every line by cutting at the
+// first double space, and the modal colours the key column by rune offset.
+func TestKeysModalColumnsAreAligned(t *testing.T) {
 	for _, line := range strings.Split(keysText, "\n") {
-		if n := len([]rune(line)); n > modalWrapWidth {
-			t.Errorf("keys line %q is %d cells, over the %d that fit at 80 columns", line, n, modalWrapWidth)
+		if strings.TrimSpace(line) == "" {
+			continue // group break
 		}
+		if n := len([]rune(line)); n != keysColumnWidth {
+			t.Errorf("keys line %q is %d cells, want exactly %d: centring only "+
+				"aligns the columns when every line is the same width", line, n, keysColumnWidth)
+		}
+		key, _, found := strings.Cut(line, "  ")
+		if !found {
+			t.Errorf("keys line %q has no two-space column separator", line)
+			continue
+		}
+		if len([]rune(key)) > keyColWidth {
+			t.Errorf("keys line %q has a %d-cell key column, over the %d it is padded to",
+				line, len([]rune(key)), keyColWidth)
+		}
+	}
+}
+
+// TestKeysModalFitsTheNarrowestTerminal: the list moved off tview.Modal, which
+// word-wrapped at a third of the screen and grew a row per binding — one ragged
+// 26-cell column that had already outgrown a 24-row terminal. The two-column
+// box has to fit the smallest terminal smartview supports.
+func TestKeysModalFitsTheNarrowestTerminal(t *testing.T) {
+	const minCols, minRows = 80, 24
+	left, right := keysColumns()
+	if strings.TrimSpace(right) == "" {
+		t.Fatal("keysColumns produced one column; the group breaks are gone")
+	}
+	rows := max(strings.Count(left, "\n"), strings.Count(right, "\n")) + 1
+	if width := keysModalWidth; width > minCols {
+		t.Errorf("the keys box is %d columns wide, over the %d that always fit", width, minCols)
+	}
+	if h := rows + 4; h > minRows {
+		t.Errorf("the keys box is %d rows tall, over the %d that always fit", h, minRows)
 	}
 }
 
@@ -263,7 +295,7 @@ func TestContextHintsFollowTheLiveAttributesView(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			a := New(30*time.Second, "dark")
+			a := New(config.Default(), func(config.Config) error { return nil })
 			// New installs the theme globally; put it back so test order cannot matter.
 			t.Cleanup(func() { setTheme(themes["dark"]) })
 			c.report.Device.Name = "/dev/sdz"

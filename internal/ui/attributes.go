@@ -68,10 +68,50 @@ const attrNameWidth = 22
 
 // attributesView is the ATA attribute table plus footer, with sort (s) and
 // filter (f); rows rebuild in place so selection and focus survive.
-type attributesView struct {
+// attrScaffold is the frame both attribute tables share: a selectable table
+// over a description footer. Only the frame — the two views differ in how they
+// restore selection (by attribute ID vs by row index) and in which keys they
+// claim, so that stays with each.
+type attrScaffold struct {
 	*tview.Flex
 	table  *scrollTable
 	footer *tview.TextView
+}
+
+// newAttrScaffold assembles the frame; onSelect is handed the table row.
+func newAttrScaffold(onSelect func(row int)) attrScaffold {
+	s := attrScaffold{
+		Flex:   tview.NewFlex().SetDirection(tview.FlexRow),
+		table:  newScrollTable(),
+		footer: tview.NewTextView().SetDynamicColors(true).SetWrap(true),
+	}
+	s.table.SetBorders(false).SetFixed(1, 0)
+	s.table.SetSelectable(true, false)
+	titledBox(s.footer.Box, "")
+	s.table.SetSelectionChangedFunc(func(row, _ int) { onSelect(row) })
+	s.AddItem(s.table, 0, 1, true)
+	s.AddItem(s.footer, attrFooterHeight, 0, false)
+	return s
+}
+
+// setFocused accents the table's border when the Attributes tab holds focus.
+func (s attrScaffold) setFocused(focused bool) {
+	s.table.SetBorderColor(borderColor(focused))
+}
+
+// footerRow maps a table row to an index into a rows slice of length n,
+// clearing the footer and reporting false for the header row or past the end.
+func (s attrScaffold) footerRow(row, n int) (int, bool) {
+	i := row - 1
+	if i < 0 || i >= n {
+		s.footer.SetText("")
+		return 0, false
+	}
+	return i, true
+}
+
+type attributesView struct {
+	attrScaffold
 	attrs  []smart.ATAAttribute
 	shown  []smart.ATAAttribute // rows currently displayed; row i+1 → shown[i]
 	sortBy sortMode
@@ -79,17 +119,8 @@ type attributesView struct {
 }
 
 func newAttributesView(attrs []smart.ATAAttribute) *attributesView {
-	v := &attributesView{
-		Flex:   tview.NewFlex().SetDirection(tview.FlexRow),
-		table:  newScrollTable(),
-		footer: tview.NewTextView().SetDynamicColors(true).SetWrap(true),
-		attrs:  attrs,
-	}
-	v.table.SetBorders(false).SetFixed(1, 0)
-	v.table.SetSelectable(true, false)
-	v.footer.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter)
-
-	v.table.SetSelectionChangedFunc(func(row, _ int) { v.updateFooter(row) })
+	v := &attributesView{attrs: attrs}
+	v.attrScaffold = newAttrScaffold(func(row int) { v.updateFooter(row) })
 	v.table.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch ev.Rune() {
 		case 's':
@@ -108,16 +139,9 @@ func newAttributesView(attrs []smart.ATAAttribute) *attributesView {
 		return ev
 	})
 
-	v.AddItem(v.table, 0, 1, true)
-	v.AddItem(v.footer, attrFooterHeight, 0, false)
 	v.renderRows()
 	v.selectByID(-1)
 	return v
-}
-
-// setFocused accents the table's border when the Attributes tab holds focus.
-func (v *attributesView) setFocused(focused bool) {
-	v.table.SetBorderColor(borderColor(focused))
 }
 
 // refresh re-applies the latest data, keeping selection (by ID) and sort/filter.
@@ -163,7 +187,7 @@ func (v *attributesView) selectByID(id int) {
 // the table primitive so focus is not lost; the caller applies selection.
 func (v *attributesView) renderRows() {
 	v.table.Clear()
-	v.table.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(fmt.Sprintf(
+	titledBox(v.table.Box, fmt.Sprintf(
 		" SMART attributes — sort: %s · filter: %s  %s[s/f][-] ", v.sortBy, v.filter, accentTag()))
 
 	headers := []string{"ID", "Attribute", "Kind", "State", "Margin", "Reading"}
@@ -188,20 +212,18 @@ func (v *attributesView) renderRows() {
 // neutral.
 func (v *attributesView) setAttrRow(row int, a smart.ATAAttribute) {
 	color := attrTextColor(a.Severity())
-	sel := selectedRowStyle(color)
 	put := func(col int, text string, align int) {
-		v.table.SetCell(row, col, tview.NewTableCell(" "+text+" ").
-			SetTextColor(color).SetAlign(align).SetSelectedStyle(sel))
+		v.table.SetCell(row, col, bodyCell(text, color, align))
 	}
 	// Name and reading are drive-controlled: esc() blocks markup injection.
 	put(0, fmt.Sprintf("%3d", a.ID), tview.AlignLeft)
-	v.table.SetCell(row, 1, tview.NewTableCell(" "+esc(truncateRunes(humanAttrName(a.Name), attrNameWidth))+" ").
-		SetTextColor(color).SetSelectedStyle(sel))
+	put(1, esc(truncateRunes(humanAttrName(a.Name), attrNameWidth)), tview.AlignLeft)
 	put(2, attrKind(a), tview.AlignLeft)
 	put(3, attrState(a), tview.AlignLeft)
-	// Margin carries its own colour tags (a green bar even on a neutral row).
-	v.table.SetCell(row, 4, tview.NewTableCell(" "+marginCell(a)+" ").
-		SetSelectedStyle(sel))
+	// Margin carries its own colour tags (a green bar even on a neutral row), so
+	// it takes no text colour of its own.
+	v.table.SetCell(row, 4, tview.NewTableCell(cellPad(marginCell(a), tview.AlignLeft)).
+		SetSelectedStyle(selectedRowStyle(color)))
 	// decodeReading returns "" when the drive reports no raw value; the themed
 	// dash is substituted here, after escaping, as marginCell's cell does.
 	put(5, orDash(esc(decodeReading(a))), tview.AlignRight)
@@ -270,9 +292,8 @@ func (v *attributesView) visibleRows() []smart.ATAAttribute {
 
 // updateFooter writes the description and precise numbers for the selected row.
 func (v *attributesView) updateFooter(row int) {
-	i := row - 1
-	if i < 0 || i >= len(v.shown) {
-		v.footer.SetText("")
+	i, ok := v.footerRow(row, len(v.shown))
+	if !ok {
 		return
 	}
 	a := v.shown[i]
@@ -287,7 +308,7 @@ func (v *attributesView) updateFooter(row int) {
 		accentTag(), a.ID, esc(humanAttrName(a.Name)),
 		mutedTag(), attrKind(a), attrLimits(a), a.Worst, esc(a.Raw.String))
 	if verdict := attrVerdict(a); verdict != "" {
-		fmt.Fprintf(&b, "[%s]%s[-]\n", severityTag(a.Severity()), verdict)
+		fmt.Fprintf(&b, "%s\n", sevText(a.Severity(), verdict))
 	}
 	fmt.Fprintf(&b, "%s", desc)
 	v.footer.SetText(b.String())
@@ -365,36 +386,19 @@ type attrKV struct {
 // nvmeAttributesView renders the NVMe health log as a key/value table with a
 // description footer, refreshing in place.
 type nvmeAttributesView struct {
-	*tview.Flex
-	table  *scrollTable
-	footer *tview.TextView
-	rows   []attrKV
+	attrScaffold
+	rows []attrKV
 }
 
 func newNVMeAttributesView(h *smart.NVMeHealth) *nvmeAttributesView {
-	v := &nvmeAttributesView{
-		Flex:   tview.NewFlex().SetDirection(tview.FlexRow),
-		table:  newScrollTable(),
-		footer: tview.NewTextView().SetDynamicColors(true).SetWrap(true),
-	}
-	v.table.SetBorders(false).SetFixed(1, 0)
-	v.table.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(" NVMe health log ")
-	v.table.SetSelectable(true, false)
-	v.footer.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter)
-	v.table.SetSelectionChangedFunc(func(row, _ int) { v.setFooter(row) })
-
-	v.AddItem(v.table, 0, 1, true)
-	v.AddItem(v.footer, attrFooterHeight, 0, false)
+	v := &nvmeAttributesView{}
+	v.attrScaffold = newAttrScaffold(func(row int) { v.setFooter(row) })
+	titledBox(v.table.Box, " NVMe health log ")
 
 	v.setRows(h)
 	v.table.Select(1, 0)
 	v.setFooter(1)
 	return v
-}
-
-// setFocused accents the table's border when the Attributes tab holds focus.
-func (v *nvmeAttributesView) setFocused(focused bool) {
-	v.table.SetBorderColor(borderColor(focused))
 }
 
 // refresh re-applies the latest data, keeping the selected row (field order
@@ -424,18 +428,15 @@ func (v *nvmeAttributesView) setRows(h *smart.NVMeHealth) {
 	v.table.SetCell(0, 0, headerCell("Field"))
 	v.table.SetCell(0, 1, headerCell("Value"))
 	for i, r := range v.rows {
-		v.table.SetCell(i+1, 0, tview.NewTableCell(" "+r.k+" ").
-			SetTextColor(activeTheme.Neutral).SetSelectedStyle(selectedRowStyle(activeTheme.Neutral)))
-		v.table.SetCell(i+1, 1, tview.NewTableCell(" "+r.v+" ").
-			SetTextColor(severityColor(r.sev)).SetSelectedStyle(selectedRowStyle(severityColor(r.sev))))
+		v.table.SetCell(i+1, 0, bodyCell(r.k, activeTheme.Neutral, tview.AlignLeft))
+		v.table.SetCell(i+1, 1, bodyCell(r.v, severityColor(r.sev), tview.AlignLeft))
 	}
 }
 
 // setFooter writes the description for the selected field.
 func (v *nvmeAttributesView) setFooter(row int) {
-	i := row - 1
-	if i < 0 || i >= len(v.rows) {
-		v.footer.SetText("")
+	i, ok := v.footerRow(row, len(v.rows))
+	if !ok {
 		return
 	}
 	desc := nvmeDesc[v.rows[i].k]
@@ -477,8 +478,8 @@ func nvmeRows(h *smart.NVMeHealth) []attrKV {
 	add("Power-on", humanDuration(h.PowerOnHours), smart.SeverityOK)
 	add("Power cycles", fmt.Sprintf("%d", h.PowerCycles), smart.SeverityOK)
 	add("Unsafe shutdowns", fmt.Sprintf("%d", h.UnsafeShutdowns), smart.SeverityOK)
-	add("Data read", humanBytes(h.DataUnitsRead*512*1000), smart.SeverityOK)
-	add("Data written", humanBytes(h.DataUnitsWritten*512*1000), smart.SeverityOK)
+	add("Data read", humanBytes(smart.DataUnitBytes(h.DataUnitsRead)), smart.SeverityOK)
+	add("Data written", humanBytes(smart.DataUnitBytes(h.DataUnitsWritten)), smart.SeverityOK)
 	if h.HostReads > 0 || h.HostWrites > 0 {
 		add("Read commands", fmt.Sprintf("%d", h.HostReads), smart.SeverityOK)
 		add("Write commands", fmt.Sprintf("%d", h.HostWrites), smart.SeverityOK)
@@ -515,23 +516,38 @@ func headerCell(s string) *tview.TableCell {
 	return headerCellAligned(s, tview.AlignLeft)
 }
 
-// headerCellAligned is headerCell with an explicit alignment; a right-aligned
-// header takes a leading pad only, matching the numeric cells beneath it.
-func headerCellAligned(s string, align int) *tview.TableCell {
-	text := " " + s + " "
+// cellPad applies the table's one padding rule: a cell is padded both sides,
+// except a right-aligned one, which takes a leading pad only. tview already
+// spaces columns, and a trailing pad on a right-aligned cell pushes the value
+// off its own edge — and costs real width across eight fleet columns.
+func cellPad(s string, align int) string {
 	if align == tview.AlignRight {
-		text = " " + s
+		return " " + s
 	}
-	return tview.NewTableCell(text).
+	return " " + s + " "
+}
+
+// headerCellAligned is headerCell with an explicit alignment.
+func headerCellAligned(s string, align int) *tview.TableCell {
+	return tview.NewTableCell(cellPad(s, align)).
 		SetTextColor(activeTheme.Accent).
 		SetAttributes(tcell.AttrBold).
 		SetAlign(align).
 		SetSelectable(false)
 }
 
+// bodyCell is headerCellAligned's counterpart for data rows: same padding
+// rule, the row's own colour, and a selection style that keeps that colour.
+func bodyCell(text string, color tcell.Color, align int) *tview.TableCell {
+	return tview.NewTableCell(cellPad(text, align)).
+		SetTextColor(color).
+		SetAlign(align).
+		SetSelectedStyle(selectedRowStyle(color))
+}
+
 // centeredNote is a placeholder primitive for empty/unsupported sections.
 func centeredNote(msg string) tview.Primitive {
 	tv := tview.NewTextView().SetTextAlign(tview.AlignCenter).SetText("\n" + msg)
-	tv.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter)
+	titledBox(tv.Box, "")
 	return tv
 }
