@@ -432,6 +432,13 @@ is clean:
 GOTOOLCHAIN=go1.26.4 golangci-lint run ./...
 ```
 
+## Security
+
+Found a security bug? Report it privately through the repository's **Security**
+tab rather than in a public issue — [SECURITY.md](SECURITY.md) covers what is in
+scope (drive-controlled strings are the interesting boundary) and what to
+include.
+
 ## Roadmap
 
 See [TODO.md](TODO.md). Self-test triggering (`smartctl -t`) and a

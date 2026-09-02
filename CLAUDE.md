@@ -34,6 +34,13 @@ CI additionally gates on the SPDX headers, `go mod tidy` leaving no diff, a
 `-tags dev` vet and build, a darwin/arm64 cross-compile, `go test -race -cover`
 and `govulncheck` (see `.github/workflows/`).
 
+`main` is protected by a repository ruleset: merging needs a PR with one
+approval and four green checks — `build-test (go.mod, go.mod)`, `build-test
+(stable, stable)`, `golangci` and `goreleaser-check` — on a branch already up to
+date with `main`. Only the repository owner can bypass it, so work on a branch
+and open a PR. A new required check has to be a job that runs on
+`pull_request`; one that never reports blocks every PR instead of gating it.
+
 Runtime needs `smartctl` (smartmontools ≥ 7.0) on PATH; full attribute access
 often requires `sudo`. Driving the TUI for verification (no tmux in this env):
 build, then use `expect` to spawn under a pty, `sleep`, `send` keys, and `send
