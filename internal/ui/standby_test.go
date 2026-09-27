@@ -14,7 +14,7 @@ func healthyReport(name string) *smart.Report {
 	return &smart.Report{
 		Device:      smart.Device{Name: name, Type: "sat", Protocol: "ATA"},
 		ModelName:   "ACME SpinRight 8TB",
-		SmartStatus: smart.SmartStatus{Passed: true},
+		SmartStatus: &smart.SmartStatus{Passed: true},
 		Temperature: &smart.Temperature{Current: new(38)},
 	}
 }

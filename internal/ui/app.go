@@ -264,14 +264,17 @@ func (a *App) renderRail(cur int) {
 			fmt.Fprintf(&b, " %s●[-] %s%s[-]", mutedTag(), mutedTag(), esc(name))
 			continue
 		}
-		sev := rep.Overall()
 		if i == cur {
+			markColor := severityColor(rep.Overall())
+			if noVerdict(rep) {
+				markColor = activeTheme.Muted
+			}
 			// The ▸ marker keeps the selection visible under mono.
 			fmt.Fprintf(&b, " %s▸%s %s[-:-:-]",
-				fgbgTag(severityColor(sev), activeTheme.SelectionBg), healthGlyph(sev), esc(name))
+				fgbgTag(markColor, activeTheme.SelectionBg), reportGlyph(rep), esc(name))
 			continue
 		}
-		fmt.Fprintf(&b, "  %s %s", healthGlyph(sev), esc(name))
+		fmt.Fprintf(&b, "  %s %s", reportGlyph(rep), esc(name))
 	}
 	if n := a.alertCount(); n > 0 {
 		fmt.Fprintf(&b, "  %s▲ %d[-]", cautionTag(), n)
@@ -544,7 +547,7 @@ func (a *App) listRow(d smart.Device) (string, string) {
 	if rep.ModelName == "" {
 		model = esc(shortName(d))
 	}
-	main := fmt.Sprintf("%s %s", healthGlyph(rep.Overall()), model)
+	main := fmt.Sprintf("%s %s", reportGlyph(rep), model)
 	// Identical models are common; name the device when the model alone is ambiguous.
 	if a.sharedModels[rep.ModelName] {
 		main += mutedTag() + " · " + esc(railName(d)) + "[-]"

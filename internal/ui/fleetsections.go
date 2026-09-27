@@ -122,10 +122,9 @@ func healthSection() fleetSection {
 		},
 		cells: func(row fleetRow) []fleetCell {
 			r := row.rep
-			sev := r.Overall()
 			// Healthy is muted: colour marks exceptions.
-			word := sevVerdict(sev, verdictWord(sev))
-			if sev == smart.SeverityOK {
+			word := reportVerdict(r)
+			if sev := r.Overall(); sev == smart.SeverityOK && r.HasHealth() {
 				word = mutedTag() + verdictWord(sev) + "[-]"
 			}
 			verdict := fleetCell{text: word, color: activeTheme.Neutral}

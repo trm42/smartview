@@ -234,7 +234,7 @@ func TestRailRepaintsAfterUpdate(t *testing.T) {
 
 	a.reports["/dev/sda"] = &smart.Report{
 		Device:      smart.Device{Name: "/dev/sda", Protocol: "ATA"},
-		SmartStatus: smart.SmartStatus{Passed: true},
+		SmartStatus: &smart.SmartStatus{Passed: true},
 		ModelName:   "TEST DRIVE",
 	}
 	a.populateList()

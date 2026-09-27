@@ -44,37 +44,42 @@ func TestOverall(t *testing.T) {
 		r    Report
 		want Severity
 	}{
-		{"smart status failed", Report{SmartStatus: SmartStatus{Passed: false}}, SeverityFailing},
+		{"smart status failed", Report{SmartStatus: &SmartStatus{Passed: false}}, SeverityFailing},
+		// No smart_status is an unread drive, not a failed one.
+		{"no smart status", Report{Device: Device{Protocol: "ATA"}}, SeverityOK},
+		{"no smart status still grades attributes", Report{
+			Device: Device{Protocol: "ATA"}, ATAAttributes: &failingAttr,
+		}, SeverityFailing},
 		{"nvme critical warning", Report{
 			Device:      Device{Protocol: "NVMe"},
-			SmartStatus: SmartStatus{Passed: true},
+			SmartStatus: &SmartStatus{Passed: true},
 			NVMeHealth:  &NVMeHealth{CriticalWarning: 0x04},
 		}, SeverityFailing},
 		{"ata failing attr", Report{
-			Device: Device{Protocol: "ATA"}, SmartStatus: SmartStatus{Passed: true}, ATAAttributes: &failingAttr,
+			Device: Device{Protocol: "ATA"}, SmartStatus: &SmartStatus{Passed: true}, ATAAttributes: &failingAttr,
 		}, SeverityFailing},
 		{"ata old-age caution", Report{
-			Device: Device{Protocol: "ATA"}, SmartStatus: SmartStatus{Passed: true}, ATAAttributes: &cautionAttr,
+			Device: Device{Protocol: "ATA"}, SmartStatus: &SmartStatus{Passed: true}, ATAAttributes: &cautionAttr,
 		}, SeverityCaution},
 		{"healthy nvme", Report{
-			Device: Device{Protocol: "NVMe"}, SmartStatus: SmartStatus{Passed: true}, NVMeHealth: &NVMeHealth{},
+			Device: Device{Protocol: "NVMe"}, SmartStatus: &SmartStatus{Passed: true}, NVMeHealth: &NVMeHealth{},
 		}, SeverityOK},
 		// The attribute table can stay in range while the error log is populated.
 		{"ata logged error", Report{
-			Device: Device{Protocol: "ATA"}, SmartStatus: SmartStatus{Passed: true},
+			Device: Device{Protocol: "ATA"}, SmartStatus: &SmartStatus{Passed: true},
 			ATAErrorLog: &ATAErrorLog{Extended: &ATAErrorLogExtended{Count: 2}},
 		}, SeverityCaution},
 		{"ata empty error log", Report{
-			Device: Device{Protocol: "ATA"}, SmartStatus: SmartStatus{Passed: true},
+			Device: Device{Protocol: "ATA"}, SmartStatus: &SmartStatus{Passed: true},
 			ATAErrorLog: &ATAErrorLog{Extended: &ATAErrorLogExtended{Count: 0}},
 		}, SeverityOK},
 		{"ata pending defects", Report{
-			Device: Device{Protocol: "ATA"}, SmartStatus: SmartStatus{Passed: true},
+			Device: Device{Protocol: "ATA"}, SmartStatus: &SmartStatus{Passed: true},
 			ATAPendingDefects: &ATAPendingDefects{Count: 1},
 		}, SeverityCaution},
 		// NVMe error-log entries accumulate benignly and must not grade the drive.
 		{"nvme error log entries do not alarm", Report{
-			Device: Device{Protocol: "NVMe"}, SmartStatus: SmartStatus{Passed: true},
+			Device: Device{Protocol: "NVMe"}, SmartStatus: &SmartStatus{Passed: true},
 			NVMeHealth: &NVMeHealth{NumErrLogEntries: 3},
 		}, SeverityOK},
 	}
