@@ -13,8 +13,7 @@ import (
 	"time"
 )
 
-// binary is the smartctl executable name; resolved via PATH. A var, not a
-// const, so tests can point it at a stub and exercise the run path.
+// binary is the smartctl executable, resolved via PATH; a var so tests can stub it.
 var binary = "smartctl"
 
 // smartctlWrapper is the envelope every smartctl JSON response carries.
@@ -33,18 +32,14 @@ type scanResult struct {
 	Devices []Device `json:"devices"`
 }
 
-// minSmartctlVersion is the oldest smartmontools release smartview supports.
-// 7.0 is where smartctl's JSON output (`-j`) landed, and every parser in this
-// package assumes that schema; the README states the same floor.
+// minSmartctlVersion is the oldest supported smartmontools: 7.0 added the -j output every
+// parser here assumes.
 var minSmartctlVersion = [2]int{7, 0}
 
-// ErrNoSmartctl reports that the smartctl binary is not on PATH. Callers match
-// it to add an install hint: which package manager to name is the caller's
-// knowledge, not this package's.
+// ErrNoSmartctl reports that smartctl is not on PATH; callers attach the install hint.
 var ErrNoSmartctl = errors.New("smartctl not found on PATH")
 
-// ErrOldSmartctl reports a smartctl too old for the JSON schema this package
-// parses. Callers match it to add an upgrade hint, as with [ErrNoSmartctl].
+// ErrOldSmartctl reports a smartctl too old for the JSON schema; callers attach the upgrade hint.
 var ErrOldSmartctl = fmt.Errorf("smartctl is too old: smartview needs smartmontools %d.%d or newer",
 	minSmartctlVersion[0], minSmartctlVersion[1])
 
@@ -54,10 +49,7 @@ func Available() bool {
 	return err == nil
 }
 
-// Version reports smartctl's own version as the [major, minor, ...] list it
-// prints in `smartctl -j -V`. A build too old to understand -j emits no JSON at
-// all, so it fails here rather than reporting a version; [Preflight] reads that
-// failure as the answer.
+// Version returns smartctl's version from `smartctl -j -V`; a build too old for -j fails instead.
 func Version(ctx context.Context) ([]int, error) {
 	res, err := runJSON[smartctlWrapper](ctx, "smartctl version", "-j", "-V")
 	if err != nil {
@@ -66,10 +58,7 @@ func Version(ctx context.Context) ([]int, error) {
 	return res.Smartctl.Version, nil
 }
 
-// Preflight checks that smartctl is on PATH and new enough to speak the JSON
-// schema this package parses; it is a no-op when the fixture source is active.
-// It is the startup gate: main calls it before building the UI, so an old
-// smartctl is named as such instead of failing later as a parse error.
+// Preflight checks smartctl is on PATH and at least minSmartctlVersion; a no-op in fixture mode.
 func Preflight(ctx context.Context) error {
 	if fixtureActive() {
 		return nil
@@ -82,9 +71,7 @@ func Preflight(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return fmt.Errorf("smartctl version check: %w", err)
 		}
-		// The probe needs -j, which is what 7.0 added: a build below the floor
-		// rejects the flag instead of stating a version, so a failed probe is
-		// itself the verdict. The cause rides along in case it is not age.
+		// A pre-7.0 build rejects -j instead of stating a version, so the failed probe is the verdict.
 		return fmt.Errorf("%w (version check failed: %v)", ErrOldSmartctl, err)
 	}
 	if !versionAtLeast(v, minSmartctlVersion) {
@@ -93,9 +80,8 @@ func Preflight(ctx context.Context) error {
 	return nil
 }
 
-// versionAtLeast compares a smartctl version list against a [major, minor]
-// floor. A version we could not determine (empty, or major-only) passes: it is
-// not evidence of an old build, and refusing to start would be the worse error.
+// versionAtLeast compares v to a [major, minor] floor; an undeterminable version (empty or
+// major-only) passes.
 func versionAtLeast(v []int, minimum [2]int) bool {
 	if len(v) == 0 {
 		return true
@@ -121,8 +107,7 @@ func formatVersion(v []int) string {
 	return strings.Join(parts, ".")
 }
 
-// Scan enumerates drives via `smartctl --scan-open -j`. The returned Device
-// names are round-tripped verbatim into Info; they must not be modified.
+// Scan enumerates drives via `smartctl --scan-open -j`; Device names must reach Info unmodified.
 func Scan(ctx context.Context) ([]Device, error) {
 	if fixtureActive() {
 		return fixtureScan()
@@ -144,24 +129,16 @@ const (
 	SkipStandby
 )
 
-// standbyExit is the exit status smartctl is told to use when it declines to
-// wake a drive. smartctl's own default here is 2, which the man page notes is
-// ambiguous with "device open failed"; 129 is bit 0 (command line did not
-// parse) with bit 7 (self-test log contains errors), and a parse failure exits
-// before any device is opened, so a real run cannot produce that pair.
+// standbyExit is the -n exit status: smartctl's default 2 is ambiguous with "device open
+// failed", and 129 (bits 0+7) cannot occur on a real run.
 const standbyExit = 129
 
-// InStandby reports that smartctl declined to wake a spun-down drive, so this
-// report carries the envelope and no drive data.
+// InStandby reports that smartctl declined to wake a spun-down drive, so the report carries no
+// drive data.
 func (r *Report) InStandby() bool { return r.Smartctl.ExitStatus == standbyExit }
 
-// powerArgs is the standby guard, empty unless the caller asked to skip parked
-// drives. -d is part of it because autodetection's own probing can spin the
-// drive up (smartctl(8), -n), which would defeat the guard.
-//
-// No STATUS2: without it smartctl simply reads a drive whose power-mode check
-// is unsupported, which is what we want. Supplying STATUS2 would turn that
-// benign fall-through into an early exit carrying no data.
+// powerArgs is the SkipStandby guard: -d because autodetection can spin the drive up, and no
+// STATUS2 so a drive without a power-mode check is still read.
 func powerArgs(d Device, policy PowerPolicy) []string {
 	if policy != SkipStandby {
 		return nil
@@ -173,13 +150,8 @@ func powerArgs(d Device, policy PowerPolicy) []string {
 	return args
 }
 
-// Info runs `smartctl -j -x <name>` and parses the full report. smartctl's
-// exit status is a bitmask, often non-zero on healthy drives, so stdout is
-// parsed regardless; real failures surface via smartctl.messages (FatalMessage).
-//
-// Under SkipStandby a parked drive comes back as a valid *Report with a nil
-// error: runJSON only surfaces the exit error when stdout is empty, and
-// smartctl still prints a full envelope. [Report.InStandby] is the signal.
+// Info runs `smartctl -j -x <name>`, parsing stdout regardless of the exit bitmask.
+// Under SkipStandby a parked drive returns a valid report and nil error; see [Report.InStandby].
 func Info(ctx context.Context, d Device, policy PowerPolicy) (*Report, error) {
 	if fixtureActive() {
 		return fixtureInfo(d.Name)
@@ -188,10 +160,8 @@ func Info(ctx context.Context, d Device, policy PowerPolicy) (*Report, error) {
 	return runJSON[Report](ctx, "report for "+d.Name, args...)
 }
 
-// FarmLog runs `smartctl -l farm -j <device>` and parses the Seagate FARM log.
-// An unsupported drive yields (nil, nil): expected, not an error. It carries
-// the same power policy as [Info] — both run every poll, so guarding only one
-// would still wake the drive.
+// FarmLog runs `smartctl -l farm -j`; an unsupported drive yields (nil, nil).
+// It takes Info's power policy because both run every poll.
 func FarmLog(ctx context.Context, d Device, policy PowerPolicy) (*FARM, error) {
 	if fixtureActive() {
 		return fixtureFarm(d.Name)
@@ -204,9 +174,8 @@ func FarmLog(ctx context.Context, d Device, policy PowerPolicy) (*FARM, error) {
 	return supportedFarm(w.FARM), nil
 }
 
-// RunSelfTest starts a short or long SMART self-test (other types are
-// rejected). It returns once the test is queued; progress arrives via later
-// Info polls. Usually requires root.
+// RunSelfTest queues a short or long self-test; progress arrives via later Info polls. Usually
+// requires root.
 func RunSelfTest(ctx context.Context, name string, testType SelfTestType) error {
 	switch testType {
 	case SelfTestShort, SelfTestLong:
@@ -223,12 +192,10 @@ func AbortSelfTest(ctx context.Context, name string) error {
 	return runSelfTestCommand(ctx, name, "abort", "-X")
 }
 
-// runSelfTestCommand runs a self-test control command against name; flags are
-// the command-specific arguments and the device is appended here, so the name
-// in the argv cannot drift from the one in the error text. Error-severity
-// smartctl messages become the returned error.
+// runSelfTestCommand runs a self-test control command, returning the first error-severity
+// smartctl message as an error.
 func runSelfTestCommand(ctx context.Context, name, action string, flags ...string) error {
-	args := append(flags[:len(flags):len(flags)], "-j", name)
+	args := append(flags, "-j", name)
 	w, err := runJSON[smartctlWrapper](ctx,
 		fmt.Sprintf("self-test %s response for %s", action, name), args...)
 	if err != nil {
@@ -242,10 +209,8 @@ func runSelfTestCommand(ctx context.Context, name, action string, flags ...strin
 	return nil
 }
 
-// runJSON runs smartctl and decodes its stdout into T. Empty output is an
-// error in its own right: smartctl emits valid JSON even with its exit-status
-// bitmask set, so nothing at all means the call never got that far. what names
-// the operation in the parse error.
+// runJSON runs smartctl and decodes stdout into T; empty stdout is an error since smartctl
+// prints JSON even with exit bits set.
 func runJSON[T any](ctx context.Context, what string, args ...string) (*T, error) {
 	out, err := run(ctx, args...)
 	if len(out) == 0 {
@@ -264,22 +229,17 @@ func runJSON[T any](ctx context.Context, what string, args ...string) (*T, error
 // maxStderrDetail bounds how much of smartctl's stderr is folded into an error.
 const maxStderrDetail = 200
 
-// waitDelay bounds how long a cancelled command may hold us after its own
-// deadline. A var so tests need not wait it out.
+// waitDelay bounds how long a cancelled command may outlive its deadline; a var for tests.
 var waitDelay = 2 * time.Second
 
-// run executes smartctl. A non-zero exit returns stdout alongside the error:
-// smartctl emits valid JSON even with its exit-status bitmask set.
+// run executes smartctl, returning stdout alongside any error.
 func run(ctx context.Context, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, binary, args...)
-	// Output waits for the stdout pipe to close and CommandContext signals only
-	// the direct child, so without this a descendant holding the pipe outlives
-	// the deadline and the context bounds nothing.
+	// CommandContext kills only the child; WaitDelay bounds a descendant still holding stdout.
 	cmd.WaitDelay = waitDelay
 	out, err := cmd.Output()
 	if err != nil {
-		// A cancelled context kills the child, so exec reports "signal: killed"
-		// and loses the cause; report the context error so errors.Is matches.
+		// exec reports "signal: killed" on cancel; return the cause so errors.Is matches.
 		if ctx.Err() != nil {
 			return out, fmt.Errorf("run smartctl: %w", context.Cause(ctx))
 		}
@@ -292,7 +252,6 @@ func run(ctx context.Context, args ...string) ([]byte, error) {
 }
 
 // stderrDetail renders captured stderr as a bounded single-line error suffix.
-// ExitError.Error() is only "exit status N", so the real complaint is otherwise lost.
 func stderrDetail(b []byte) string {
 	s := strings.Join(strings.Fields(string(b)), " ")
 	if s == "" {
@@ -315,9 +274,8 @@ func (r *Report) FatalMessage() (string, bool) {
 	return "", false
 }
 
-// isBenignLogReadFailure matches the error-log read failure Apple internal
-// NVMe emits on every poll: NVMeSMARTLib rejects that log page, a platform
-// limitation rather than a fault.
+// isBenignLogReadFailure matches the error-log read failure Apple internal NVMe emits on every
+// poll, a platform limitation.
 func isBenignLogReadFailure(msg string) bool {
 	return strings.Contains(msg, "Error Information Log failed: GetLogPage failed")
 }

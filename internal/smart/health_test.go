@@ -4,8 +4,6 @@ package smart
 
 import "testing"
 
-func intp(v int) *int { return &v }
-
 func TestPctUsedSeverity(t *testing.T) {
 	cases := map[int]Severity{0: SeverityOK, 89: SeverityOK, 90: SeverityCaution, 100: SeverityCaution}
 	for v, want := range cases {
@@ -23,11 +21,11 @@ func TestNvmeSeverity(t *testing.T) {
 	}{
 		{"healthy", NVMeHealth{}, SeverityOK},
 		{"media errors", NVMeHealth{MediaErrors: 1}, SeverityCaution},
-		{"spare above thresh", NVMeHealth{AvailableSpare: intp(20), AvailableSpareThreshold: intp(10)}, SeverityOK},
-		{"spare at thresh", NVMeHealth{AvailableSpare: intp(10), AvailableSpareThreshold: intp(10)}, SeverityFailing},
-		{"spare below thresh", NVMeHealth{AvailableSpare: intp(5), AvailableSpareThreshold: intp(10)}, SeverityFailing},
-		{"pct used 100", NVMeHealth{PercentageUsed: intp(100)}, SeverityCaution},
-		{"spare failing wins over media", NVMeHealth{MediaErrors: 3, AvailableSpare: intp(1), AvailableSpareThreshold: intp(10)}, SeverityFailing},
+		{"spare above thresh", NVMeHealth{AvailableSpare: new(20), AvailableSpareThreshold: new(10)}, SeverityOK},
+		{"spare at thresh", NVMeHealth{AvailableSpare: new(10), AvailableSpareThreshold: new(10)}, SeverityFailing},
+		{"spare below thresh", NVMeHealth{AvailableSpare: new(5), AvailableSpareThreshold: new(10)}, SeverityFailing},
+		{"pct used 100", NVMeHealth{PercentageUsed: new(100)}, SeverityCaution},
+		{"spare failing wins over media", NVMeHealth{MediaErrors: 3, AvailableSpare: new(1), AvailableSpareThreshold: new(10)}, SeverityFailing},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -61,21 +59,14 @@ func TestOverall(t *testing.T) {
 		{"healthy nvme", Report{
 			Device: Device{Protocol: "NVMe"}, SmartStatus: SmartStatus{Passed: true}, NVMeHealth: &NVMeHealth{},
 		}, SeverityOK},
-		// A logged error is a fault the drive reports about itself; the attribute
-		// table can stay entirely in range while the error log is populated.
+		// The attribute table can stay in range while the error log is populated.
 		{"ata logged error", Report{
 			Device: Device{Protocol: "ATA"}, SmartStatus: SmartStatus{Passed: true},
-			ATAErrorLog: &ATAErrorLog{Extended: &struct {
-				Count int                `json:"count"`
-				Table []ATAErrorLogEntry `json:"table"`
-			}{Count: 2}},
+			ATAErrorLog: &ATAErrorLog{Extended: &ATAErrorLogExtended{Count: 2}},
 		}, SeverityCaution},
 		{"ata empty error log", Report{
 			Device: Device{Protocol: "ATA"}, SmartStatus: SmartStatus{Passed: true},
-			ATAErrorLog: &ATAErrorLog{Extended: &struct {
-				Count int                `json:"count"`
-				Table []ATAErrorLogEntry `json:"table"`
-			}{Count: 0}},
+			ATAErrorLog: &ATAErrorLog{Extended: &ATAErrorLogExtended{Count: 0}},
 		}, SeverityOK},
 		{"ata pending defects", Report{
 			Device: Device{Protocol: "ATA"}, SmartStatus: SmartStatus{Passed: true},
@@ -97,10 +88,10 @@ func TestOverall(t *testing.T) {
 }
 
 func TestCurrentTemp(t *testing.T) {
-	if v, ok := (&Report{Temperature: &Temperature{Current: intp(42)}}).CurrentTemp(); !ok || v != 42 {
+	if v, ok := (&Report{Temperature: &Temperature{Current: new(42)}}).CurrentTemp(); !ok || v != 42 {
 		t.Errorf("primary temp = %d,%v want 42,true", v, ok)
 	}
-	if v, ok := (&Report{NVMeHealth: &NVMeHealth{Temperature: intp(50)}}).CurrentTemp(); !ok || v != 50 {
+	if v, ok := (&Report{NVMeHealth: &NVMeHealth{Temperature: new(50)}}).CurrentTemp(); !ok || v != 50 {
 		t.Errorf("nvme fallback temp = %d,%v want 50,true", v, ok)
 	}
 	if _, ok := (&Report{}).CurrentTemp(); ok {
@@ -154,8 +145,7 @@ func TestFatalMessage(t *testing.T) {
 	if msg, ok := mixed.FatalMessage(); !ok || msg != "permission denied" {
 		t.Errorf("FatalMessage = %q,%v want permission denied,true", msg, ok)
 	}
-	// The Apple-internal-NVMe log-read failure is a permanent platform
-	// limitation, not an actionable fault; it must be filtered out.
+	// Apple internal NVMe's log-read failure is a platform limitation and must be filtered.
 	apple := &Report{Smartctl: Smartctl{Messages: []Message{
 		{String: "Read 1 entries from Error Information Log failed: GetLogPage failed: system=0x38, sub=0x0, code=745", Severity: "error"},
 	}}}
@@ -185,13 +175,11 @@ func TestFailingFixture(t *testing.T) {
 	if got := byID[5].Severity(); got != SeverityFailing {
 		t.Errorf("attribute 5 severity = %v, want Failing", got)
 	}
-	// An attribute that dipped below threshold in the past is a caution: the
-	// drive recovered, but it is worth watching.
+	// A past threshold dip is a caution.
 	if got := byID[197].Severity(); got != SeverityCaution {
 		t.Errorf("attribute 197 severity = %v, want Caution", got)
 	}
-	// And a healthy attribute on the same drive stays OK, so severity is
-	// per-attribute rather than smeared across the table.
+	// Severity is per-attribute, so a healthy one on the same drive stays OK.
 	if got := byID[12].Severity(); got != SeverityOK {
 		t.Errorf("attribute 12 severity = %v, want OK", got)
 	}
@@ -214,9 +202,7 @@ func TestFailingFixture(t *testing.T) {
 	}
 }
 
-// TestFailingFixtureLogsAlone checks the error log escalates a drive on its own,
-// independent of the attribute table — the case /dev/sdf represents, where every
-// attribute is in range and only the log knows something happened.
+// TestFailingFixtureLogsAlone checks the error log escalates a drive whose attributes are all in range.
 func TestFailingFixtureLogsAlone(t *testing.T) {
 	r := parseFixture(t, "smart-sda-errors.json")
 	if !r.SmartStatus.Passed {

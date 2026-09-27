@@ -12,19 +12,13 @@ import (
 	"slices"
 )
 
-// Dev-only fixture data source (-tags dev): the TUI renders captured smartctl
-// JSON from a directory instead of shelling out. fixture_stub.go is the
-// release counterpart.
+// Dev-only fixture source: captured smartctl JSON stands in for shelling out.
 
 var (
-	// fixtureDir is the active fixture directory; empty means inactive.
-	fixtureDir string
 	// fixtureReports is sorted by filename so fixtureScan is stable.
 	fixtureReports []*Report
-	// fixtureByName indexes reports by verbatim Device.Name.
-	fixtureByName map[string]*Report
-	// fixtureFarms holds standalone FARM logs keyed by drive serial.
-	fixtureFarms []fixtureFarmEntry
+	fixtureByName  map[string]*Report
+	fixtureFarms   []fixtureFarmEntry
 )
 
 // fixtureFarmEntry pairs a standalone FARM fixture with its page-1 serial.
@@ -33,9 +27,8 @@ type fixtureFarmEntry struct {
 	farm   *FARM
 }
 
-// UseFixtures activates the fixture source: every *.json in dir is classified
-// as a standalone FARM log or a full Report. Validation is eager so a bad or
-// empty directory fails at startup.
+// UseFixtures loads every *.json in dir as a full Report or standalone FARM log, failing
+// eagerly on bad input.
 func UseFixtures(dir string) error {
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -61,8 +54,7 @@ func UseFixtures(dir string) error {
 			return fmt.Errorf("read fixture %s: %w", f, err)
 		}
 
-		// A standalone FARM log lacks the fields a full report always has;
-		// it DOES carry a device block, so Device.Protocol can't discriminate.
+		// A standalone FARM log carries a device block too, so Device.Protocol can't discriminate.
 		var probe struct {
 			SmartStatus   *json.RawMessage `json:"smart_status"`
 			ModelName     string           `json:"model_name"`
@@ -82,20 +74,11 @@ func UseFixtures(dir string) error {
 			if err := json.Unmarshal(data, &wrapper); err != nil {
 				return fmt.Errorf("parse FARM fixture %s: %w", f, err)
 			}
-			var serialWrapper struct {
-				FARM struct {
-					DriveInfo struct {
-						Serial string `json:"serial_number"`
-					} `json:"page_1_drive_information"`
-				} `json:"seagate_farm_log"`
+			fe := fixtureFarmEntry{farm: wrapper.FARM}
+			if wrapper.FARM != nil {
+				fe.serial = wrapper.FARM.DriveInfo.Serial
 			}
-			if err := json.Unmarshal(data, &serialWrapper); err != nil {
-				return fmt.Errorf("parse FARM fixture %s: %w", f, err)
-			}
-			farms = append(farms, fixtureFarmEntry{
-				serial: serialWrapper.FARM.DriveInfo.Serial,
-				farm:   wrapper.FARM,
-			})
+			farms = append(farms, fe)
 			continue
 		}
 
@@ -111,7 +94,6 @@ func UseFixtures(dir string) error {
 		return fmt.Errorf("no fixture reports found in %q (need at least one *.json full report)", dir)
 	}
 
-	fixtureDir = dir
 	fixtureReports = reports
 	fixtureByName = byName
 	fixtureFarms = farms
@@ -119,7 +101,7 @@ func UseFixtures(dir string) error {
 }
 
 // fixtureActive reports whether the fixture source is in use.
-func fixtureActive() bool { return fixtureDir != "" }
+func fixtureActive() bool { return fixtureByName != nil }
 
 // fixtureScan stands in for `smartctl --scan-open`, returning each Device verbatim.
 func fixtureScan() ([]Device, error) {
@@ -138,9 +120,8 @@ func fixtureInfo(name string) (*Report, error) {
 	return nil, fmt.Errorf("no fixture report for device %q", name)
 }
 
-// fixtureFarm mirrors FarmLog's (nil, nil)-on-unsupported contract. Several
-// FARM fixtures match by serial; a single one attaches to the sole
-// FARM-capable device.
+// fixtureFarm mirrors FarmLog's (nil, nil)-on-unsupported contract; a lone FARM
+// fixture attaches to any FARM-capable device, several match by serial.
 func fixtureFarm(name string) (*FARM, error) {
 	rep, ok := fixtureByName[name]
 	if !ok {
@@ -150,14 +131,13 @@ func fixtureFarm(name string) (*FARM, error) {
 		return nil, nil
 	}
 
-	if len(fixtureFarms) > 1 {
-		for _, fe := range fixtureFarms {
-			if fe.serial != "" && fe.serial == rep.SerialNumber {
-				return supportedFarm(fe.farm), nil
-			}
-		}
-		return nil, nil
+	if len(fixtureFarms) == 1 {
+		return supportedFarm(fixtureFarms[0].farm), nil
 	}
-
-	return supportedFarm(fixtureFarms[0].farm), nil
+	for _, fe := range fixtureFarms {
+		if fe.serial != "" && fe.serial == rep.SerialNumber {
+			return supportedFarm(fe.farm), nil
+		}
+	}
+	return nil, nil
 }

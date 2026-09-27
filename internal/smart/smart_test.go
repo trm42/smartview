@@ -70,15 +70,15 @@ func TestParseATA(t *testing.T) {
 		t.Errorf("WWN.NAA = %d, want 5", r.WWN.NAA)
 	}
 
-	// Device Statistics log (GP Log 0x04): the richest unused source.
+	// Device Statistics log (GP Log 0x04).
 	if !r.HasDeviceStats() {
 		t.Fatal("expected Device Statistics with valid entries")
 	}
-	if got := statEntry(r, "Power-on Hours"); got != 9438 {
-		t.Errorf("Power-on Hours stat = %d, want 9438", got)
+	if v, ok := r.deviceStat("Power-on Hours"); !ok || v != 9438 {
+		t.Errorf("Power-on Hours stat = %d, %v, want 9438", v, ok)
 	}
-	if got := statEntry(r, "Number of Reallocated Logical Sectors"); got != 0 {
-		t.Errorf("Reallocated stat = %d, want 0 (healthy drive)", got)
+	if v, ok := r.deviceStat("Number of Reallocated Logical Sectors"); !ok || v != 0 {
+		t.Errorf("Reallocated stat = %d, %v, want 0 (healthy drive)", v, ok)
 	}
 
 	// Pending Defects log.
@@ -95,22 +95,6 @@ func TestParseATA(t *testing.T) {
 	if !r.ATASCTErc.Read.Enabled || r.ATASCTErc.Read.Deciseconds != 70 {
 		t.Errorf("ERC read = %+v, want enabled 70 ds", *r.ATASCTErc.Read)
 	}
-}
-
-// statEntry returns the value of the first valid Device Statistics entry with
-// the given name, or -1 if absent.
-func statEntry(r *Report, name string) int64 {
-	if r.ATADeviceStatistics == nil {
-		return -1
-	}
-	for _, p := range r.ATADeviceStatistics.Pages {
-		for _, e := range p.Table {
-			if e.Flags.Valid && e.Name == name {
-				return e.Value
-			}
-		}
-	}
-	return -1
 }
 
 func TestParseNVMe(t *testing.T) {
@@ -146,9 +130,7 @@ func TestParseNVMe(t *testing.T) {
 	}
 }
 
-// TestParseSparseAppleNVMe is the graceful-degradation guard: the Apple drive
-// omits the error and self-test logs and reports a non-zero exit_status bitmask,
-// yet must still parse cleanly with absent sections decoding to nil.
+// TestParseSparseAppleNVMe is the graceful-degradation guard: absent sections must decode to nil.
 func TestParseSparseAppleNVMe(t *testing.T) {
 	r := parseFixture(t, "smart-apple-nvme.json")
 	if !r.IsNVMe() {
@@ -179,9 +161,7 @@ func TestParseSparseAppleNVMe(t *testing.T) {
 	}
 }
 
-// TestParseErrorLogEntries exercises the populated-error-log renderer inputs:
-// the committed healthy fixtures all carry empty error tables, so these
-// hand-crafted fixtures are the only ones that decode real entries.
+// TestParseErrorLogEntries uses the hand-crafted fixtures, the only ones with populated error tables.
 func TestParseErrorLogEntries(t *testing.T) {
 	t.Run("nvme", func(t *testing.T) {
 		r := parseFixture(t, "smart-nvme-errors.json")
@@ -214,17 +194,13 @@ func TestParseErrorLogEntries(t *testing.T) {
 	})
 }
 
-// TestParseFARM exercises the Seagate FARM parse path used by FarmLog, including
-// the custom per-head unmarshal that gathers smartctl's flat *_by_head_N keys
-// into index-ordered slices.
+// TestParseFARM covers the FARM decode, including the per-head key unmarshal.
 func TestParseFARM(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("testdata", "smart-seagate-farm-log.json"))
 	if err != nil {
 		t.Fatalf("read FARM fixture: %v", err)
 	}
-	var wrapper struct {
-		FARM *FARM `json:"seagate_farm_log"`
-	}
+	var wrapper farmWrapper
 	if err := json.Unmarshal(data, &wrapper); err != nil {
 		t.Fatalf("parse FARM fixture: %v", err)
 	}
@@ -312,9 +288,7 @@ func TestFormatVersion(t *testing.T) {
 	}
 }
 
-// smartctl's stderr is the only place the real complaint appears (ExitError
-// says just "exit status N"), so it is folded into the error — bounded, and on
-// one line.
+// ExitError says only "exit status N", so stderr is folded in, bounded and on one line.
 func TestStderrDetail(t *testing.T) {
 	if got := stderrDetail(nil); got != "" {
 		t.Errorf("empty stderr = %q, want \"\"", got)
@@ -333,9 +307,7 @@ func TestStderrDetail(t *testing.T) {
 	}
 }
 
-// A cancelled or expired context kills the child process; run must report the
-// context cause rather than exec's "signal: killed", so callers can match with
-// errors.Is.
+// run must report the context cause rather than exec's "signal: killed".
 func TestRunReportsContextCause(t *testing.T) {
 	if !Available() {
 		t.Skip("smartctl not installed")
@@ -363,16 +335,12 @@ func TestVersionAndPreflight(t *testing.T) {
 	}
 }
 
-// smartctl exiting 0 with no output must say so plainly. Every entry point
-// funnels through runJSON for this; before it did, Scan alone fell through to
-// json.Unmarshal(nil) and reported "unexpected end of JSON input" instead.
+// smartctl exiting 0 with no output must say so plainly on every entry point.
 func TestEmptyOutputIsReportedPlainly(t *testing.T) {
 	if _, err := exec.LookPath("true"); err != nil {
 		t.Skip("no true(1) to stand in for smartctl")
 	}
-	orig := binary
-	binary = "true" // exits 0, prints nothing
-	t.Cleanup(func() { binary = orig })
+	stubBinary(t, "true") // exits 0, prints nothing
 
 	const want = "smartctl produced no output"
 	for _, c := range []struct {
@@ -398,15 +366,24 @@ func TestEmptyOutputIsReportedPlainly(t *testing.T) {
 	}
 }
 
-// fakeSmartctl writes an executable stub that prints body on stdout, and
-// points the package at it for the duration of the test.
-func fakeSmartctl(t *testing.T, body string) {
+// stubBinary points the package at path for the duration of the test.
+func stubBinary(t *testing.T, path string) {
 	t.Helper()
-	fakeSmartctlScript(t, "cat <<'EOF'\n"+body+"\nEOF\n")
+	orig := binary
+	binary = path
+	t.Cleanup(func() { binary = orig })
 }
 
-// fakeSmartctlScript is fakeSmartctl for a stub that must do more than print:
-// body is the shell source, so it can fail the way a real smartctl does.
+// printBody is shell source that prints body verbatim on stdout.
+func printBody(body string) string { return "cat <<'EOF'\n" + body + "\nEOF\n" }
+
+// fakeSmartctl stubs smartctl with a script that prints body on stdout.
+func fakeSmartctl(t *testing.T, body string) {
+	t.Helper()
+	fakeSmartctlScript(t, printBody(body))
+}
+
+// fakeSmartctlScript stubs smartctl with body as its shell source.
 func fakeSmartctlScript(t *testing.T, body string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -416,14 +393,10 @@ func fakeSmartctlScript(t *testing.T, body string) {
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	orig := binary
-	binary = path
-	t.Cleanup(func() { binary = orig })
+	stubBinary(t, path)
 }
 
-// Preflight is the startup gate, so the message it produces is what a user
-// with the wrong smartmontools actually sees. Before it was wired in, an old
-// build got a JSON parse error from the first real query instead.
+// Preflight's message is what a user with an old smartmontools sees.
 func TestPreflightNamesAnOldSmartctl(t *testing.T) {
 	fakeSmartctl(t, `{"smartctl":{"version":[6,6]}}`)
 	err := Preflight(t.Context())
@@ -450,12 +423,9 @@ func TestPreflightAcceptsASupportedSmartctl(t *testing.T) {
 	}
 }
 
-// A missing binary is reported as ErrNoSmartctl so main can attach the
-// platform's install hint without matching on message text.
+// A missing binary is reported as ErrNoSmartctl so main can match it.
 func TestPreflightMissingBinaryIsMatchable(t *testing.T) {
-	orig := binary
-	binary = "smartview-no-such-binary"
-	t.Cleanup(func() { binary = orig })
+	stubBinary(t, "smartview-no-such-binary")
 
 	err := Preflight(t.Context())
 	if !errors.Is(err, ErrNoSmartctl) {
@@ -463,8 +433,7 @@ func TestPreflightMissingBinaryIsMatchable(t *testing.T) {
 	}
 }
 
-// A version smartctl would not state is not evidence of an old build, and
-// refusing to start would be the worse error.
+// An unstated version is not evidence of an old build.
 func TestPreflightAcceptsAnUnstatedVersion(t *testing.T) {
 	fakeSmartctl(t, `{"smartctl":{}}`)
 	if err := Preflight(t.Context()); err != nil {
@@ -472,10 +441,7 @@ func TestPreflightAcceptsAnUnstatedVersion(t *testing.T) {
 	}
 }
 
-// The version probe itself needs -j, which is what 7.0 added, so a build below
-// the floor rejects the flag rather than reporting a version it could be judged
-// on. That path is the only one a real old smartctl takes: if it does not reach
-// the floor message, nothing does.
+// A pre-7.0 build rejects -j rather than stating a version; that path must still name the floor.
 func TestPreflightNamesASmartctlTooOldForJSON(t *testing.T) {
 	fakeSmartctlScript(t, "echo \"smartctl: Unrecognized option '-j'\" >&2\nexit 1\n")
 	err := Preflight(t.Context())
@@ -489,9 +455,7 @@ func TestPreflightNamesASmartctlTooOldForJSON(t *testing.T) {
 	}
 }
 
-// A probe cut short by the caller says so: reporting an interrupted or timed-out
-// check as an old smartctl would send the user to fix the wrong thing, and main
-// branches on the context error to abort quietly.
+// A probe cut short by the caller reports the context error, not an old smartctl.
 func TestPreflightReportsAnAbortedProbeAsSuch(t *testing.T) {
 	fakeSmartctl(t, `{"smartctl":{"version":[7,4]}}`)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -506,10 +470,7 @@ func TestPreflightReportsAnAbortedProbeAsSuch(t *testing.T) {
 	}
 }
 
-// A deadline has to bound the call, not just describe it. Output waits for the
-// stdout pipe to close and CommandContext signals only the direct child, so a
-// descendant that inherited the pipe keeps the read alive after the child is
-// killed -- and startup hangs long past the timeout that was supposed to stop it.
+// A descendant holding stdout must not keep run alive past its deadline.
 func TestRunDoesNotOutliveItsDeadline(t *testing.T) {
 	fakeSmartctlScript(t, "sleep 3 &\nsleep 3\n")
 	orig := waitDelay

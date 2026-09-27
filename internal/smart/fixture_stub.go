@@ -6,9 +6,6 @@ package smart
 
 import "errors"
 
-// Release counterpart of fixture_dev.go: fixtureActive is always false, so
-// the guards in Scan/Info/FarmLog never fire.
-
 // UseFixtures rejects fixture activation in release builds.
 func UseFixtures(string) error {
 	return errors.New("smartview was built without fixture support; rebuild with: go build -tags dev")
@@ -16,7 +13,7 @@ func UseFixtures(string) error {
 
 func fixtureActive() bool { return false }
 
-// Unreachable stubs, guarded by fixtureActive.
+// Unreachable: guarded by fixtureActive.
 
 func fixtureScan() ([]Device, error)           { return nil, nil }
 func fixtureInfo(name string) (*Report, error) { return nil, nil }

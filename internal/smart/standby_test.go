@@ -21,7 +21,7 @@ const standbyEnvelope = `{"json_format_version":[1,0],
 func recordArgv(t *testing.T, body string) func() []string {
 	t.Helper()
 	log := filepath.Join(t.TempDir(), "argv")
-	fakeSmartctlScript(t, "printf '%s\\n' \"$@\" >> "+log+"\ncat <<'EOF'\n"+body+"\nEOF\n")
+	fakeSmartctlScript(t, "printf '%s\\n' \"$@\" >> "+log+"\n"+printBody(body))
 	return func() []string {
 		b, err := os.ReadFile(log)
 		if err != nil {
@@ -34,7 +34,7 @@ func recordArgv(t *testing.T, body string) func() []string {
 // TestInfoReportsStandby: smartctl exits non-zero but prints a full envelope,
 // so runJSON parses it and returns no error. InStandby is the only signal.
 func TestInfoReportsStandby(t *testing.T) {
-	fakeSmartctlScript(t, "cat <<'EOF'\n"+standbyEnvelope+"\nEOF\nexit 129\n")
+	fakeSmartctlScript(t, printBody(standbyEnvelope)+"exit 129\n")
 	rep, err := Info(t.Context(), Device{Name: "/dev/sdb", Type: "sat"}, SkipStandby)
 	if err != nil {
 		t.Fatalf("Info on a standby drive = %v, want no error: standby is a state, not a failure", err)
@@ -47,9 +47,7 @@ func TestInfoReportsStandby(t *testing.T) {
 	}
 }
 
-// TestInfoPassesTheStandbyGuard covers both halves. The negative half is the
-// one that protects today's default argv: the guard must appear only when the
-// caller asked to skip standby drives.
+// TestInfoPassesTheStandbyGuard checks the guard appears only under SkipStandby.
 func TestInfoPassesTheStandbyGuard(t *testing.T) {
 	dev := Device{Name: "/dev/sdb", Type: "sat"}
 
@@ -66,8 +64,7 @@ func TestInfoPassesTheStandbyGuard(t *testing.T) {
 		if !slices.Contains(got, "-d") || !slices.Contains(got, "sat") {
 			t.Errorf("argv %q is missing -d sat", got)
 		}
-		// STATUS2 would turn smartctl's benign "power mode check unsupported"
-		// fall-through into an early exit carrying no data.
+		// STATUS2 would turn an unsupported power-mode check into an early exit with no data.
 		for _, a := range got {
 			if strings.HasPrefix(a, "standby,") && strings.Count(a, ",") > 1 {
 				t.Errorf("argv passes STATUS2 (%q); that blinds us on drives whose power-mode check is unsupported", a)

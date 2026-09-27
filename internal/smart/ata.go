@@ -2,6 +2,8 @@
 
 package smart
 
+import "iter"
+
 // ATAAttributes is the classic vendor SMART attribute table.
 type ATAAttributes struct {
 	Table []ATAAttribute `json:"table"`
@@ -53,13 +55,15 @@ type ATASelfTestEntry struct {
 	LifetimeHours int         `json:"lifetime_hours"`
 }
 
-// ATAErrorLog summarises logged ATA command errors; Table holds the decoded
-// detail (empty on a healthy drive).
+// ATAErrorLog summarises logged ATA command errors.
 type ATAErrorLog struct {
-	Extended *struct {
-		Count int                `json:"count"`
-		Table []ATAErrorLogEntry `json:"table"`
-	} `json:"extended"`
+	Extended *ATAErrorLogExtended `json:"extended"`
+}
+
+// ATAErrorLogExtended is the extended comprehensive error log; Table is empty on a healthy drive.
+type ATAErrorLogExtended struct {
+	Count int                `json:"count"`
+	Table []ATAErrorLogEntry `json:"table"`
 }
 
 // ATAErrorLogEntry is one entry of the extended comprehensive SMART error log.
@@ -83,7 +87,6 @@ type ATAPendingDefects struct {
 }
 
 // ATASCTErc is the SCT Error Recovery Control (TLER/ERC/CCTL) time limits.
-// Read-only here — smartview never changes them.
 type ATASCTErc struct {
 	Read  *ERCTimer `json:"read"`
 	Write *ERCTimer `json:"write"`
@@ -123,20 +126,28 @@ type ATAStatFlags struct {
 	Valid bool `json:"valid"`
 }
 
-// HasDeviceStats reports whether the Device Statistics log holds a valid
-// entry; gates the Statistics tab (placeholder-only logs yield false).
+// HasDeviceStats reports whether the Device Statistics log holds any valid entry.
 func (r *Report) HasDeviceStats() bool {
-	if r.ATADeviceStatistics == nil {
-		return false
+	for range r.validStats() {
+		return true
 	}
-	for _, p := range r.ATADeviceStatistics.Pages {
-		for _, e := range p.Table {
-			if e.Flags.Valid {
-				return true
+	return false
+}
+
+// validStats yields the Device Statistics entries flagged valid; smartctl also emits placeholder rows.
+func (r *Report) validStats() iter.Seq[ATAStatEntry] {
+	return func(yield func(ATAStatEntry) bool) {
+		if r.ATADeviceStatistics == nil {
+			return
+		}
+		for _, p := range r.ATADeviceStatistics.Pages {
+			for _, e := range p.Table {
+				if e.Flags.Valid && !yield(e) {
+					return
+				}
 			}
 		}
 	}
-	return false
 }
 
 // ATASmartData carries SMART capability metadata: self-test durations, live

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// decode is a small helper for the inline self-test JSON snippets below.
+// decode parses an inline report JSON snippet.
 func decode(t *testing.T, raw string) *Report {
 	t.Helper()
 	var r Report

@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package smart wraps the smartctl(8) JSON interface (smartmontools >= 7.0).
-// The schema is drive-dependent: only device, smartctl and smart_status are
-// reliably present, so every other field is a pointer or slice — nil-check
-// before dereferencing.
+// Only device, smartctl and smart_status are reliably present; nil-check everything else.
 package smart
 
 // Report is the parsed result of `smartctl -j -x <device>`.
@@ -49,14 +47,13 @@ type Report struct {
 	NVMeOptAdmin      *NVMeOptAdmin    `json:"nvme_optional_admin_commands"`
 	NVMeTotalCapacity *int64           `json:"nvme_total_capacity"`
 
-	// NVMe identity (cheap one-liners; each absent on drives that omit it).
+	// NVMe identity (each absent on drives that omit it).
 	NVMeVersion            *StringValue   `json:"nvme_version"`
 	NVMeNumberOfNamespaces *int           `json:"nvme_number_of_namespaces"`
 	NVMeControllerID       *int           `json:"nvme_controller_id"`
 	NVMePCIVendor          *NVMePCIVendor `json:"nvme_pci_vendor"`
 
-	// Apple internal-SSD wear metrics, the endurance/spare fallback when the
-	// standard NVMe health-log fields are absent.
+	// Apple internal-SSD wear metrics, the fallback when the NVMe health-log fields are absent.
 	EnduranceUsed  *PercentValue   `json:"endurance_used"`
 	SpareAvailable *SpareAvailable `json:"spare_available"`
 
