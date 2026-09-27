@@ -24,8 +24,7 @@ func TestLeadingInt(t *testing.T) {
 	}
 }
 
-// TestPowerMetrics pins the one pair of readings every drive type reports, so a
-// fleet comparison of age has no gaps regardless of protocol.
+// TestPowerMetrics pins the readings every drive type reports.
 func TestPowerMetrics(t *testing.T) {
 	cases := []struct {
 		fixture string
@@ -48,9 +47,7 @@ func TestPowerMetrics(t *testing.T) {
 	}
 }
 
-// TestTempRange covers the ATA-only lifetime range and the NVMe absence: NVMe
-// drives report no extremes at all, so the caller must fall back to an observed
-// series rather than showing a fabricated range.
+// TestTempRange covers the ATA-only lifetime range and its absence on NVMe.
 func TestTempRange(t *testing.T) {
 	for _, c := range []struct {
 		fixture  string
@@ -70,9 +67,7 @@ func TestTempRange(t *testing.T) {
 	}
 }
 
-// TestLifeUsedPercent checks the endurance fallback chain, including the Apple
-// drive that reports endurance_used alongside the standard field, and the HDD
-// that has no endurance indicator at all.
+// TestLifeUsedPercent checks the endurance fallback chain, down to an HDD with no indicator.
 func TestLifeUsedPercent(t *testing.T) {
 	for _, c := range []struct {
 		fixture string
@@ -91,9 +86,8 @@ func TestLifeUsedPercent(t *testing.T) {
 	}
 }
 
-// TestSparePercent covers the NVMe health log and the Apple spare_available
-// fallback. The Apple drive's threshold of 99 is deliberate: it is a real
-// captured value and the near-threshold case worth keeping visible.
+// TestSparePercent covers the NVMe health log and the Apple spare_available fallback.
+// The Apple threshold of 99 is a real captured value.
 func TestSparePercent(t *testing.T) {
 	for _, c := range []struct {
 		fixture  string
@@ -112,9 +106,8 @@ func TestSparePercent(t *testing.T) {
 	}
 }
 
-// TestDataWritten pins which source each drive falls through to: the Seagate
-// must read from Device Statistics (not attribute 241, which it also has);
-// the Samsung has no log and is the approximate case.
+// TestDataWritten pins each drive's source: the Seagate must prefer Device Statistics over
+// attribute 241, and the Samsung (no log) is the approximate case.
 func TestDataWritten(t *testing.T) {
 	for _, c := range []struct {
 		fixture string
@@ -139,8 +132,7 @@ func TestDataWritten(t *testing.T) {
 	}
 }
 
-// TestErrorCounts checks that absent counters stay nil rather than reading as a
-// reassuring zero — the distinction the whole ErrorCounts type exists for.
+// TestErrorCounts checks that absent counters stay nil rather than reading as zero.
 func TestErrorCounts(t *testing.T) {
 	want := func(t *testing.T, label string, got *int64, v int64) {
 		t.Helper()
@@ -168,8 +160,7 @@ func TestErrorCounts(t *testing.T) {
 		t.Errorf("sda ErrorCounts.Worst = %v, want OK", sev)
 	}
 
-	// The Samsung reports neither a pending-sector attribute nor the pending
-	// defects log, so that counter must stay absent.
+	// The Samsung reports neither a pending-sector attribute nor the pending defects log.
 	ssd := parseFixture(t, "smart-sdb.json").ErrorCounts()
 	want(t, "sdb Reallocated", ssd.Reallocated, 0)
 	absent(t, "sdb Pending", ssd.Pending)
@@ -189,9 +180,8 @@ func TestErrorCounts(t *testing.T) {
 	}
 }
 
-// TestMetricsOnSparseReport guards the graceful-degradation contract: a report
-// with nothing but the three reliably-present sections must not panic and must
-// report every optional metric absent.
+// TestMetricsOnSparseReport checks a report with only the always-present sections reports every
+// metric absent.
 func TestMetricsOnSparseReport(t *testing.T) {
 	r := &Report{Device: Device{Name: "/dev/sdz", Protocol: "ATA"}}
 	if _, ok := r.PowerOnHours(); ok {
@@ -217,9 +207,7 @@ func TestMetricsOnSparseReport(t *testing.T) {
 	}
 }
 
-// TestCapacityBytes pins the user_capacity -> nvme_total_capacity fallback and,
-// on the sparse Apple NVMe, that a drive reporting neither stays absent rather
-// than claiming a zero-byte capacity.
+// TestCapacityBytes pins the user_capacity -> nvme_total_capacity fallback.
 func TestCapacityBytes(t *testing.T) {
 	for _, c := range []struct {
 		fixture string
@@ -238,21 +226,17 @@ func TestCapacityBytes(t *testing.T) {
 			t.Errorf("%s: CapacityBytes = (%d,%v), want (%d,%v)", c.fixture, got, ok, c.want, c.ok)
 		}
 	}
-	// No capacity reported at all stays absent rather than becoming a zero.
 	if got, ok := (&Report{}).CapacityBytes(); ok || got != 0 {
 		t.Errorf("empty report: CapacityBytes = (%d,%v), want (0,false)", got, ok)
 	}
-	// The NVMe fallback arm: no fixture exercises it (every captured NVMe drive
-	// reports user_capacity too), so it is pinned here or not at all.
+	// No fixture reaches the NVMe fallback: every captured NVMe drive reports user_capacity.
 	total := int64(494384795648)
-	if got, ok := (&Report{NVMeTotalCapacity: &total}).CapacityBytes(); !ok || got != total {
+	if got, ok := (&Report{NVMeTotalCapacity: new(total)}).CapacityBytes(); !ok || got != total {
 		t.Errorf("nvme_total_capacity fallback = (%d,%v), want (%d,true)", got, ok, total)
 	}
 }
 
-// TestSectorBytes pins the 512-byte default. It is the unit the "Logical
-// Sectors *" counters are multiplied by, so a wrong default silently misreports
-// every byte total on a 4Kn drive.
+// TestSectorBytes pins the 512-byte default the "Logical Sectors *" counters are scaled by.
 func TestSectorBytes(t *testing.T) {
 	for _, f := range []string{"smart-sda.json", "smart-sdb.json", "smart-nvme.json"} {
 		if got := parseFixture(t, f).SectorBytes(); got != 512 {
@@ -262,8 +246,7 @@ func TestSectorBytes(t *testing.T) {
 	if got := (&Report{}).SectorBytes(); got != 512 {
 		t.Errorf("unreported block size: SectorBytes = %d, want the 512 default", got)
 	}
-	n := 4096
-	if got := (&Report{LogicalBlockSize: &n}).SectorBytes(); got != 4096 {
+	if got := (&Report{LogicalBlockSize: new(4096)}).SectorBytes(); got != 4096 {
 		t.Errorf("4Kn drive: SectorBytes = %d, want 4096", got)
 	}
 }

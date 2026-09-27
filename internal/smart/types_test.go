@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestParseExtraFields asserts the newly modelled fields decode from the fixtures.
+// TestParseExtraFields asserts the geometry, interface and NVMe detail fields decode from the fixtures.
 func TestParseExtraFields(t *testing.T) {
 	ata := parseFixture(t, "smart-sda.json")
 	if ata.PhysicalBlockSize == nil || *ata.PhysicalBlockSize != 4096 {

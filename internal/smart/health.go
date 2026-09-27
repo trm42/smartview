@@ -47,10 +47,8 @@ func (r *Report) Overall() Severity {
 	return max(worst, r.logSeverity())
 }
 
-// logSeverity grades the drive's own error logs: an uncorrectable read can be
-// logged without moving any normalized attribute value. NVMe's
-// num_err_log_entries is deliberately excluded — it accumulates for benign
-// reasons, so it is a count to display, not a verdict.
+// logSeverity grades the drive's own error logs, which can record an uncorrectable read
+// no attribute reflects. NVMe num_err_log_entries is excluded: it grows for benign reasons.
 func (r *Report) logSeverity() Severity {
 	if r.ATAErrorLog != nil && r.ATAErrorLog.Extended != nil && r.ATAErrorLog.Extended.Count > 0 {
 		return SeverityCaution
@@ -70,7 +68,7 @@ func (a *ATAAttribute) Severity() Severity {
 	case "in_the_past":
 		return SeverityCaution
 	}
-	// Thresh 0 means "no threshold".
+	// Thresh 0 means no threshold.
 	if a.Thresh > 0 && a.Value <= a.Thresh {
 		if a.Flags.Prefailure {
 			return SeverityFailing
@@ -93,7 +91,7 @@ func PctUsedSeverity(percent int) Severity {
 func nvmeSeverity(h *NVMeHealth) Severity {
 	sev := SeverityOK
 	if h.MediaErrors > 0 {
-		sev = max(sev, SeverityCaution)
+		sev = SeverityCaution
 	}
 	if h.AvailableSpare != nil && h.AvailableSpareThreshold != nil &&
 		*h.AvailableSpare <= *h.AvailableSpareThreshold {

@@ -4,6 +4,7 @@ package smart
 
 import (
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -24,8 +25,7 @@ func (r *Report) SupportsFARM() bool {
 // HasFARM reports whether a parsed, supported FARM log is attached.
 func (r *Report) HasFARM() bool { return supportedFarm(r.FARM) != nil }
 
-// supportedFarm returns f only when present and Supported — the one place
-// "this FARM log is usable" is decided.
+// supportedFarm returns f only when present and Supported.
 func supportedFarm(f *FARM) *FARM {
 	if f == nil || !f.Supported {
 		return nil
@@ -46,6 +46,7 @@ type FARM struct {
 
 // FARMDriveInfo is FARM page 1: identity, wear and recording-technology summary.
 type FARMDriveInfo struct {
+	Serial           string `json:"serial_number"`
 	Heads            int    `json:"number_of_heads"`
 	POH              int    `json:"poh"` // power-on hours
 	HeadFlightHours  int    `json:"head_flight_hours"`
@@ -137,18 +138,13 @@ func (p *FARMReliability) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// maxFARMHeads bounds the head index accepted from a key suffix. The index
-// sizes the returned slice, and the JSON is drive- (or fixture-) controlled, so
-// without a ceiling a crafted key turns into a gigabyte allocation or a
-// makeslice panic on the poll goroutine. Real drives are two orders of
-// magnitude below this.
+// maxFARMHeads caps the head index taken from a drive-controlled key suffix, since it sizes a slice.
 const maxFARMHeads = 256
 
-// collectByHead gathers keys of the form "<prefix><N>" into an index-ordered
-// slice [0..maxN], filling gaps with zero. Indices outside [0, maxFARMHeads)
-// are ignored. Returns nil when none are present.
+// collectByHead gathers "<prefix><N>" keys into an index-ordered slice,
+// zero-filling gaps and ignoring N outside [0, maxFARMHeads).
 func collectByHead(m map[string]json.RawMessage, prefix string) []int {
-	vals := map[int]int{}
+	var vals [maxFARMHeads]int
 	maxIdx := -1
 	for k, raw := range m {
 		suffix, ok := strings.CutPrefix(k, prefix)
@@ -168,9 +164,5 @@ func collectByHead(m map[string]json.RawMessage, prefix string) []int {
 	if maxIdx < 0 {
 		return nil
 	}
-	out := make([]int, maxIdx+1)
-	for i := range out {
-		out[i] = vals[i]
-	}
-	return out
+	return slices.Clone(vals[:maxIdx+1])
 }

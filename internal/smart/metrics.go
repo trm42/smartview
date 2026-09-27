@@ -4,10 +4,7 @@ package smart
 
 import "strings"
 
-// Cross-protocol metric accessors, each resolving a fallback chain across the
-// sparse smartctl JSON. Every accessor reports presence rather than
-// substituting a zero: "not reported" and "reported as zero" are different
-// answers on this schema.
+// Cross-protocol accessors over the sparse schema; each reports presence rather than a zero.
 
 // LeadingInt parses the leading integer of s, ignoring trailing detail like
 // the "(189 58 0)" in smartctl raw attribute strings.
@@ -45,17 +42,11 @@ func (r *Report) attrRaw(id int) (int64, bool) {
 	return 0, false
 }
 
-// deviceStat returns a Device Statistics counter by name, skipping entries
-// not flagged valid (smartctl emits placeholder rows).
+// deviceStat returns a valid Device Statistics counter by name.
 func (r *Report) deviceStat(name string) (int64, bool) {
-	if r.ATADeviceStatistics == nil {
-		return 0, false
-	}
-	for _, p := range r.ATADeviceStatistics.Pages {
-		for _, e := range p.Table {
-			if e.Name == name && e.Flags.Valid {
-				return e.Value, true
-			}
+	for e := range r.validStats() {
+		if e.Name == name {
+			return e.Value, true
 		}
 	}
 	return 0, false
@@ -70,8 +61,7 @@ func (r *Report) SectorBytes() int64 {
 	return 512
 }
 
-// DataUnitBytes converts an NVMe data-units count to bytes: the spec counts
-// thousands of 512-byte units. The one place that rule lives.
+// DataUnitBytes converts an NVMe data-units count (thousands of 512-byte units) to bytes.
 func DataUnitBytes(units int64) int64 { return units * 512 * 1000 }
 
 // CapacityBytes returns the drive's usable size: user_capacity, else the NVMe
@@ -120,9 +110,8 @@ func (r *Report) PowerCycles() (int, bool) {
 	return 0, false
 }
 
-// LifeUsedPercent returns the percentage of rated write endurance consumed:
-// NVMe percentage_used, Apple endurance_used, or the Device Statistics
-// endurance indicator. Spinning disks correctly report absent.
+// LifeUsedPercent returns the percentage of rated write endurance consumed;
+// spinning disks report absent.
 func (r *Report) LifeUsedPercent() (int, bool) {
 	if r.NVMeHealth != nil && r.NVMeHealth.PercentageUsed != nil {
 		return *r.NVMeHealth.PercentageUsed, true
@@ -222,9 +211,6 @@ type ErrorCounts struct {
 // falling back to Device Statistics.
 func (r *Report) ErrorCounts() ErrorCounts {
 	var e ErrorCounts
-
-	// A field is assigned only on a hit, so an unreported counter stays nil
-	// rather than becoming a zero.
 	pick := func(dst **int64, attrID int, statNames ...string) {
 		if v, ok := r.attrRaw(attrID); ok {
 			*dst = new(v)

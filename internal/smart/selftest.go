@@ -4,8 +4,7 @@ package smart
 
 import "time"
 
-// SelfTestType is the kind of SMART self-test smartview can start; only short
-// and long are exposed, deliberately.
+// SelfTestType is the kind of SMART self-test smartview can start.
 type SelfTestType string
 
 const (
@@ -13,21 +12,15 @@ const (
 	SelfTestLong  SelfTestType = "long"
 )
 
-// SupportsSelfTest reports whether the drive can run SMART self-tests; gates
-// the Tests tab. Drives that omit the relevant sections report false.
+// SupportsSelfTest reports whether the drive can run SMART self-tests.
 func (r *Report) SupportsSelfTest() bool {
 	switch {
 	case r.IsATA():
 		return r.ATASmartData != nil && r.ATASmartData.Capabilities != nil &&
 			r.ATASmartData.Capabilities.SelfTestsSupported
 	case r.IsNVMe():
-		// Some smartctl builds omit the optional-admin section; the self-test
-		// log is only emitted for controllers that implement the command, so
-		// its presence is an equally reliable signal.
-		if r.NVMeOptAdmin != nil && r.NVMeOptAdmin.SelfTest {
-			return true
-		}
-		return r.NVMeSelfTestLog != nil
+		// Some builds omit optional-admin; the self-test log is only emitted when the command is implemented.
+		return (r.NVMeOptAdmin != nil && r.NVMeOptAdmin.SelfTest) || r.NVMeSelfTestLog != nil
 	default:
 		return false
 	}
