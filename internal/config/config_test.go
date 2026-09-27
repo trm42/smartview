@@ -11,9 +11,7 @@ import (
 	"time"
 )
 
-// TestDefaultIsTodaysBehaviour pins the built-in defaults to what smartview did
-// before it had a config file: the dark theme, a 30s poll, and both new
-// behaviours off.
+// TestDefaultIsTodaysBehaviour pins the built-in defaults.
 func TestDefaultIsTodaysBehaviour(t *testing.T) {
 	got := Default()
 	want := Config{
@@ -62,8 +60,6 @@ start_view = "fleet"
 	}
 }
 
-// TestLoadKeepsDefaultsForOmittedKeys pins per-key precedence: a key the file
-// does not mention keeps its default rather than decoding to a zero value.
 func TestLoadKeepsDefaultsForOmittedKeys(t *testing.T) {
 	got, err := Load(writeFile(t, "theme = \"amber\"\n"))
 	if err != nil {
@@ -76,8 +72,7 @@ func TestLoadKeepsDefaultsForOmittedKeys(t *testing.T) {
 	}
 }
 
-// TestLoadRejectsUnknownKeys is the refuse-to-start contract: a typo must be
-// named, not silently ignored. Assert on the key, not the whole message.
+// TestLoadRejectsUnknownKeys asserts on the key name, not the whole message.
 func TestLoadRejectsUnknownKeys(t *testing.T) {
 	_, err := Load(writeFile(t, "theme = \"dark\"\nrefresh_intervall = \"10s\"\n"))
 	if err == nil {
@@ -88,8 +83,6 @@ func TestLoadRejectsUnknownKeys(t *testing.T) {
 	}
 }
 
-// TestLoadNamesEveryUnknownKey: reporting one typo at a time makes fixing a
-// stale config a guessing game.
 func TestLoadNamesEveryUnknownKey(t *testing.T) {
 	_, err := Load(writeFile(t, "colour = \"dark\"\nspin = true\n"))
 	if err == nil {
@@ -113,7 +106,6 @@ func TestLoadRejectsMalformedTOML(t *testing.T) {
 	}
 }
 
-// TestLoadRejectsABadDuration covers the Duration TextUnmarshaler's error path.
 func TestLoadRejectsABadDuration(t *testing.T) {
 	if _, err := Load(writeFile(t, "refresh_interval = \"soon\"\n")); err == nil {
 		t.Fatal("Load accepted a non-duration refresh_interval")
@@ -141,9 +133,7 @@ func TestValidate(t *testing.T) {
 		}), ""},
 		{"unknown theme", valid(func(c *Config) { c.Theme = "sepia" }), "sepia"},
 		{"empty theme", valid(func(c *Config) { c.Theme = "" }), "theme"},
-		// A zero interval reaches time.NewTicker, which PANICS. The floor here
-		// is the only thing standing between a config typo and a dead poll
-		// goroutine.
+		// time.NewTicker panics on a zero interval.
 		{"zero interval", valid(func(c *Config) { c.RefreshInterval = 0 }), "refresh_interval"},
 		{"negative interval", valid(func(c *Config) { c.RefreshInterval = Duration(-time.Second) }), "refresh_interval"},
 		{"sub-second interval", valid(func(c *Config) { c.RefreshInterval = Duration(500 * time.Millisecond) }), "refresh_interval"},
@@ -169,16 +159,14 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-// TestValidateIntervalFloorIsTickerSafe pins the floor against the thing it
-// protects: every interval Validate accepts must be a legal time.NewTicker
-// argument, which panics on <= 0.
+// Every accepted interval must be a legal time.NewTicker argument.
 func TestValidateIntervalFloorIsTickerSafe(t *testing.T) {
 	c := Default()
 	c.RefreshInterval = Duration(minInterval)
 	if err := c.Validate(knownTheme); err != nil {
 		t.Fatalf("the floor itself must be valid: %v", err)
 	}
-	tick := time.NewTicker(c.RefreshInterval.Duration()) // panics if <= 0
+	tick := time.NewTicker(c.RefreshInterval.Duration())
 	tick.Stop()
 }
 
@@ -203,9 +191,7 @@ func TestSaveRoundTrips(t *testing.T) {
 	}
 }
 
-// TestSaveWritesACommentedFile pins the reason Save renders a template instead
-// of using toml.Encoder: the encoder emits no comments, so saving from the
-// settings modal would strip the header off a hand-written file.
+// toml.Encoder emits no comments; Save must keep the header.
 func TestSaveWritesACommentedFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	if err := Save(path, Default()); err != nil {
@@ -246,8 +232,7 @@ func TestLoadIfPresentToleratesAMissingFile(t *testing.T) {
 	}
 }
 
-// TestLoadRequiresAFileTheUserNamed is the other half of the split: a path the
-// user typed must exist, or the typo is silently ignored.
+// A path the user typed must exist.
 func TestLoadRequiresAFileTheUserNamed(t *testing.T) {
 	if _, err := Load(filepath.Join(t.TempDir(), "absent.toml")); err == nil {
 		t.Fatal("Load accepted a missing file")
@@ -274,8 +259,7 @@ func TestPathIsUnderTheUserConfigDir(t *testing.T) {
 	}
 }
 
-// TestWithAppliesOnlySetOverrides pins the precedence rule without needing a
-// process: a flag the user did not type must not shadow the file.
+// A flag the user did not type must not shadow the file.
 func TestWithAppliesOnlySetOverrides(t *testing.T) {
 	file := Config{
 		Theme:           "phosphor",
@@ -309,9 +293,7 @@ func TestWithAppliesOnlySetOverrides(t *testing.T) {
 	})
 }
 
-// TestValidateFlagsTheThemeErrorForTheCaller lets main attach the theme list
-// to a theme error and nothing else — the same split as smart.ErrNoSmartctl,
-// where which names to print is the caller's knowledge, not this package's.
+// Only a theme error matches ErrUnknownTheme, so main appends the theme list to nothing else.
 func TestValidateFlagsTheThemeErrorForTheCaller(t *testing.T) {
 	bad := Default()
 	bad.Theme = "sepia"

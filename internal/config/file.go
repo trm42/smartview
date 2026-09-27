@@ -10,9 +10,7 @@ import (
 	"path/filepath"
 )
 
-// Path is the default config location, under the platform's user config
-// directory: ~/.config/smartview/config.toml on Linux (honouring
-// $XDG_CONFIG_HOME), ~/Library/Application Support/... on macOS.
+// Path is the default config location under os.UserConfigDir.
 func Path() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
@@ -21,9 +19,7 @@ func Path() (string, error) {
 	return filepath.Join(dir, "smartview", "config.toml"), nil
 }
 
-// LoadIfPresent is [Load], except that a missing file yields the defaults:
-// running with no config is the normal case, not a failure. A path the user
-// named explicitly goes through Load instead, where the typo is reported.
+// LoadIfPresent is [Load], except that a missing file yields the defaults.
 func LoadIfPresent(path string) (Config, error) {
 	c, err := Load(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -32,11 +28,8 @@ func LoadIfPresent(path string) (Config, error) {
 	return c, err
 }
 
-// template is what Save writes. It is a rendered template rather than
-// toml.Encoder output because the encoder emits no comments, so the first save
-// from the settings modal would strip the header off a hand-written file.
-// Every value interpolated here is validated against a closed set or is a
-// bool, so the result cannot be invalid TOML.
+// template is what Save writes; toml.Encoder emits no comments. Every
+// interpolated value is a bool or from a closed set, so the output is valid TOML.
 const template = `# smartview configuration
 #
 #   Linux:  ~/.config/smartview/config.toml
@@ -64,9 +57,8 @@ show_unavailable_tabs = %t
 start_view = %q
 `
 
-// Save writes c to path, creating the directory if needed. The write is
-// atomic (temp file plus rename) so an interrupted save cannot leave a
-// half-written config that the next startup would refuse to parse.
+// Save writes c to path atomically (temp file plus rename), creating the
+// directory if needed.
 func Save(path string, c Config) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -86,9 +78,8 @@ func Save(path string, c Config) error {
 	return nil
 }
 
-// writeTemp writes body to a new 0600 file in dir and returns its name, closed
-// and ready to rename. The file is removed on any failure, close included, so
-// a failed save leaves nothing behind.
+// writeTemp writes body to a new file in dir and returns its closed name,
+// removing it on any failure.
 func writeTemp(dir, body string) (name string, err error) {
 	f, err := os.CreateTemp(dir, ".config-*.toml")
 	if err != nil {
@@ -102,9 +93,6 @@ func writeTemp(dir, body string) (name string, err error) {
 			_ = os.Remove(f.Name())
 		}
 	}()
-	if err = f.Chmod(0o600); err != nil {
-		return "", fmt.Errorf("set the mode on %s: %w", f.Name(), err)
-	}
 	if _, err = f.WriteString(body); err != nil {
 		return "", fmt.Errorf("write %s: %w", f.Name(), err)
 	}
