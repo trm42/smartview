@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Package config is smartview's TOML settings file. It imports nothing of
-// smartview's own: main loads and validates it, internal/ui edits it.
+// Package config is smartview's TOML settings file; it imports nothing of smartview's own.
 package config
 
 import (
@@ -28,15 +27,7 @@ type Config struct {
 	StartView           string   `toml:"start_view"`
 }
 
-// Duration is a time.Duration that round-trips as a TOML string ("30s"): TOML
-// has no duration type.
-type Duration time.Duration
-
-// Duration returns the underlying time.Duration.
-func (d Duration) Duration() time.Duration { return time.Duration(d) }
-
-// Default returns the built-in settings, which reproduce smartview's behaviour
-// from before it had a config file.
+// Default returns the built-in settings.
 func Default() Config {
 	return Config{
 		Theme:           "dark",
@@ -44,6 +35,13 @@ func Default() Config {
 		StartView:       StartDrives,
 	}
 }
+
+// Duration is a time.Duration that round-trips as a TOML string ("30s"): TOML
+// has no duration type.
+type Duration time.Duration
+
+// Duration returns the underlying time.Duration.
+func (d Duration) Duration() time.Duration { return time.Duration(d) }
 
 // UnmarshalText decodes a Go duration string ("30s", "1m").
 func (d *Duration) UnmarshalText(b []byte) error {
@@ -55,19 +53,14 @@ func (d *Duration) UnmarshalText(b []byte) error {
 	return nil
 }
 
-// MarshalText renders the duration the way UnmarshalText reads it.
-func (d Duration) MarshalText() ([]byte, error) { return []byte(d.Duration().String()), nil }
-
-// Load reads path. It starts from Default and decodes over it, so a key the
-// file omits keeps its default instead of becoming a zero value.
+// Load reads path, decoding over Default so an omitted key keeps its default.
 func Load(path string) (Config, error) {
 	c := Default()
 	md, err := toml.DecodeFile(path, &c)
 	if err != nil {
 		return Default(), fmt.Errorf("%s: %w", path, err)
 	}
-	// Every unknown key at once: reporting one typo per run makes fixing a
-	// stale config a guessing game.
+	// Report every unknown key at once, not one typo per run.
 	if un := md.Undecoded(); len(un) > 0 {
 		keys := make([]string, len(un))
 		for i, k := range un {
@@ -79,7 +72,6 @@ func Load(path string) (Config, error) {
 	return c, nil
 }
 
-// plural returns the "s" that makes a count read correctly.
 func plural(n int) string {
 	if n == 1 {
 		return ""
@@ -87,23 +79,17 @@ func plural(n int) string {
 	return "s"
 }
 
-// Interval bounds. The floor is not cosmetic: poll.go hands the interval
-// straight to time.NewTicker, which panics on a non-positive duration, so a
-// "0s" in a config file would kill the poll goroutine on its first tick. The
-// ceiling only catches a plainly mistyped unit.
+// minInterval guards time.NewTicker, which panics on a non-positive duration;
+// maxInterval catches a mistyped unit.
 const (
 	minInterval = time.Second
 	maxInterval = 24 * time.Hour
 )
 
-// ErrUnknownTheme reports a theme name the UI does not define. Callers match
-// it to list the choices: which themes exist is internal/ui's knowledge, not
-// this package's — the same split as smart.ErrNoSmartctl.
+// ErrUnknownTheme reports a theme the UI does not define; the caller attaches the list of choices.
 var ErrUnknownTheme = errors.New("unknown theme")
 
-// Validate checks every setting. knownTheme is injected because the theme
-// registry lives in internal/ui, which config must not import; main passes
-// ui.HasTheme.
+// Validate checks every setting; knownTheme is injected because the theme registry lives in internal/ui.
 func (c Config) Validate(knownTheme func(string) bool) error {
 	if !knownTheme(c.Theme) {
 		return fmt.Errorf("%w %q", ErrUnknownTheme, c.Theme)
@@ -119,9 +105,8 @@ func (c Config) Validate(knownTheme func(string) bool) error {
 	return nil
 }
 
-// Overrides are the settings a command-line flag supplied. A nil field means
-// the flag was absent, which is what keeps a flag left at its default from
-// shadowing the config file.
+// Overrides are the settings a flag supplied; nil means absent, so a flag at
+// its default cannot shadow the file.
 type Overrides struct {
 	Theme           *string
 	RefreshInterval *time.Duration
