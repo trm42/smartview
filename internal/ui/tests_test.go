@@ -7,6 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
+
 	"github.com/trm42/smartview/internal/smart"
 )
 
@@ -25,6 +28,21 @@ func idleATAReport() *smart.Report {
 				PollingMinutes: &smart.SelfTestPolling{Short: 2, Extended: 120},
 			},
 		},
+	}
+}
+
+// TestTestsListTakesJK: below the breakpoint ↑/↓ step the drive, so j/k are
+// the only line keys the hint bar offers for the self-test choice.
+func TestTestsListTakesJK(t *testing.T) {
+	v := newTestsView(idleATAReport(), selfTestActions{})
+	handle := v.list.InputHandler()
+	handle(tcell.NewEventKey(tcell.KeyRune, 'j', tcell.ModNone), func(tview.Primitive) {})
+	if got := v.list.GetCurrentItem(); got != 1 {
+		t.Fatalf("after j, current item = %d, want 1", got)
+	}
+	handle(tcell.NewEventKey(tcell.KeyRune, 'k', tcell.ModNone), func(tview.Primitive) {})
+	if got := v.list.GetCurrentItem(); got != 0 {
+		t.Errorf("after k, current item = %d, want 0", got)
 	}
 }
 
