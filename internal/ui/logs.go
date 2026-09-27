@@ -238,13 +238,19 @@ func writePendingDefects(b *strings.Builder, d *smart.ATAPendingDefects) {
 // writeSelfTestSummary states run count, failures and the newest run, so the
 // reader needn't scan the near-identical rows below.
 func writeSelfTestSummary(b *strings.Builder, r *smart.Report, tbl []smart.ATASelfTestEntry) {
-	failed := 0
+	failed, passed := 0, 0
 	for _, e := range tbl {
-		if !selfTestPassed(e.Status.String) {
+		switch selfTestOutcome(e.Status.String) {
+		case testFailed:
 			failed++
+		case testPassed:
+			passed++
 		}
 	}
 	verdict := mutedTag() + "all passed[-]"
+	if passed < len(tbl) {
+		verdict = mutedTag() + "none failed[-]" // some are in progress or were stopped by the host
+	}
 	if failed > 0 {
 		verdict = fmt.Sprintf("%s%s failed[-]", failingTag(), plural(failed, "run", "runs"))
 	}
@@ -286,29 +292,45 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 	}
 }
 
-// selfTestPassed is the keyword test shared with colorResult; "without error"
+// testOutcome classifies a drive-reported self-test result string.
+type testOutcome int
+
+const (
+	// testNeutral is a run that says nothing about the drive: in progress, or stopped by the host.
+	testNeutral testOutcome = iota
+	testPassed
+	testFailed
+)
+
+// selfTestOutcome is the keyword test shared with colorResult; "without error"
 // is checked before "error", and "Completed" alone is not a pass.
-func selfTestPassed(s string) bool {
+func selfTestOutcome(s string) testOutcome {
 	low := strings.ToLower(s)
 	if strings.Contains(low, "without error") {
-		return true
+		return testPassed
 	}
-	for _, kw := range []string{"fail", "error", "aborted", "interrupted", "fatal", "unknown"} {
+	for _, kw := range []string{"fail", "error", "fatal", "damage"} {
 		if strings.Contains(low, kw) {
-			return false
+			return testFailed
 		}
 	}
-	return strings.Contains(low, "completed")
+	for _, kw := range []string{"in progress", "aborted", "interrupted"} {
+		if strings.Contains(low, kw) {
+			return testNeutral
+		}
+	}
+	if strings.Contains(low, "completed") {
+		return testPassed
+	}
+	return testNeutral
 }
 
 // colorResult tints a self-test outcome by keyword on the original string and escapes the rendered copy; a pass is muted, not green.
 func colorResult(s string) string {
-	low := strings.ToLower(s)
-	switch {
-	case selfTestPassed(s):
+	switch selfTestOutcome(s) {
+	case testPassed:
 		return mutedTag() + esc(s) + "[-]"
-	case strings.Contains(low, "fail"), strings.Contains(low, "error"),
-		strings.Contains(low, "aborted"), strings.Contains(low, "interrupted"):
+	case testFailed:
 		return failingTag() + esc(s) + "[-]"
 	default:
 		return esc(s)
