@@ -113,18 +113,28 @@ homebrew_casks:
     binaries:
       - smartview
     homepage: https://github.com/trm42/smartview
-    description: Cross-platform terminal UI for monitoring drive health via smartmontools.
+    # No trailing full stop: `brew style` (Cask/Desc) rejects it.
+    description: Cross-platform terminal UI for monitoring drive health via smartmontools
     license: GPL-3.0-or-later
     dependencies:
       - formula: smartmontools
-    hooks:
-      post:
-        # The binary is unsigned; clear the Gatekeeper quarantine flag so it runs
-        # without the "cannot be opened" prompt on first launch.
-        install: |
-          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/smartview"]
-          end
+    # The binary is unsigned; clear the Gatekeeper quarantine flag so it runs
+    # without the "cannot be opened" prompt on first launch.
+    #
+    # Deliberately a custom_block rather than `hooks.post.install`: hooks emit a
+    # `postflight do` block, which Homebrew deprecated in favour of
+    # `postflight_steps` (warns on every brew command touching the cask).
+    # GoReleaser can't emit steps yet — goreleaser/goreleaser#6870; switch back
+    # to hooks once it can.
+    custom_block: |
+      postflight_steps do
+        on_macos do
+          run "/usr/bin/xattr",
+              args:           ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/smartview"],
+              writable_paths: ["{{ "{{staged_path}}" }}/smartview"],
+              must_succeed:   false
+        end
+      end
 
 changelog:
   use: git
