@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -85,6 +86,18 @@ func TestFleetMeasuresItsTableOnTheFirstVisibleFrame(t *testing.T) {
 	if got.width <= narrowBreakpoint {
 		t.Errorf("the first visible fleet frame measured its table at %d cells "+
 			"in a 120-column terminal", got.width)
+	}
+}
+
+// TestFleetEmptySerialIsADash: the dash is markup, so it must be applied after
+// escaping and truncating the serial, not before.
+func TestFleetEmptySerialIsADash(t *testing.T) {
+	v := newFleetView(nil)
+	v.identityCols = 3
+	dev := smart.Device{Name: "/dev/sda", Protocol: "ATA"}
+	v.setRow(1, fleetRow{dev: dev, rep: &smart.Report{Device: dev, ModelName: "ACME"}}, nil, 0)
+	if got := strings.TrimSpace(v.table.GetCell(1, 2).Text); got != dash {
+		t.Errorf("serial cell = %q, want the dash placeholder %q", got, dash)
 	}
 }
 
