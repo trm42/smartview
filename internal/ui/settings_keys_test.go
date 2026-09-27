@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -12,12 +13,8 @@ import (
 	"github.com/trm42/smartview/internal/config"
 )
 
-// Keys go through the screen, never through the focused primitive's handler.
-// That is not a style choice: an open DropDown focuses its list, but tview
-// still delivers Up/Down to the *DropDown*, which forwards them on. Calling
-// the focused primitive directly therefore skips the per-item capture the
-// whole model hangs on, and passes tests the running app fails — which is
-// exactly how the arrows-inside-a-chooser bug reached a terminal.
+// Keys go through the screen: tview routes Up/Down to an open DropDown, not the
+// focused list, so calling a handler directly skips the per-item capture.
 
 type modal struct {
 	a      *App
@@ -28,7 +25,6 @@ type modal struct {
 func openForm(t *testing.T, cfg config.Config) *modal {
 	t.Helper()
 	a, screen := newSimAppCfg(t, 100, 34, cfg)
-	t.Cleanup(func() { setTheme(themes["dark"]) })
 	form := openSettings(t, a, screen)
 	if form == nil {
 		t.Fatal("no settings form")
@@ -71,16 +67,14 @@ func (m *modal) button() int {
 
 func (m *modal) atRow(t *testing.T, i int) { //nolint:unparam // symmetry with atButton
 	t.Helper()
-	waitFor(t, m.a, "focus to reach row "+itoa(i), func() bool { return m.row() == i })
+	waitFor(t, m.a, "focus to reach row "+strconv.Itoa(i), func() bool { return m.row() == i })
 }
-
-func itoa(i int) string { return string(rune('0' + i)) }
 
 // goToRow walks down to a row, waiting at each step.
 func (m *modal) goToRow(t *testing.T, target int) {
 	t.Helper()
 	for i := 1; i <= target; i++ {
-		m.press(t, tcell.KeyDown, "row "+itoa(i), func() bool { return m.row() == i })
+		m.press(t, tcell.KeyDown, "row "+strconv.Itoa(i), func() bool { return m.row() == i })
 	}
 }
 
@@ -136,7 +130,7 @@ func TestRightActivatesTheFocusedRow(t *testing.T) {
 	})
 }
 
-// TestArrowsInsideAnOpenChooserMoveTheList is the bug this harness exists for.
+// TestArrowsInsideAnOpenChooserMoveTheList: Up/Down in an open chooser move its list, not the row.
 func TestArrowsInsideAnOpenChooserMoveTheList(t *testing.T) {
 	m := openForm(t, config.Default())
 	dd := m.chooser(t, 1) // Refresh: six options, opens on 30s
@@ -255,7 +249,6 @@ func TestChangedRowsAreMarked(t *testing.T) {
 
 func TestStatusBarAnnouncesSettings(t *testing.T) {
 	a, screen := newSimApp(t, 140, 40)
-	t.Cleanup(func() { setTheme(themes["dark"]) })
 	runSim(t, a, screen)
 
 	bar := onLoop(t, a, func() string { return a.status.GetText(false) })

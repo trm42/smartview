@@ -33,11 +33,8 @@ func loadFARM(t *testing.T) *smart.FARM {
 	return w.FARM
 }
 
-// Every rendered farm line must start its value at exactly farmValueCol. The
-// panel pre-wraps with hangingIndent, which cuts each line at that display
-// column; a label wider than farmLabelWidth would push the value past the cut
-// and the wrap would land inside the label instead of under the value. This is
-// the invariant that lets farm.go share format.go's implementation.
+// Every rendered farm line must start its value at exactly farmValueCol, or
+// hangingIndent's cut lands inside the label.
 func TestFarmValuesStartAtTheValueColumn(t *testing.T) {
 	f := loadFARM(t)
 	const marker = "[-:-:-] "
@@ -72,8 +69,7 @@ func TestFarmValuesStartAtTheValueColumn(t *testing.T) {
 }
 
 // hangingIndent must hang an over-long farm value under its own column rather
-// than returning it to the left margin, and must not drop any of it. This is
-// the behaviour farm.go previously kept its own copy of the algorithm for.
+// than returning it to the left margin, and must not drop any of it.
 func TestFarmValuesHangUnderTheValueColumn(t *testing.T) {
 	var b strings.Builder
 	farmRow(&b, "Device", "aaaa bbbb cccc dddd eeee ffff")
@@ -96,10 +92,8 @@ func TestFarmValuesHangUnderTheValueColumn(t *testing.T) {
 	}
 }
 
-// Below farmColumnMin a paired box cannot hold a reading, so the four boxes
-// stack into one full-width column instead. The point is not the arrangement
-// but what it buys: at a width where the 2x2 grid shredded values across four
-// lines, one column puts every row back on a single line.
+// Below farmColumnMin the four boxes stack into one full-width column, which
+// puts every row back on a single line.
 func TestFarmStacksWhenTooNarrowToPair(t *testing.T) {
 	f := loadFARM(t)
 	v := newFarmView(&smart.Report{FARM: f})
@@ -114,8 +108,7 @@ func TestFarmStacksWhenTooNarrowToPair(t *testing.T) {
 		{120, false}, // comfortable
 	} {
 		v.relayout(c.width)
-		// Observe the arrangement rather than re-deriving the condition: the
-		// stacked column mounts all four boxes, the grid mounts two columns.
+		// The stacked column mounts all four boxes, the grid mounts two columns.
 		outer, ok := v.inner.(*tview.Flex)
 		if !ok {
 			t.Fatalf("width %d: scroll content is %T, want *tview.Flex", c.width, v.inner)
@@ -128,45 +121,29 @@ func TestFarmStacksWhenTooNarrowToPair(t *testing.T) {
 			t.Errorf("width %d: stacked = %v (%d items), want %v",
 				c.width, stacked, arrangement.GetItemCount(), c.stacked)
 		}
-		// Whichever arrangement was chosen, the container must be told a height
-		// that covers it.
 		if v.contentHeight <= 0 {
 			t.Errorf("width %d: content height %d", c.width, v.contentHeight)
 		}
 	}
 
-	// The payoff, measured the one way that separates the layouts: a line
-	// count. Stacked at 60 columns nothing wraps and each box renders exactly
-	// the rows it wrote; paired at that width they swell to 10/8/23/17. Line
-	// width cannot show this — hangingIndent keeps lines inside whatever width
-	// it is handed, the paired one included.
+	// Stacked at 60 columns nothing wraps; paired, the boxes swell to 10/8/23/17 lines.
 	v.relayout(60)
-	for _, b := range v.farmBoxes() {
-		raw := countLines(b.text)
-		if got := countLines(b.tv.GetText(false)); got != raw {
+	for _, b := range v.boxes {
+		raw := lineCount(b.text)
+		if got := lineCount(b.tv.GetText(false)); got != raw {
 			t.Errorf("stacked at 60: box wrapped to %d lines, want its %d rows intact:\n%s",
 				got, raw, b.tv.GetText(false))
 		}
 	}
 }
 
-// countLines counts text's lines, ignoring a trailing newline.
-func countLines(s string) int {
-	return strings.Count(strings.TrimRight(s, "\n"), "\n") + 1
-}
-
-// The stacked column presents the boxes in the grid's reading order, so the
-// layout change does not reshuffle what the drive is telling you.
+// The boxes are kept in the grid's reading order, which the stacked column follows.
 func TestFarmStackKeepsReadingOrder(t *testing.T) {
 	v := newFarmView(&smart.Report{FARM: loadFARM(t)})
-	want := []*tview.TextView{v.drive, v.errors, v.env, v.workload}
-	got := v.farmBoxes()
-	if len(got) != len(want) {
-		t.Fatalf("farmBoxes returned %d boxes, want %d", len(got), len(want))
-	}
-	for i := range want {
-		if got[i].tv != want[i] {
-			t.Errorf("box %d is not the one the grid puts there", i)
+	want := []string{" Drive ", " Error statistics ", " Environment ", " Workload "}
+	for i, b := range v.boxes {
+		if got := b.tv.GetTitle(); got != want[i] {
+			t.Errorf("box %d is %q, want %q", i, got, want[i])
 		}
 	}
 }

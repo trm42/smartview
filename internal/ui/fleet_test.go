@@ -14,17 +14,9 @@ import (
 // fleetBudget is what the fleet decided to render on a given frame.
 type fleetBudget struct{ shown, identity, width int }
 
-// TestFleetMeasuresItsTableOnTheFirstVisibleFrame is the regression test for a
-// fleet view that opened empty. The column budget is measured from the table's
-// inner rect, and a Flex assigns its children's rects inside Flex.Draw — so a
-// measurement taken before that call reads the previous frame's width, which is
-// zero on the frame the fleet first becomes visible. Every comparison column was
-// dropped, the identity narrowed to the device name alone, and nothing scheduled
-// another draw: the view stayed a bare "Drive" list until the next key press.
-//
-// The budget is therefore read in the after-draw hook, on the very frame the
-// user first sees. Reading it from a queued update instead would hide the bug —
-// queuing an update draws again, and the second frame was always correct.
+// TestFleetMeasuresItsTableOnTheFirstVisibleFrame: Flex assigns the table's rect
+// inside Flex.Draw, so the budget is read in the after-draw hook of the first
+// visible frame; a queued update would draw again and hide the bug.
 func TestFleetMeasuresItsTableOnTheFirstVisibleFrame(t *testing.T) {
 	a, screen := newSimApp(t, 120, 40)
 

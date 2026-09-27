@@ -34,10 +34,8 @@ func screenText(screen tcell.SimulationScreen) []string {
 	return lines
 }
 
-// openSettings puts the modal up on a live event loop and returns the form.
-// It mirrors showSettings rather than calling it, because Form.Focus delegates
-// to the focused item, so GetFocus cannot hand the Form back;
-// TestSettingsModalOpensAndCancels is what covers showSettings itself.
+// openSettings puts the modal up on a live event loop and returns the form;
+// it mirrors showSettings because Form.Focus delegates, so GetFocus cannot return the Form.
 func openSettings(t *testing.T, a *App, screen tcell.SimulationScreen) *tview.Form {
 	t.Helper()
 	runSim(t, a, screen)
@@ -51,13 +49,9 @@ func openSettings(t *testing.T, a *App, screen tcell.SimulationScreen) *tview.Fo
 	})
 }
 
-// TestSettingsModalFitsTheSmallestTerminal renders the real modal. pushModal
-// calls SetRoot(_, false), which assigns the root no rect, so a plain Flex
-// draws in the corner with its left edge clipped — invisible to any assertion
-// that only inspects widget state.
+// TestSettingsModalFitsTheSmallestTerminal renders the real modal at 80x24, centred and complete.
 func TestSettingsModalFitsTheSmallestTerminal(t *testing.T) {
 	a, screen := newSimApp(t, 80, 24)
-	t.Cleanup(func() { setTheme(themes["dark"]) })
 	openSettings(t, a, screen)
 	a.app.Draw()
 
@@ -82,17 +76,12 @@ func TestSettingsModalFitsTheSmallestTerminal(t *testing.T) {
 	}
 }
 
-// TestCheckedCheckboxIsVisible is the half the all-defaults render cannot
-// reach: both settings default to false, so a checked box was never drawn. A
-// Checkbox renders its state string as markup, and an unescaped "[x]" parses
-// as a colour tag and disappears entirely — while "[ ]" survives, so the
-// unchecked box looked fine and hid it.
+// TestCheckedCheckboxIsVisible: an unescaped "[x]" parses as a colour tag and vanishes.
 func TestCheckedCheckboxIsVisible(t *testing.T) {
 	cfg := config.Default()
 	cfg.StandbyAware = true
 	cfg.ShowUnavailableTabs = true
 	a, screen := newSimAppCfg(t, 80, 24, cfg)
-	t.Cleanup(func() { setTheme(themes["dark"]) })
 	openSettings(t, a, screen)
 	a.app.Draw()
 
@@ -105,15 +94,12 @@ func TestCheckedCheckboxIsVisible(t *testing.T) {
 	}
 }
 
-// TestThemeDropdownFitsOpen is the clipping risk: the theme list is longer
-// than a short terminal, so tview clips the open list to the screen (see
-// DropDown.Draw) and the rest is reached by scrolling. What has to hold is
-// that both ends are selectable — the head on open, the tail after End.
+// TestThemeDropdownFitsOpen: the open theme list is clipped to a short screen,
+// so both ends must be reachable — the head on open, the tail after End.
 func TestThemeDropdownFitsOpen(t *testing.T) {
 	for _, h := range []int{24, 20} {
 		t.Run(fmt.Sprintf("80x%d", h), func(t *testing.T) {
 			a, screen := newSimApp(t, 80, h)
-			t.Cleanup(func() { setTheme(themes["dark"]) })
 			form := openSettings(t, a, screen)
 			if form == nil {
 				t.Fatal("settings modal did not take focus")
@@ -150,16 +136,13 @@ func TestThemeDropdownFitsOpen(t *testing.T) {
 	}
 }
 
-// TestSettingsModalShrinksBelowItsOwnWidth: a Flex asked for a fixed size
-// larger than it has gives its gap items a negative share, which walks the box
-// off the left edge — the labels get clipped instead of the margin.
+// TestSettingsModalShrinksBelowItsOwnWidth: an oversized fixed item would walk the box off the left edge.
 func TestSettingsModalShrinksBelowItsOwnWidth(t *testing.T) {
 	const width = 44 // narrower than settingsWidth
 	if width >= settingsWidth {
 		t.Fatalf("this width does not exercise the clamp: %d >= %d", width, settingsWidth)
 	}
 	a, screen := newSimApp(t, width, 20)
-	t.Cleanup(func() { setTheme(themes["dark"]) })
 	openSettings(t, a, screen)
 	a.app.Draw()
 
@@ -171,9 +154,7 @@ func TestSettingsModalShrinksBelowItsOwnWidth(t *testing.T) {
 	}
 }
 
-// TestSettingsHelpLinesFit: the footer does not wrap, so a help line wider
-// than the modal's inner width is silently cut — taking the end of the advice
-// with it, which is where the actionable part sits.
+// TestSettingsHelpLinesFit: the footer does not wrap, so a help line must fit the inner width.
 func TestSettingsHelpLinesFit(t *testing.T) {
 	// Border on both sides, then the help line's own padding.
 	const width = settingsWidth - 2 - (uiGutter + 1) - uiGutter

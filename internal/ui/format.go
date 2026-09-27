@@ -13,21 +13,12 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// esc escapes drive-controlled free text (identity, log strings, attribute
-// names) before it reaches markup-interpreting widgets — otherwise a hostile
-// drive can inject colour tags and spoof the health display. Escape only the
-// data, not the surrounding intentional tags.
-//
-// Control characters are folded to spaces as well: callers write the value into
-// a line of its own, so an embedded newline would forge extra key/value rows.
+// esc escapes drive-controlled text for markup sinks and folds control characters to spaces, so a hostile drive cannot inject tags or forge rows.
 func esc(s string) string {
 	return tview.Escape(stripControl(s))
 }
 
-// stripControl replaces C0 controls, DEL and the C1 range with a space. A space
-// is the benign substitution here: control characters carry no display meaning,
-// and the widths every panel is laid out against stay right. strings.Map returns
-// the original string when nothing changes, so the common case allocates nothing.
+// stripControl replaces C0, DEL and C1 controls with a space.
 func stripControl(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
@@ -37,35 +28,30 @@ func stripControl(s string) string {
 	}, s)
 }
 
-// dash is defined in theme.go; it carries the active theme's muted colour.
-
-// uiGutter is the standard horizontal inset between a box border and its
-// text (SetBorderPadding on every text/table/list box). Vertical padding
-// stays 0 for density; graphical widgets opt out to stay full-width.
+// uiGutter is the horizontal inset inside every text/table/list box.
 const uiGutter = 1
 
 // nestIndent is the leading whitespace for a line under an in-box header.
 const nestIndent = "  "
 
-// sectionHeader writes a top-level section heading. Bold, not accented: the
-// accent marks focus and exceptions, and a heading is neither. Overview's
-// panel headings are accented on purpose — they are sub-headings inside one
-// box, a different thing from these.
+// sectionHeader writes a bold top-level heading.
 func sectionHeader(b *strings.Builder, title string) {
 	fmt.Fprintf(b, "[::b]%s[-:-:-]\n", title)
 }
 
-// titledBox applies the package's standard frame: a border, the uniform
-// horizontal gutter, and a title. uiGutter's rule is "every text/table/list
-// box"; this is where that is actually applied rather than re-typed.
+// titledBox applies the standard border, gutter and title.
 func titledBox(b *tview.Box, title string) *tview.Box {
 	return b.SetBorder(true).SetBorderPadding(0, 0, uiGutter, uiGutter).SetTitle(title)
 }
 
-// marginBar renders a severity-coloured headroom bar for a normalized SMART
-// value above its threshold: fuller means more margin, same polarity as every
-// other bar. base is the smallest standard top value (100/200/253) covering
-// value/worst.
+// boxInner is the text width inside a titledBox of the given outer width.
+func boxInner(outerW int) int { return outerW - 2 - 2*uiGutter }
+
+// lineCount counts s's lines, ignoring a trailing newline.
+func lineCount(s string) int { return strings.Count(strings.TrimRight(s, "\n"), "\n") + 1 }
+
+// marginBar renders a severity-coloured headroom bar for a normalized value
+// above its threshold; base is the smallest standard top (100/200/253) covering value/worst.
 func marginBar(value, worst, thresh int, sev smart.Severity) string {
 	const width = pctBarWidth
 	base := 100
@@ -87,33 +73,26 @@ func marginBar(value, worst, thresh int, sev smart.Severity) string {
 // pctBarWidth is the cell width of every bar in the UI.
 const pctBarWidth = 8
 
-// barGlyphs is the one bar vocabulary: filled cells then empty ones, to a
-// total of width. Returned as a pair so a caller that colours the two halves
-// differently (progressBar) still spells the bar the same way — under mono the
-// glyphs are all that survives.
+// barGlyphs spells a bar as filled then empty cells.
 func barGlyphs(filled, width int) (full, empty string) {
 	filled = min(max(filled, 0), width)
 	return strings.Repeat("█", filled), strings.Repeat("░", width-filled)
 }
 
-// pctBar renders a percentage as a severity-coloured bar plus the value.
-// A FULLER BAR ALWAYS MEANS HEALTHIER; callers with a "consumed" percentage
-// use pctBarUsed so opposite polarities never share a colour.
+// pctBar renders a percentage as a severity-coloured bar plus the value; a fuller bar is healthier.
 func pctBar(pct int, sev smart.Severity) string {
 	full, empty := barGlyphs((clampPct(pct)*pctBarWidth+50)/100, pctBarWidth)
 	return fmt.Sprintf("%s %d%%", sevText(sev, full+empty), pct)
 }
 
-// pctBarUsed renders a CONSUMED percentage: the bar drains as the drive wears
-// (matching every other bar's polarity) while the number stays the "used" figure.
+// pctBarUsed renders a consumed percentage: the bar drains while the number stays "used".
 func pctBarUsed(pct int, sev smart.Severity) string {
 	used := clampPct(pct)
 	full, empty := barGlyphs(((100-used)*pctBarWidth+50)/100, pctBarWidth)
 	return fmt.Sprintf("%s %d%%", sevText(sev, full+empty), used)
 }
 
-// tempSeverity grades a temperature for display colouring only; health never
-// derives from raw temperature, so these thresholds stay in the UI layer.
+// tempSeverity grades a temperature for display colouring only; health never derives from it.
 func tempSeverity(celsius int) smart.Severity {
 	switch {
 	case celsius >= 65:
@@ -125,17 +104,12 @@ func tempSeverity(celsius int) smart.Severity {
 	}
 }
 
-// healthGlyph is the status mark shown beside each drive. The SHAPE carries
-// the severity, not just the colour: three palettes have no second hue to
-// spend (mono has none at all, phosphor and amber are monochrome by
-// construction), and on the selected row the band eats some of what is left.
-// A drive list of identical dots is no signal on any of them.
+// healthGlyph is the tinted severity mark; the shape carries severity where colour cannot.
 func healthGlyph(s smart.Severity) string {
 	return sevText(s, severityGlyph(s))
 }
 
-// severityGlyph is the bare mark for a severity, escalating by weight:
-// an outline dot, a warning triangle, a solid block.
+// severityGlyph is the bare mark for a severity, escalating by weight.
 func severityGlyph(s smart.Severity) string {
 	switch s {
 	case smart.SeverityFailing:
@@ -147,18 +121,12 @@ func severityGlyph(s smart.Severity) string {
 	}
 }
 
-// sevVerdict renders a severity's word for a summary line. Failing takes an
-// inverse chip rather than tinted text: red is darker than yellow on every
-// dark ground, so no hue assignment makes the worst state the loudest one —
-// 8 of the 11 coloured palettes have Caution out-contrasting Failing. Area
-// does what hue cannot, and it works in mono, where the chip degrades to
-// reverse video and stays the only marked thing on the row.
+// sevVerdict renders a verdict word; failing takes an inverse chip because
+// red is darker than yellow on a dark ground, so tint alone cannot make it loudest.
 func sevVerdict(sev smart.Severity, word string) string {
 	if sev != smart.SeverityFailing {
 		return sevBold(sev, word)
 	}
-	// mono has no colour to fill a chip with; reverse video is the same move
-	// by attribute, and it is what marks the selected row there too.
 	if activeTheme.Failing == tcell.ColorDefault {
 		return "[::rb]" + word + "[-:-:-]"
 	}
@@ -200,8 +168,7 @@ func humanMinutes(m int) string {
 	return fmt.Sprintf("~%d h", (m+30)/60)
 }
 
-// clampPct bounds a percentage into the 0..100 range every bar and gauge
-// assumes.
+// clampPct bounds a percentage into 0..100.
 func clampPct(v int) int {
 	return min(max(v, 0), 100)
 }
@@ -223,7 +190,6 @@ func orDash(s string) string {
 }
 
 // capacityString formats a report's usable capacity, or a dash if unknown.
-// The fallback itself lives in smart.CapacityBytes.
 func capacityString(r *smart.Report) string {
 	if b, ok := r.CapacityBytes(); ok {
 		return humanBytes(b)
@@ -231,9 +197,8 @@ func capacityString(r *smart.Report) string {
 	return dash
 }
 
-// tempMarkup tints a temperature only once it leaves the OK band (colour
-// marks exceptions, not membership). Its trailing style reset returns to the
-// widget default, so callers must place it where that is harmless.
+// tempMarkup tints a temperature only outside the OK band; its trailing reset
+// returns to the widget default, so place it where that is harmless.
 func tempMarkup(celsius int) string {
 	s := fmt.Sprintf("%d°C", celsius)
 	sev := tempSeverity(celsius)
@@ -251,9 +216,7 @@ func tempCell(r *smart.Report) string {
 	return dash
 }
 
-// kindLabels names a drive kind at one verbosity. The classification itself is
-// in kindLabel: two switches over the same four cases drift, and the fleet's
-// short labels have to agree with the identity line's long ones.
+// kindLabels names a drive kind at one verbosity.
 type kindLabels struct{ nvme, hdd, ssd string }
 
 var (
@@ -261,8 +224,7 @@ var (
 	shortKindLabels = kindLabels{nvme: "NVMe", hdd: "HDD", ssd: "SSD"}
 )
 
-// kindLabel classifies the drive and names it from the given label set. Only
-// the HDD label may take the rotation rate, so it alone is a format string.
+// kindLabel classifies the drive and names it from l; only the HDD label may carry %d.
 func kindLabel(r *smart.Report, l kindLabels) string {
 	switch {
 	case r.IsNVMe():
@@ -275,8 +237,6 @@ func kindLabel(r *smart.Report, l kindLabels) string {
 	case r.IsATA():
 		return l.ssd
 	default:
-		// Device.Protocol is smartctl's own enum, not free text, but it reaches a
-		// markup-interpreting sink either way.
 		return esc(r.Device.Protocol)
 	}
 }
@@ -284,25 +244,14 @@ func kindLabel(r *smart.Report, l kindLabels) string {
 // driveKind classifies the drive for the identity line (SSD vs HDD vs NVMe).
 func driveKind(r *smart.Report) string { return kindLabel(r, longKindLabels) }
 
-// hangingWrap is one panel's key/value geometry. valueCol is the display
-// column values start in — it must match the width that panel's rows pad the
-// label to, or the cut lands inside the label. minValueW is the narrowest
-// value column still worth wrapping into: a panel of short numbers can wrap
-// into almost nothing, but one carrying a 150-character device path cannot,
-// because WordWrap hard-splits a token with no break opportunity and the line
-// count is what the panel is sized from.
+// hangingWrap: valueCol must equal the padded label width; minValueW is the
+// narrowest value column still worth wrapping into.
 type hangingWrap struct {
 	valueCol  int
 	minValueW int
 }
 
-// hangingIndent re-wraps over-long lines so overflow hangs under the value
-// column; tview's own wrapping would break a value back to column 0, so
-// callers disable it and pre-wrap here.
-//
-// valueCol is a display column, so the key is cut with splitAtWidth and the
-// value re-wrapped by tview.WordWrap — both measure cells and treat style tags
-// as zero-width.
+// hangingIndent re-wraps long lines so overflow hangs under the value column; callers disable tview wrapping.
 func hangingIndent(text string, w hangingWrap, innerW int) string {
 	valueCol := w.valueCol
 	valueW := innerW - valueCol
@@ -325,9 +274,6 @@ func hangingIndent(text string, w hangingWrap, innerW int) string {
 			continue
 		}
 		out.WriteString(key)
-		// WordWrap breaks at the last opportunity that fits and hard-splits a
-		// token with none — a macOS IOService path is 150+ characters, and the
-		// caller's SetWrap(false) would simply cut it at the border.
 		for w, seg := range tview.WordWrap(value, valueW) {
 			if w > 0 {
 				out.WriteString("\n" + indent)
@@ -338,18 +284,8 @@ func hangingIndent(text string, w hangingWrap, innerW int) string {
 	return out.String()
 }
 
-// splitAtWidth cuts s at display column col: head is the shortest leading run
-// whose rendered width reaches col (zero-width style tags ride along with it),
-// tail is the remainder, byte-for-byte untouched. A string narrower than col
-// comes back whole with an empty tail.
-//
-// The cut has to land on a display column rather than a byte offset: "[::b]Model
-// [-:-:-] " is 27 bytes of which 12 are markup worth no cells at all, so a byte
-// slice at column 15 lands in the middle of the key. tview's width function is
-// the authority on what a tag is worth, so candidates are measured with it and
-// one that lands inside a tag (or inside an escaped "[[]" sequence) is rejected:
-// the halves then measure wider than the whole, because the severed fragment
-// stops being markup and starts counting as literal text.
+// splitAtWidth cuts s at display column col, never inside a style tag or escape
+// sequence; a string narrower than col comes back whole.
 func splitAtWidth(s string, col int) (head, tail string) {
 	total := tview.TaggedStringWidth(s)
 	for i := range s {
@@ -364,10 +300,7 @@ func splitAtWidth(s string, col int) (head, tail string) {
 	return s, ""
 }
 
-// roundDuration renders an age at a sensible resolution: seconds under a
-// minute, minutes under an hour, then hours. The coarse units are formatted
-// rather than left to Duration.String, which would spell twelve minutes
-// "12m0s". A cached reading's age only needs to say roughly how stale it is.
+// roundDuration renders an age at second, minute or hour resolution.
 func roundDuration(d time.Duration) string {
 	switch {
 	case d < time.Minute:

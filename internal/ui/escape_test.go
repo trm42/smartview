@@ -11,9 +11,7 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// TestEscNeutralisesColorTags is a regression guard for the markup-injection
-// finding: drive-controlled free text must be escaped so a hostile drive cannot
-// inject tview colour tags and spoof the health display.
+// TestEscNeutralisesColorTags: drive-controlled text must be escaped so a hostile drive cannot inject colour tags.
 func TestEscNeutralisesColorTags(t *testing.T) {
 	got := esc("[red]PWNED[-]")
 	if strings.Contains(got, "[red]") {
@@ -52,14 +50,7 @@ func TestIdentityTextEscapesDriveFields(t *testing.T) {
 	}
 }
 
-// TestEscFoldsControlCharacters guards the second way a drive-controlled field
-// can forge structure: every caller writes the escaped value into a line of its
-// own, so a newline inside a model name would add free-standing lines to the
-// identity panel that look like real key/value rows (a fake "SMART
-// self-assessment: PASSED" under the genuine FAILED verdict). Whether a raw
-// control character survives smartctl's JSON encoder is unverified — this is
-// defence in depth, and it also keeps tabs and stray C1 bytes out of the column
-// arithmetic.
+// TestEscFoldsControlCharacters: a newline in a drive field could forge key/value rows.
 func TestEscFoldsControlCharacters(t *testing.T) {
 	got := esc("Disk\nSMART self-assessment: PASSED")
 	if strings.ContainsAny(got, "\n\r\t") {

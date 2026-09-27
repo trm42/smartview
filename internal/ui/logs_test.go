@@ -113,10 +113,7 @@ func TestSelfTestPassedSharesColorResult(t *testing.T) {
 	}
 }
 
-// TestNVMeErrorStatusEscapedOnce pins the colorResult contract at the NVMe
-// error-log sink: the keyword test runs on the original string and colorResult
-// does the escaping itself, so pre-escaping the argument double-escaped a
-// drive-controlled status ("[red]failed" -> "[red[[]failed").
+// TestNVMeErrorStatusEscapedOnce pins the colorResult contract at the NVMe error-log sink.
 func TestNVMeErrorStatusEscapedOnce(t *testing.T) {
 	r := &smart.Report{
 		Device: smart.Device{Protocol: "NVMe"},
@@ -141,9 +138,7 @@ func TestNVMeErrorStatusEscapedOnce(t *testing.T) {
 	}
 }
 
-// TestAllClearLinesAreNotGreen: colour marks exceptions, not membership. The
-// "nothing to report" lines render only when nothing is wrong, so tinting them
-// green made a healthy Logs tab a wall of green and left nothing to notice.
+// TestAllClearLinesAreNotGreen: colour marks exceptions, not membership.
 func TestAllClearLinesAreNotGreen(t *testing.T) {
 	r := &smart.Report{
 		Device:            smart.Device{Protocol: "NVMe"},

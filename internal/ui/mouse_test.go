@@ -59,9 +59,7 @@ func installReport(t *testing.T, a *App, r *smart.Report) int {
 	return n
 }
 
-// tabBarCell returns the screen cell at the middle of tab i's pill, derived
-// from the bar's own spans so a retitled or compacted tab moves the click with
-// it.
+// tabBarCell returns the screen cell at the middle of tab i's pill, from the bar's own spans.
 func tabBarCell(t *testing.T, a *App, i int) (int, int) {
 	t.Helper()
 	type cell struct{ x, y, spans int }
@@ -79,17 +77,13 @@ func tabBarCell(t *testing.T, a *App, i int) (int, int) {
 	return c.x, c.y
 }
 
-// clickAt sends a complete left click: tview synthesises MouseLeftClick from a
-// press and a release in the same cell, and a lone press is the focus-stealing
-// half.
+// clickAt sends a press and release: tview synthesises MouseLeftClick from the pair.
 func clickAt(screen tcell.SimulationScreen, x, y int) {
 	screen.InjectMouse(x, y, tcell.ButtonPrimary, tcell.ModNone)
 	screen.InjectMouse(x, y, tcell.ButtonNone, tcell.ModNone)
 }
 
-// waitFor polls cond on the event loop until it holds. Waiting on a single
-// drawn frame would not do: the press is consumed and drawn before the click
-// that follows it is processed.
+// waitFor polls cond on the event loop until it holds; one drawn frame may precede the click.
 func waitFor(t *testing.T, a *App, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(testTimeout)
@@ -102,9 +96,7 @@ func waitFor(t *testing.T, a *App, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-// spanEndsMatchTheText cross-checks the recorded spans against the width of the
-// text actually emitted, so a bug in the renderer cannot make a click test
-// agree with itself.
+// spanEndsMatchTheText cross-checks the recorded spans against the emitted text width.
 func spanEndsMatchTheText(t *testing.T, a *App) {
 	t.Helper()
 	type shape struct {
@@ -172,11 +164,8 @@ func TestTabBarDoubleClickSwitchesTabs(t *testing.T) {
 	})
 }
 
-// fence forces the mouse events injected before it through the event loop:
-// tcell delivers screen events in order, so a key whose effect can be waited on
-// lands after them. A declined mouse event changes nothing to wait on, which is
-// what makes a negative assertion race without this. The interval keys are the
-// fence because they touch neither focus nor the active tab.
+// fence forces earlier mouse events through the loop with an interval key,
+// which touches neither focus nor the active tab.
 func fence(t *testing.T, a *App, screen tcell.SimulationScreen) {
 	t.Helper()
 	before := onLoop(t, a, func() time.Duration { return a.interval })
@@ -188,10 +177,8 @@ func fence(t *testing.T, a *App, screen tcell.SimulationScreen) {
 	waitFor(t, a, "the fence key to be processed", func() bool { return a.interval == want })
 }
 
-// TestTabBarIgnoresMissesAndTheWheel pins what the bar must not do on screen:
-// snap a click past the last pill onto a tab, or take focus from either that or
-// the wheel. Both assertions are fenced — read without one they pass whether the
-// handler is right or the event has simply not been processed yet.
+// TestTabBarIgnoresMissesAndTheWheel: a click past the last pill or the wheel
+// must neither switch tabs nor take focus.
 func TestTabBarIgnoresMissesAndTheWheel(t *testing.T) {
 	a, screen := newSimApp(t, 120, 40)
 	runSim(t, a, screen)
@@ -281,10 +268,7 @@ func TestTabBarMouseHandlerDeclinesUnownedEvents(t *testing.T) {
 	}
 }
 
-// TestChromeDeclinesTheMouse covers the widgets that carry no keys of their own:
-// tview's TextView focuses itself on a left press, and focus parked on one of
-// these reaches no handler at all. The rail, banner and status bar sit outside
-// a.detail, so the poll loop's re-focus never rescues them.
+// TestChromeDeclinesTheMouse: keyless widgets must not take focus on a left press.
 func TestChromeDeclinesTheMouse(t *testing.T) {
 	a, _ := newSimApp(t, 120, 40)
 	widgets := map[string]tview.Primitive{
@@ -339,9 +323,7 @@ func TestSpinnerClickKeepsFocus(t *testing.T) {
 	}
 }
 
-// TestTabBarEveryTabIsClickable holds the strip to CLAUDE.md's "nothing may
-// truncate silently": with a span-based hit test, a pill drawn past the right
-// edge is also unclickable, and the full six-tab strip needs 119 columns.
+// TestTabBarEveryTabIsClickable: a pill drawn past the right edge would be unclickable.
 func TestTabBarEveryTabIsClickable(t *testing.T) {
 	for _, width := range []int{120, 80} {
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
@@ -401,10 +383,8 @@ func TestTabPills(t *testing.T) {
 	}
 }
 
-// TestDriveListClickShowsTheClickedDrive covers tview's List, which fires its
-// changed-func before storing the new index: a handler that reads
-// GetCurrentItem() there renders the previously selected drive, and the wrong
-// drive stays on screen until the next poll.
+// TestDriveListClickShowsTheClickedDrive: List fires its changed-func before
+// storing the new index, so the handler must render the index it is given.
 func TestDriveListClickShowsTheClickedDrive(t *testing.T) {
 	a, screen := newSimApp(t, 120, 40)
 	runSim(t, a, screen)

@@ -139,9 +139,7 @@ func TestFormatTestDuration(t *testing.T) {
 	}
 }
 
-// TestProgressBarLabelIsOutsideTheFill pins a rendering fix: the percent label
-// used to be written into the bar, replacing fill cells, so a run at 60% drew
-// as "██████████60%█░░░" — the bar appeared broken exactly where the eye goes.
+// TestProgressBarLabelIsOutsideTheFill: the percent label must not replace fill cells.
 func TestProgressBarLabelIsOutsideTheFill(t *testing.T) {
 	got := progressBar(60)
 	plain := stripTags(got)
@@ -180,10 +178,8 @@ func stripTags(s string) string {
 	return b.String()
 }
 
-// runningATAReport is an ATA drive with a self-test in progress at pct percent.
-// The drive advertises both durations (2 min short, 2 h extended) but, as ATA
-// always does, says nothing about which test is running — its status string
-// names a percentage and nothing else.
+// runningATAReport is an ATA drive with a self-test at pct percent; it
+// advertises 2 min short and 2 h extended but not which test is running.
 func runningATAReport(pct int) *smart.Report {
 	remaining := 100 - pct
 	r := idleATAReport()
@@ -195,10 +191,7 @@ func runningATAReport(pct int) *smart.Report {
 	return r
 }
 
-// TestRemainingTimeUsesTheRunningTestType pins the fix for an estimate that was
-// wrong by up to three orders of magnitude: remainingTime always scaled the
-// extended duration, so a short test at 50% on a drive with a long extended
-// polling time announced hours left for a run with a minute to go.
+// TestRemainingTimeUsesTheRunningTestType: the estimate scales the running test's own duration.
 func TestRemainingTimeUsesTheRunningTestType(t *testing.T) {
 	r := runningATAReport(50)
 
@@ -221,8 +214,7 @@ func TestRemainingTimeUsesTheRunningTestType(t *testing.T) {
 		t.Errorf("long test at 50%% = %v, want %v", got, want)
 	}
 
-	// An unknown type gets no estimate at all: the drive cannot tell us which
-	// test is running, and guessing extended is what produced the wrong answer.
+	// An unknown type gets no estimate: short and extended differ by orders of magnitude.
 	if _, ok := remainingTime(r, 50, ""); ok {
 		t.Error("unknown test type produced an estimate; want none")
 	}

@@ -26,13 +26,9 @@ func recordingApp(t *testing.T, cfg config.Config) (*App, *[]config.Config) {
 	return a, &saved
 }
 
-// TestCurrentConfigIsDerivedFromLiveState is the bug this shape avoids: if
-// App cached the last-saved config, pressing T a few times and then opening
-// Settings would show the saved theme, and Save would silently revert the
-// theme the user is looking at.
+// TestCurrentConfigIsDerivedFromLiveState: a cached config would let Save revert a theme chosen with T.
 func TestCurrentConfigIsDerivedFromLiveState(t *testing.T) {
 	a, _ := recordingApp(t, config.Default())
-	t.Cleanup(func() { setTheme(themes["dark"]) })
 
 	a.cycleTheme()
 	a.setInterval(5 * time.Second)
@@ -48,7 +44,6 @@ func TestCurrentConfigIsDerivedFromLiveState(t *testing.T) {
 
 func TestApplySettingsAppliesEverySetting(t *testing.T) {
 	a, saved := recordingApp(t, config.Default())
-	t.Cleanup(func() { setTheme(themes["dark"]) })
 
 	want := config.Config{
 		Theme:               "phosphor",
@@ -91,13 +86,9 @@ func TestApplySettingsAppliesEverySetting(t *testing.T) {
 	}
 }
 
-// TestApplySettingsAppliesTabsAlongsideATheme is the ordering trap: repaintAll
-// rebuilds the detail from showAllTabs, so a theme change that repaints before
-// the flag is set leaves the old tab set on screen — and the "repaintAll
-// already did it" shortcut then skips the rebuild that would have fixed it.
+// TestApplySettingsAppliesTabsAlongsideATheme: repaintAll rebuilds from showAllTabs, so the flag must land first.
 func TestApplySettingsAppliesTabsAlongsideATheme(t *testing.T) {
 	a, _ := recordingApp(t, config.Default())
-	t.Cleanup(func() { setTheme(themes["dark"]) })
 	r := sparseReport("/dev/sdb")
 	a.devices = []smart.Device{r.Device}
 	a.reports = map[string]*smart.Report{r.Device.Name: r}
@@ -118,13 +109,9 @@ func TestApplySettingsAppliesTabsAlongsideATheme(t *testing.T) {
 	}
 }
 
-// TestApplySettingsKeepsFocusOnTheDetail: the rebuild destroys the page
-// primitive focus points at, and nothing else re-homes it — the poll loop only
-// restores focus it can still see on the detail. Left unfixed, every
-// focused-content key lands on an off-tree widget until the user hits Tab.
+// TestApplySettingsKeepsFocusOnTheDetail: the rebuild destroys the focused page, so focus must be re-homed.
 func TestApplySettingsKeepsFocusOnTheDetail(t *testing.T) {
 	a, _ := recordingApp(t, config.Default())
-	t.Cleanup(func() { setTheme(themes["dark"]) })
 	r := sparseReport("/dev/sdb")
 	a.devices = []smart.Device{r.Device}
 	a.reports = map[string]*smart.Report{r.Device.Name: r}
@@ -146,9 +133,7 @@ func TestApplySettingsKeepsFocusOnTheDetail(t *testing.T) {
 	}
 }
 
-// TestApplySettingsSurvivesASaveFailure: the in-memory settings still apply,
-// because honouring the intent and reporting the disk problem separately beats
-// discarding both.
+// TestApplySettingsSurvivesASaveFailure: the in-memory settings still apply and the failure is reported.
 func TestApplySettingsSurvivesASaveFailure(t *testing.T) {
 	a, _ := recordingApp(t, config.Default())
 	a.save = func(config.Config) error { return errFakeSave }
@@ -167,7 +152,6 @@ func TestApplySettingsSurvivesASaveFailure(t *testing.T) {
 
 func TestSettingsModalOpensAndCancels(t *testing.T) {
 	a, saved := recordingApp(t, config.Default())
-	t.Cleanup(func() { setTheme(themes["dark"]) })
 	before := a.currentConfig()
 
 	a.showSettings()
@@ -187,12 +171,9 @@ func TestSettingsModalOpensAndCancels(t *testing.T) {
 	}
 }
 
-// TestSettingsFormIsThemed is the styleModal-class miss: styleModal only
-// handles *tview.Modal, so a Form needs its own helper or it is born in
-// tview's palette.
+// TestSettingsFormIsThemed: a Form needs styleForm or it is born in tview's palette.
 func TestSettingsFormIsThemed(t *testing.T) {
 	a, _ := recordingApp(t, config.Default())
-	t.Cleanup(func() { setTheme(themes["dark"]) })
 	for range themeCycle {
 		a.cycleTheme()
 		if activeTheme.Background != dark.Background {
@@ -214,13 +195,9 @@ func TestSettingsFormIsThemed(t *testing.T) {
 
 var errFakeSave = errors.New("disk on fire")
 
-// TestSettingsKeyOpensTheModal goes through the real input capture. Calling
-// showSettings directly cannot catch a missing binding, and keysText
-// documenting a key is not evidence one exists: the doc guard only checks that
-// every bound rune is documented, not that every documented rune is bound.
+// TestSettingsKeyOpensTheModal goes through the real input capture to catch a missing binding.
 func TestSettingsKeyOpensTheModal(t *testing.T) {
 	a, screen := newSimAppCfg(t, 120, 40, config.Default())
-	t.Cleanup(func() { setTheme(themes["dark"]) })
 	runSim(t, a, screen)
 	t.Cleanup(func() { onLoop(t, a, func() any { a.popModal(); return nil }) })
 

@@ -17,14 +17,11 @@ import (
 type tab struct {
 	id    string
 	title string
-	// available is false when this drive reports no data for the tab. With
-	// show_unavailable_tabs the pill is still drawn, muted and unreachable, so
-	// a tab keeps its number and position on every drive.
+	// available is false when the drive has no data; with show_unavailable_tabs it is drawn muted.
 	available bool
 }
 
-// tabView is a detail sub-view that refreshes in place, preserving
-// interaction state across polls.
+// tabView is a detail sub-view that refreshes in place, preserving interaction state.
 type tabView interface {
 	tview.Primitive
 	refresh(r *smart.Report, tempHistory []float64)
@@ -35,8 +32,7 @@ type staticView struct{ tview.Primitive }
 
 func (staticView) refresh(*smart.Report, []float64) {}
 
-// focusChromer is implemented by tab views that signal keyboard focus by
-// accenting their border.
+// focusChromer is implemented by tab views that accent their border on focus.
 type focusChromer interface {
 	setFocused(focused bool)
 }
@@ -48,9 +44,7 @@ type tabSpan struct{ start, end int }
 // focuses the view on a left press, and these views handle no key.
 type inertTextView struct{ *tview.TextView }
 
-// newInertTextView builds a mouse-declining TextView with markup enabled —
-// the shape every piece of keyless chrome wants. Wrap a new keyless widget
-// this way or a click on it strands focus where no key is handled.
+// newInertTextView builds a mouse-declining TextView with markup enabled.
 func newInertTextView() *inertTextView {
 	return &inertTextView{tview.NewTextView().SetDynamicColors(true)}
 }
@@ -62,10 +56,7 @@ func (v *inertTextView) MouseHandler() func(tview.MouseAction, *tcell.EventMouse
 	}
 }
 
-// tabBar is the detail's tab strip: it emits the pills and records their column
-// spans in the same pass, so a click maps to a tab without a second model of the
-// layout. render is the only writer of the text — a bare SetText would leave the
-// spans describing a strip that is no longer drawn.
+// tabBar is the tab strip; render records each pill's span in the same pass, so it is the only writer of the text.
 type tabBar struct {
 	*tview.TextView
 	tabs      []tab
@@ -76,8 +67,7 @@ type tabBar struct {
 }
 
 func newTabBar() *tabBar {
-	// Wrapping is off because the strip is one row: a wrapped pill would be
-	// pushed onto a line the box never shows.
+	// One row, so no wrap.
 	b := &tabBar{TextView: tview.NewTextView().SetDynamicColors(true).SetWrap(false)}
 	b.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	return b
@@ -90,9 +80,7 @@ func (b *tabBar) render(tabs []tab, active int) {
 	b.layout()
 }
 
-// Draw relays out when the width changed, the pattern the other width-aware
-// panels use; lastWidth is 0 before the first draw, which tabPills reads as
-// unconstrained.
+// Draw relays out on width change; lastWidth 0 means unconstrained.
 func (b *tabBar) Draw(screen tcell.Screen) {
 	if _, _, w, _ := b.GetInnerRect(); w != b.lastWidth {
 		b.lastWidth = w
@@ -110,15 +98,13 @@ func (b *tabBar) layout() {
 	for i, pill := range pills {
 		switch {
 		case i == b.active:
-			// activeTabTag falls back to black-on-white so the pill survives mono.
 			fmt.Fprintf(&s, " %s%s[-:-:-] ", activeTabTag(), pill)
 		case !b.tabs[i].available:
 			fmt.Fprintf(&s, " %s%s[-:-:-] ", unavailableTabTag(), pill)
 		default:
 			fmt.Fprintf(&s, " %s%s[-] ", accentTag(), pill)
 		}
-		// The span covers the separator spaces too, so pills are contiguous and
-		// no column between them is dead.
+		// Spans include separators so no column is dead.
 		w := 2 + tview.TaggedStringWidth(pill)
 		spans = append(spans, tabSpan{col, col + w})
 		col += w
@@ -165,9 +151,7 @@ func (b *tabBar) tabAt(x, y int) (int, bool) {
 	return 0, false
 }
 
-// MouseHandler activates the tab a click lands on. The setFocus closure is
-// discarded: focusing the bar would strand every key, since it handles none and
-// tview routes keys only to the focused primitive.
+// MouseHandler activates the clicked tab and drops setFocus: the bar handles no key.
 func (b *tabBar) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, func(tview.Primitive)) (bool, tview.Primitive) {
 	return b.WrapMouseHandler(func(action tview.MouseAction, event *tcell.EventMouse, _ func(tview.Primitive)) (bool, tview.Primitive) {
 		switch action {
@@ -187,37 +171,27 @@ func (b *tabBar) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, func(
 	})
 }
 
-// detail is the right-hand pane: a tab bar above a Pages content area. The
-// tab set is recomputed from each report, so absent sections show no tab.
+// detail is the right-hand pane: a tab bar above a Pages content area, with
+// the tab set recomputed from each report.
 type detail struct {
 	*tview.Flex
-	bar *tabBar
-	// barRow holds bar and spinner; it is built once, so repaintAll has to be
-	// able to reach it.
+	bar     *tabBar
 	barRow  *tview.Flex
 	spinner *inertTextView
-	// note is a one-row caveat strip above the tab body, collapsed to height 0
-	// when empty. Staleness is judged against the poll interval, which the
-	// data layer does not know, so it is carried here rather than on Report.
+	// note is a one-row caveat strip, height 0 when empty.
 	note   *inertTextView
 	pages  *tview.Pages
 	tabs   []tab
 	active int
 
-	// showAllTabs draws every tab, muting the ones this drive has no data
-	// for, so a tab keeps its number on every drive.
 	showAllTabs bool
 
 	device string             // current drive name, to detect device switches
 	views  map[string]tabView // live view per visible tab id
-	// placeholder is the last message showPlaceholder rendered, so a theme
-	// repaint can re-show it instead of guessing one.
+	// placeholder is the last message shown, re-shown on repaint.
 	placeholder string
 
-	selfTest selfTestActions // callbacks for the interactive Tests tab
-	// onTabClick receives the tab a click landed on; the bar forwards the
-	// intent and the App owns the focus move and the chrome resync.
-	onTabClick func(i int)
+	selfTest selfTestActions
 }
 
 func newDetail() *detail {
@@ -229,28 +203,18 @@ func newDetail() *detail {
 		pages:   tview.NewPages(),
 	}
 	d.spinner.SetTextAlign(tview.AlignRight)
-	// The indirection keeps the wiring valid: build() assigns onTabClick later.
-	d.bar.onClick = func(i int) {
-		if d.onTabClick != nil {
-			d.onTabClick(i)
-		}
-	}
-	// Tab strip and refresh spinner share one row; the spinner gets a fixed
-	// 2-col cell flush right.
 	d.barRow = tview.NewFlex().
 		AddItem(d.bar, 0, 1, false).
 		AddItem(d.spinner, 2, 0, false)
 	d.note.SetBorderPadding(0, 0, uiGutter, uiGutter)
 	d.AddItem(d.barRow, 1, 0, false)
-	d.AddItem(d.note, 0, 0, false) // height 0 until setNote fills it
+	d.AddItem(d.note, 0, 0, false)
 	d.AddItem(d.pages, 0, 1, true)
 	d.showPlaceholder("Scanning for drives…")
 	return d
 }
 
-// setNote shows a one-line caveat above the tab body, or hides the row when s
-// is empty. The row is resized rather than removed so the layout order cannot
-// drift.
+// setNote shows a one-line caveat above the tab body, or hides the row when s is empty.
 func (d *detail) setNote(s string) {
 	d.note.SetText(s)
 	height := 0
@@ -271,9 +235,7 @@ func (d *detail) showPlaceholder(msg string) {
 	d.pages.AddPage("placeholder", centeredNote(msg), true, true)
 }
 
-// update applies a fresh report. Same drive + same tab set refreshes each
-// view in place so selection/scroll/sort survive the poll; a device or
-// tab-set change triggers a full rebuild.
+// update applies a fresh report, in place for the same drive and tab set, else by rebuilding.
 func (d *detail) update(r *smart.Report, tempHistory []float64) {
 	newTabs := visibleTabs(r, d.showAllTabs)
 	if d.device == r.Device.Name && d.device != "" && sameTabs(newTabs, d.tabs) {
@@ -300,8 +262,7 @@ func (d *detail) update(r *smart.Report, tempHistory []float64) {
 		d.pages.AddPage(t.id, v, true, false)
 	}
 
-	// Keep the previously focused tab when still available. Index 0 is
-	// unconditionally available, so the fallback is always valid.
+	// Keep the previous tab when still available; index 0 always is.
 	d.active = 0
 	for i, t := range d.tabs {
 		if t.id == prev && t.available {
@@ -312,15 +273,10 @@ func (d *detail) update(r *smart.Report, tempHistory []float64) {
 	d.selectActive()
 }
 
-// sameTabs reports whether two tab slices are identical, availability
-// included. Availability is part of it because with show_unavailable_tabs the
-// ids alone never change, so an id-only comparison would refresh in place and
-// leave a newly-available tab showing its placeholder.
+// sameTabs compares availability too: with show_unavailable_tabs the ids never change.
 func sameTabs(a, b []tab) bool { return slices.Equal(a, b) }
 
-// allTabs is the full strip in display order, each with the predicate that
-// decides whether this drive has data for it. Registering a new tab is one
-// entry here plus a case in buildTabView.
+// allTabs is the full strip in display order, each with its data-presence predicate.
 var allTabs = []struct {
 	id, title string
 	available func(*smart.Report) bool
@@ -338,9 +294,7 @@ func hasAttributes(r *smart.Report) bool {
 	return (r.IsNVMe() && r.NVMeHealth != nil) || r.ATAAttributes != nil
 }
 
-// visibleTabs returns the tabs to draw, in display order. showAll keeps the
-// ones this drive has no data for, marked unavailable, so tab numbers do not
-// shift between drives.
+// visibleTabs returns the tabs to draw; showAll keeps unavailable ones, marked.
 func visibleTabs(r *smart.Report, showAll bool) []tab {
 	tabs := make([]tab, 0, len(allTabs))
 	for _, t := range allTabs {
@@ -353,9 +307,7 @@ func visibleTabs(r *smart.Report, showAll bool) []tab {
 	return tabs
 }
 
-// buildTabView constructs the view for a tab. An unavailable tab still gets a
-// page so Pages is never asked for a name it does not hold; navigation makes
-// it unreachable, so the note is the safe landing rather than the norm.
+// buildTabView constructs a tab's view; an unavailable tab gets a note page.
 func (d *detail) buildTabView(t tab, r *smart.Report, tempHistory []float64) tabView {
 	if !t.available {
 		return staticView{centeredNote(t.title + " — not reported by this drive")}
@@ -398,10 +350,7 @@ func (d *detail) selectActive() {
 	d.bar.render(d.tabs, d.active)
 }
 
-// stepTab moves to the next available tab in direction delta, clamped (no
-// wrap), reporting whether it changed so the caller can fall through to the
-// drive list at the edge. Unavailable tabs are stepped over: their position is
-// reserved, not reachable.
+// stepTab moves to the next available tab in direction delta without wrapping, reporting whether it moved.
 func (d *detail) stepTab(delta int) bool {
 	for i := d.active + delta; i >= 0 && i < len(d.tabs); i += delta {
 		if !d.tabs[i].available {
@@ -414,8 +363,7 @@ func (d *detail) stepTab(delta int) bool {
 	return false
 }
 
-// selectTab activates the tab at a displayed position, reporting whether it
-// did: an unavailable pill is drawn but declines the digit and the click.
+// selectTab activates the tab at a displayed position unless it is unavailable.
 func (d *detail) selectTab(i int) bool {
 	if i < 0 || i >= len(d.tabs) || !d.tabs[i].available {
 		return false
@@ -435,10 +383,7 @@ func (d *detail) selectTabID(id string) bool {
 	return false
 }
 
-// activeView returns the live view backing the active tab, or nil when none is
-// built (a placeholder is showing). Callers type-assert it to a concrete view
-// to ask a question only that view can answer — the tabView interface stays at
-// refresh alone, so a view that has nothing to say implements nothing.
+// activeView returns the active tab's live view, or nil under a placeholder.
 func (d *detail) activeView() tabView {
 	return d.views[d.activeID()]
 }
@@ -451,8 +396,7 @@ func (d *detail) content() tview.Primitive {
 	return d.pages
 }
 
-// setContentFocus accents or dims the active tab body's border; no-op for a
-// placeholder page.
+// setContentFocus accents or dims the active tab body's border.
 func (d *detail) setContentFocus(focused bool) {
 	if f, ok := d.content().(focusChromer); ok {
 		f.setFocused(focused)
@@ -462,8 +406,7 @@ func (d *detail) setContentFocus(focused bool) {
 // tabCount is the number of visible tabs, used to size the "1-N tab" hint.
 func (d *detail) tabCount() int { return len(d.tabs) }
 
-// testsRunning reports whether the Tests tab shows a running self-test, so
-// the hint bar can offer cancel instead of start.
+// testsRunning reports whether the Tests tab shows a running self-test.
 func (d *detail) testsRunning() bool {
 	if v, ok := d.views["tests"].(*testsView); ok {
 		return v.mode == modeRunning

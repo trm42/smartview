@@ -9,9 +9,7 @@ import (
 	"github.com/trm42/smartview/internal/config"
 )
 
-// TestNewAppliesTheConfig pins that every setting reaches the App, not just
-// the two that had flags before. A setting that loads but never lands is the
-// failure mode a config file invites.
+// TestNewAppliesTheConfig pins that every setting reaches the App.
 func TestNewAppliesTheConfig(t *testing.T) {
 	t.Cleanup(func() { setTheme(themes["dark"]) })
 	cfg := config.Config{
@@ -43,8 +41,7 @@ func TestNewAppliesTheConfig(t *testing.T) {
 	}
 }
 
-// TestNewWithDefaultsMatchesTodaysBehaviour: the default config must build the
-// same App the old New(30s, "dark") did.
+// TestNewWithDefaultsMatchesTodaysBehaviour pins the defaults: dark, 30s, new behaviours off.
 func TestNewWithDefaultsMatchesTodaysBehaviour(t *testing.T) {
 	t.Cleanup(func() { setTheme(themes["dark"]) })
 	a := New(config.Default(), func(config.Config) error { return nil })
@@ -56,9 +53,7 @@ func TestNewWithDefaultsMatchesTodaysBehaviour(t *testing.T) {
 	}
 }
 
-// TestStartViewOpensTheFleet pins that start_view is consulted, not merely
-// stored. Run itself shells out to smartctl, so the step is exercised through
-// the method Run calls.
+// TestStartViewOpensTheFleet pins that start_view is consulted; Run shells out, so this calls applyStartView.
 func TestStartViewOpensTheFleet(t *testing.T) {
 	t.Cleanup(func() { setTheme(themes["dark"]) })
 	cfg := config.Default()

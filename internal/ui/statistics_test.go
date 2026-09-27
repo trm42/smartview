@@ -17,9 +17,6 @@ func TestHangingIndent(t *testing.T) {
 		t.Fatalf("expected the long value to wrap, got:\n%s", got)
 	}
 	for _, l := range lines[1:] {
-		if strings.TrimLeft(l, " ") == l {
-			t.Errorf("continuation is not indented: %q", l)
-		}
 		if n := len(l) - len(strings.TrimLeft(l, " ")); n != statValueCol {
 			t.Errorf("continuation indent = %d, want the value column %d", n, statValueCol)
 		}

@@ -8,9 +8,6 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-// Key dispatch and the navigation it drives: the global handler, the fleet
-// view's overrides, focus movement and the poll-interval ladder.
-
 // intervalPresets is the ladder the +/- keys walk to change poll cadence.
 var intervalPresets = []time.Duration{
 	2 * time.Second,
@@ -59,12 +56,7 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 		a.toggleFocus()
 		return nil
 	case tcell.KeyUp, tcell.KeyDown:
-		// Wide leaves the arrows to the focused widget (the drive list, or the
-		// detail body it scrolls). Narrow has no list on screen for them to
-		// reach, so the drive selection is stepped from here — the narrow hint
-		// bar advertises "↑/↓ drive" and it has to be true. Line-scrolling the
-		// detail there is j/k, paging is PgUp/PgDn. Fleet mode is exempt: its
-		// table is focused and owns them (see onFleetKey).
+		// Wide: the focused widget owns the arrows. Narrow has no list, so step the drive here; fleet's table owns them.
 		if !a.narrow || a.fleetMode {
 			return ev
 		}
@@ -121,13 +113,10 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 	return ev
 }
 
-// onFleetKey handles the keys the fleet view claims, reporting whether it
-// consumed the event. Up/Down, Enter and 's' are deliberately absent — they
-// belong to the focused table itself.
+// onFleetKey handles the keys the fleet view claims; Up/Down, Enter and 's' belong to the table.
 func (a *App) onFleetKey(ev *tcell.EventKey) bool {
 	switch ev.Key() {
 	case tcell.KeyEscape:
-		// Esc is "back" here, not "quit"; q still quits.
 		a.exitFleet(false)
 		return true
 	case tcell.KeyTab:
@@ -165,7 +154,6 @@ func (a *App) toggleFleet() {
 		return
 	}
 	a.fleetMode = true
-	// Render from the cache so entry doesn't wait for the next poll.
 	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep)
 	a.bodyPages.SwitchToPage(pageFleet)
 	a.app.SetFocus(a.fleet.table)
@@ -177,8 +165,7 @@ func (a *App) toggleFleet() {
 func (a *App) exitFleet(toDetail bool) {
 	a.fleetMode = false
 	a.bodyPages.SwitchToPage(pageDrives)
-	// Narrow keeps focus on the detail either way: the list is not in that
-	// layout, and focus on an off-tree primitive reaches nothing.
+	// Narrow has no list on-tree to focus.
 	if toDetail || a.narrow {
 		a.app.SetFocus(a.detail.content())
 	} else {
@@ -187,34 +174,30 @@ func (a *App) exitFleet(toDetail bool) {
 	a.refreshChrome()
 }
 
-// openDrive selects a drive by device name and leaves the fleet view for its
-// detail.
+// openDrive selects a drive by device name and leaves the fleet view for its detail.
 func (a *App) openDrive(name string) {
+	cur := a.list.GetCurrentItem()
 	for i, d := range a.devices {
 		if d.Name == name {
-			a.list.SetCurrentItem(i)
+			if i == cur {
+				// SetCurrentItem fires no changed-func for the same index.
+				a.showSelected()
+			} else {
+				a.list.SetCurrentItem(i)
+			}
 			break
 		}
 	}
-	// SetCurrentItem does not fire the changed-func when the index is unchanged;
-	// render unconditionally.
-	a.showSelected()
 	a.exitFleet(true)
 }
 
-// focusDetail moves focus to the detail body and resyncs the chrome, the pair
-// almost every focus move wants. The sites that instead call refreshChrome
-// after a branch (exitFleet, toggleFocus's wide arm, popModal, poll.go) may
-// focus the list rather than the detail, so they cannot use this — and now
-// look different because they are, not by accident.
+// focusDetail moves focus to the detail body and resyncs the chrome.
 func (a *App) focusDetail() {
 	a.app.SetFocus(a.detail.content())
 	a.refreshChrome()
 }
 
-// openTab activates a tab and moves focus to its body; the 1-9 keys and a tab
-// click share it. From a mouse handler the event loop holds no draw lock, so
-// SetFocus is safe here where QueueUpdateDraw would deadlock.
+// openTab activates a tab and focuses its body; shared by the 1-9 keys and tab clicks.
 func (a *App) openTab(i int) {
 	if !a.detail.selectTab(i) {
 		return
@@ -222,9 +205,7 @@ func (a *App) openTab(i int) {
 	a.focusDetail()
 }
 
-// toggleFocus moves focus between the drive list and the detail content. In the
-// narrow layout there is nothing to toggle — the list is not in the widget tree,
-// so focusing it would park focus off-tree and tview would forward no key at all.
+// toggleFocus swaps focus between list and detail; narrow has no list, so it only focuses the detail.
 func (a *App) toggleFocus() {
 	if a.narrow {
 		a.focusDetail()
@@ -249,15 +230,12 @@ func (a *App) focusRight() {
 	}
 }
 
-// focusLeft is the reverse of focusRight, falling through to the drive list.
-// The narrow layout has no list to fall through to, so it stops at the first tab.
+// focusLeft is the reverse of focusRight; narrow stops at the first tab.
 func (a *App) focusLeft() {
 	if a.list.HasFocus() {
 		return
 	}
-	// Ask stepTab rather than test active == 0: with show_unavailable_tabs
-	// there may be muted tabs to the left that it steps over, and only it
-	// knows whether any reachable one remains.
+	// stepTab knows whether any available tab remains to the left.
 	if a.detail.stepTab(-1) {
 		a.focusDetail()
 		return
@@ -269,8 +247,7 @@ func (a *App) focusLeft() {
 	a.refreshChrome()
 }
 
-// triggerRefresh asks the poll loop to fetch immediately (non-blocking). It
-// honours the standby policy: 'r' must not spin a parked drive up.
+// triggerRefresh asks the poll loop to fetch now, honouring the standby policy.
 func (a *App) triggerRefresh() {
 	select {
 	case a.refreshCh <- struct{}{}:
@@ -278,9 +255,7 @@ func (a *App) triggerRefresh() {
 	}
 }
 
-// forceRefresh asks the poll loop to fetch immediately and wake any parked
-// drive. This is the only path that overrides standby_aware — without it, a
-// cold start with every drive asleep could never show a reading.
+// forceRefresh asks the poll loop to fetch now, waking parked drives; the only override of standby_aware.
 func (a *App) forceRefresh() {
 	select {
 	case a.wakeCh <- struct{}{}:
@@ -288,8 +263,7 @@ func (a *App) forceRefresh() {
 	}
 }
 
-// setInterval changes the poll cadence at runtime: updates a.interval,
-// signals the poll loop to reset its ticker, refreshes the status bar.
+// setInterval changes the poll cadence live and signals the poll loop's ticker.
 func (a *App) setInterval(d time.Duration) {
 	a.interval = d
 	select {
@@ -299,18 +273,12 @@ func (a *App) setInterval(d time.Duration) {
 	a.refreshChrome()
 }
 
-// stepDrive moves the drive selection by delta, clamped at both ends. It is the
-// narrow layout's stand-in for arrowing the drive list, which is not on screen
-// there; the wide layout never needs it because the list handles its own keys.
+// stepDrive moves the selection by delta, clamped; the narrow layout's stand-in
+// for the list. The changed-func renders, since next always differs from the current index.
 func (a *App) stepDrive(delta int) {
-	cur := a.list.GetCurrentItem()
-	next := cur + delta
+	next := a.list.GetCurrentItem() + delta
 	if next < 0 || next >= a.list.GetItemCount() {
 		return
 	}
 	a.list.SetCurrentItem(next)
-	// SetCurrentItem does not fire the changed-func when the index is unchanged;
-	// render unconditionally.
-	a.showSelected()
-	a.refreshChrome()
 }

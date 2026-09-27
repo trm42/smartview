@@ -10,21 +10,13 @@ import (
 	"github.com/rivo/tview"
 )
 
-// The modal overlay stack and its three consumers (confirm, key list, error).
-
-// pushModal shows a modal overlay, suspending the normal key-handler logic.
-// It is a PAGE above the main layout, not a new root: replacing the root drew
-// the modal on an empty screen, so opening the key list or Settings hid every
-// widget the setting being edited applies to.
+// pushModal shows m as a page above the main layout and suspends onKey.
 func (a *App) pushModal(m tview.Primitive) {
 	a.inModal = true
 	a.rootPages.AddPage(pageModal, newModalLayer(m), true, true)
 }
 
-// opaqueFlex is a Flex that paints its own ground. tview's Flex sets dontClear,
-// so a box built on one draws its border and children but never clears what is
-// behind them — invisible while a modal replaced the root, and the app's own
-// text showing through the modal's interior once it became a layer over it.
+// opaqueFlex is a Flex that clears its rect; tview's Flex sets dontClear, so the app would show through.
 type opaqueFlex struct {
 	*tview.Flex
 }
@@ -33,9 +25,7 @@ func newOpaqueFlex() *opaqueFlex {
 	return &opaqueFlex{Flex: tview.NewFlex()}
 }
 
-// Draw fills the box's rect before the Flex draws its border and children.
-// ColorDefault is legal here and still erases: SetContent replaces the rune
-// whatever style it carries, which is what mono and terminal need.
+// Draw fills the box's rect before the Flex draws; ColorDefault still erases.
 func (f *opaqueFlex) Draw(screen tcell.Screen) {
 	x, y, w, h := f.GetRect()
 	ground := tcell.StyleDefault.Background(activeTheme.Background)
@@ -47,9 +37,7 @@ func (f *opaqueFlex) Draw(screen tcell.Screen) {
 	f.Flex.Draw(screen)
 }
 
-// modalLayer is the screen-filling page a modal sits on. It exists to stop the
-// mouse: tview's Pages passes an unconsumed click down to the page underneath,
-// so a click beside an open modal would land on the drive list behind it.
+// modalLayer is the screen-filling page a modal sits on; Pages would pass an unconsumed click to the page underneath.
 type modalLayer struct {
 	*tview.Flex
 	inner tview.Primitive
@@ -71,8 +59,7 @@ func (l *modalLayer) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, f
 	}
 }
 
-// popModal removes the modal overlay and restores the main layout, returning
-// focus to the detail content so the Tests tab stays interactive.
+// popModal removes the modal overlay and returns focus to the content.
 func (a *App) popModal() {
 	a.inModal = false
 	a.rootPages.RemovePage(pageModal)
@@ -84,9 +71,8 @@ func (a *App) popModal() {
 	a.refreshChrome()
 }
 
-// styleModal grounds a modal in the active theme. tview builds one from its own
-// contrast palette, and Modal.SetBackgroundColor reaches the inner form and
-// frame but not the surrounding box, so both are set here.
+// styleModal grounds a modal in the active theme; Modal.SetBackgroundColor
+// misses the surrounding box, so both are set.
 func styleModal(m *tview.Modal) *tview.Modal {
 	m.SetBackgroundColor(activeTheme.Background)
 	m.Box.SetBackgroundColor(activeTheme.Background)
@@ -94,21 +80,28 @@ func styleModal(m *tview.Modal) *tview.Modal {
 	m.SetTextColor(activeTheme.Neutral)
 	m.SetButtonBackgroundColor(activeTheme.SelectionBg)
 	m.SetButtonTextColor(activeTheme.SelectionFg)
-	// Accent, not OK: the affirmative may be destructive, and OK stays
-	// reserved for healthy/go semantics. Bold carries the focus under mono,
-	// where every colour collapses to the terminal default.
-	m.SetButtonActivatedStyle(tcell.StyleDefault.
-		Background(activeTheme.Accent).
-		Foreground(activeTheme.Inverse).
-		Attributes(tcell.AttrBold))
+	m.SetButtonActivatedStyle(activatedStyle())
 	return m
 }
 
-// styleForm grounds a Form in the active theme. tview builds fields and
-// buttons from its own contrast palette, and the ground does not reach the
-// field or button colours, so each is set here. Unlike Modal, Form does not
-// override SetBackgroundColor, so the one Box call covers the whole widget —
-// which is why this is not styleModal's two-call dance.
+// activatedStyle marks a focused control: Accent, not OK, since the affirmative
+// may be destructive; bold carries focus under mono.
+func activatedStyle() tcell.Style {
+	return tcell.StyleDefault.Background(activeTheme.Accent).Foreground(activeTheme.Inverse).Attributes(tcell.AttrBold)
+}
+
+// modalBox is the bordered, opaque FlexRow frame a custom modal sits in.
+func modalBox(title string, hPad int) *opaqueFlex {
+	box := newOpaqueFlex()
+	box.SetDirection(tview.FlexRow)
+	box.SetBackgroundColor(activeTheme.Background)
+	box.SetBorder(true).SetBorderPadding(0, 0, hPad, hPad).SetTitle(title)
+	box.SetBorderColor(activeTheme.Accent)
+	box.SetTitleColor(activeTheme.Neutral)
+	return box
+}
+
+// styleForm grounds a Form in the active theme; Form has no SetBackgroundColor override, so one Box call suffices.
 func styleForm(f *tview.Form) *tview.Form {
 	f.SetBackgroundColor(activeTheme.Background)
 	f.SetBorderColor(activeTheme.Accent)
@@ -118,24 +111,11 @@ func styleForm(f *tview.Form) *tview.Form {
 	f.SetFieldTextColor(activeTheme.SelectionFg)
 	f.SetButtonBackgroundColor(activeTheme.SelectionBg)
 	f.SetButtonTextColor(activeTheme.SelectionFg)
-	// Accent, not OK, and bold so focus survives mono — same rule as styleModal.
-	f.SetButtonActivatedStyle(tcell.StyleDefault.
-		Background(activeTheme.Accent).
-		Foreground(activeTheme.Inverse).
-		Attributes(tcell.AttrBold))
-	// A DropDown's open list is a separate widget; route it through
-	// selectedRowStyle so it matches every other selection in the app.
+	f.SetButtonActivatedStyle(activatedStyle())
 	for i := range f.GetFormItemCount() {
 		if dd, ok := f.GetFormItem(i).(*tview.DropDown); ok {
-			// A DropDown keeps a SEPARATE style for the focused-but-closed
-			// field, which SetFieldBackgroundColor does not reach. tview's
-			// default is Neutral-on-SelectionBg, which inverts the palette: on
-			// a light theme the focused chooser was the one dark blob on the
-			// page. Inverse on Accent is what marks focus everywhere else.
-			dd.SetFocusedStyle(tcell.StyleDefault.
-				Background(activeTheme.Accent).
-				Foreground(activeTheme.Inverse).
-				Attributes(tcell.AttrBold))
+			// A DropDown's focused-closed style is separate from the field colours; use the app's focus style.
+			dd.SetFocusedStyle(activatedStyle())
 			dd.SetListStyles(
 				tcell.StyleDefault.
 					Background(activeTheme.Background).
@@ -164,10 +144,7 @@ func (a *App) confirm(text, yesLabel string, onYes func()) {
 // keyBinding is one row of the '?' list; an empty key starts a new group.
 type keyBinding struct{ key, what string }
 
-// keyBindings is what the '?' modal lists, grouped by what the keys are for.
-// The grouping is the point of the table: the list used to run all twenty-odd
-// bindings together, and tview.Modal centred every line, so neither the key
-// column nor the description column lined up with itself.
+// keyBindings is what the '?' modal lists, grouped by purpose.
 var keyBindings = []keyBinding{
 	{"↑/↓", "select / scroll"},
 	{"←/→", "prev / next tab"},
@@ -196,26 +173,18 @@ var keyBindings = []keyBinding{
 	{"q", "quit"},
 }
 
-// The two columns of a rendered binding row. The separator is two spaces and
-// the key column is left-aligned: keys_test.go reads the key out of every line
-// by cutting at the first double space, so both are a contract, not a style.
+// keys_test.go cuts the key at the first double space: keep the key column left-aligned and the separator two spaces.
 const (
-	keyColWidth  = 12
-	descColWidth = 15
-	// keysColumnWidth is one rendered column plus the two-space separator.
+	keyColWidth     = 12
+	descColWidth    = 15
 	keysColumnWidth = keyColWidth + 2 + descColWidth
-	// keysColumnGap separates the columns: the left description column runs to
-	// its full width, so the two gutters alone leave the right column's keys
-	// touching it.
+	// keysColumnGap keeps the right column's keys off the left descriptions.
 	keysColumnGap = 2
-	// keysModalWidth is two columns, each with its own gutter, the gap between
-	// them, and the border.
+	// keysModalWidth is two columns with their gutters, the gap and the border.
 	keysModalWidth = 2*(keysColumnWidth+2*uiGutter) + keysColumnGap + 2
 )
 
-// keysText is the '?' modal's list of record, one binding per line with the
-// columns padded to a fixed width. keys_test.go parses it, so a binding that is
-// not in keyBindings fails the build.
+// keysText is the '?' modal's list of record, one fixed-width binding per line; keys_test.go parses it.
 var keysText = renderKeyBindings()
 
 func renderKeyBindings() string {
@@ -230,8 +199,7 @@ func renderKeyBindings() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// keysColumns splits the list into two side-by-side columns, breaking at the
-// group boundary nearest the middle so a group is never torn in half.
+// keysColumns splits the list into two columns at the group boundary nearest the middle.
 func keysColumns() (string, string) {
 	lines := strings.Split(keysText, "\n")
 	best, mid := -1, len(lines)/2
@@ -256,8 +224,7 @@ func abs(n int) int {
 	return n
 }
 
-// keysColumnView renders one column, the key column accented so the eye can
-// find a key without reading the descriptions.
+// keysColumnView renders one column with the keys accented.
 func keysColumnView(text string) *tview.TextView {
 	v := tview.NewTextView().SetDynamicColors(true)
 	v.SetBorderPadding(0, 0, uiGutter, uiGutter)
@@ -278,10 +245,7 @@ func keysColumnView(text string) *tview.TextView {
 	return v
 }
 
-// keysModal lays the bindings out in two columns inside a box of our own.
-// tview.Modal was the wrong container twice over: it word-wraps at a third of
-// the screen, which forced one narrow ragged column, and its height grows with
-// the line count, so the list had already outgrown a 24-row terminal.
+// keysModal lays the bindings out in two fixed-width columns; tview.Modal wraps at a third of the screen.
 func (a *App) keysModal() tview.Primitive {
 	left, right := keysColumns()
 	rows := max(strings.Count(left, "\n"), strings.Count(right, "\n")) + 1
@@ -295,14 +259,9 @@ func (a *App) keysModal() tview.Primitive {
 	close.SetStyle(tcell.StyleDefault.
 		Background(activeTheme.SelectionBg).
 		Foreground(activeTheme.SelectionFg))
-	close.SetActivatedStyle(tcell.StyleDefault.
-		Background(activeTheme.Accent).
-		Foreground(activeTheme.Inverse).
-		Attributes(tcell.AttrBold))
+	close.SetActivatedStyle(activatedStyle())
 	close.SetSelectedFunc(a.popModal)
-	// The capture has to sit on the button, not on a wrapper: tview delivers
-	// the event to the focused primitive itself, so an ancestor's capture is
-	// never in the chain.
+	// The capture must be on the focused button; ancestors' captures are not in the chain.
 	close.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
 		case ev.Key() == tcell.KeyEscape, ev.Rune() == 'q', ev.Rune() == '?':
@@ -316,17 +275,11 @@ func (a *App) keysModal() tview.Primitive {
 		AddItem(close, 9, 0, true).
 		AddItem(nil, 0, 1, false)
 
-	box := newOpaqueFlex()
-	box.SetDirection(tview.FlexRow).
-		AddItem(body, rows, 0, false).
+	// No gutter on the wrapper: each column carries its own.
+	box := modalBox(" Keys ", 0)
+	box.AddItem(body, rows, 0, false).
 		AddItem(nil, 1, 0, false).
 		AddItem(buttons, 1, 0, true)
-	box.SetBackgroundColor(activeTheme.Background)
-	// No gutter on the wrapper: each column carries its own, and taking it
-	// twice would narrow the columns into wrapping their descriptions.
-	box.SetBorder(true).SetBorderPadding(0, 0, 0, 0).SetTitle(" Keys ")
-	box.SetBorderColor(activeTheme.Accent)
-	box.SetTitleColor(activeTheme.Neutral)
 	return centeredModal(box, keysModalWidth, rows+4)
 }
 
@@ -338,16 +291,14 @@ func (a *App) notice(text, button string) {
 		SetDoneFunc(func(int, string) { a.popModal() }))
 }
 
-// showKeys lists every binding in a dismissable modal; the narrow hint bar
-// points here, so nothing is merely hidden.
+// showKeys lists every binding in a dismissable modal.
 func (a *App) showKeys() {
 	m := a.keysModal()
 	a.pushModal(m)
 	a.app.SetFocus(m)
 }
 
-// showError displays a smartctl failure in a dismissable modal; action names
-// the operation that failed.
+// showError displays a failure in a dismissable modal; action names the operation.
 func (a *App) showError(action string, err error) {
 	a.notice(fmt.Sprintf("Could not %s:\n%s", action, err), "OK")
 }

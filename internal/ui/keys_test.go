@@ -16,16 +16,11 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// The '?' modal promises to list every binding, and that promise has drifted
-// before: 'x' (the only way to abort a multi-hour self-test), '?' itself and the
-// paging keys were all bound and undocumented. These tests hold the promise by
-// deriving the bound keys from the package's own source rather than from a hand
-// written list, so adding a binding without documenting it fails the build.
+// The '?' modal must list every binding; these tests derive the bound keys from
+// the package source, so an undocumented binding fails the build.
 
-// documentedKeys returns the key tokens named in the left column of keysText —
-// "Tab", "j", "PgUp", "1-9" and so on. Only the column is used, never the whole
-// line: a description like "page content" contains the letters of half the
-// alphabet, and matching against those would pass for keys nobody documented.
+// documentedKeys returns the key tokens in keysText's left column; descriptions
+// are excluded because their letters would match undocumented keys.
 func documentedKeys(t *testing.T) map[string]bool {
 	t.Helper()
 	keys := map[string]bool{}
@@ -211,8 +206,7 @@ func TestKeysModalDocumentsNamedKeys(t *testing.T) {
 	}
 }
 
-// TestKeysModalSpecificBindings pins the three bindings that were missing when
-// the modal claimed to be complete, so a future edit cannot drop them again.
+// TestKeysModalSpecificBindings pins bindings that are easy to drop.
 func TestKeysModalSpecificBindings(t *testing.T) {
 	for _, want := range []string{
 		"x", // cancel a running self-test — the only way to abort a long one
@@ -254,10 +248,7 @@ func TestKeysModalColumnsAreAligned(t *testing.T) {
 	}
 }
 
-// TestKeysModalFitsTheNarrowestTerminal: the list moved off tview.Modal, which
-// word-wrapped at a third of the screen and grew a row per binding — one ragged
-// 26-cell column that had already outgrown a 24-row terminal. The two-column
-// box has to fit the smallest terminal smartview supports.
+// TestKeysModalFitsTheNarrowestTerminal: the two-column box must fit 80x24.
 func TestKeysModalFitsTheNarrowestTerminal(t *testing.T) {
 	const minCols, minRows = 80, 24
 	left, right := keysColumns()
@@ -273,11 +264,8 @@ func TestKeysModalFitsTheNarrowestTerminal(t *testing.T) {
 	}
 }
 
-// TestContextHintsFollowTheLiveAttributesView pins a hint bar that advertised
-// keys nothing listened for. contextHints keys off the tab id, which is
-// "attributes" for both protocols, but only the ATA table binds s/f — the NVMe
-// health view installs no input capture, so those keys fell through to onKey
-// and were dropped. The hint now follows the live view, not the id.
+// TestContextHintsFollowTheLiveAttributesView: only the ATA table binds s/f, so
+// the hint follows the live view, not the shared "attributes" id.
 func TestContextHintsFollowTheLiveAttributesView(t *testing.T) {
 	cases := []struct {
 		name      string

@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -10,8 +11,6 @@ import (
 
 	"github.com/trm42/smartview/internal/smart"
 )
-
-// TestLeadingInt lives in internal/smart alongside the function it covers.
 
 func TestDecodeReading(t *testing.T) {
 	mk := func(id int, raw string) smart.ATAAttribute {
@@ -70,9 +69,7 @@ func TestMarginCell(t *testing.T) {
 	if strings.Contains(none, "█") || strings.Contains(none, "●") {
 		t.Errorf("no-threshold margin = %q, want the dash placeholder", none)
 	}
-	// With a threshold -> a bar, and no trailing number: the raw value-minus-
-	// threshold read as a contradiction on a full bar and went negative on a
-	// failing row. Those numbers live in the now/thr column instead.
+	// With a threshold -> a bar, and no trailing number.
 	bar := marginCell(smart.ATAAttribute{Value: 100, Worst: 100, Thresh: 10, Flags: smart.ATAFlags{Prefailure: true}})
 	if !strings.Contains(bar, "█") {
 		t.Errorf("thresholded margin = %q, want a bar", bar)
@@ -87,8 +84,7 @@ func TestMarginCell(t *testing.T) {
 	}
 }
 
-// TestAttrStateIsAWord checks smartctl's raw enums are translated once, at the
-// sink: they used to reach the table verbatim and truncate to "FAILING_NO…".
+// TestAttrStateIsAWord checks smartctl's raw enums are translated at the sink.
 func TestAttrStateIsAWord(t *testing.T) {
 	cases := []struct {
 		a    smart.ATAAttribute
@@ -130,7 +126,7 @@ func TestVisibleRowsSortFilter(t *testing.T) {
 	v := &attributesView{attrs: attrs}
 
 	v.sortBy, v.filter = sortID, filterAll
-	if ids := rowIDs(v.visibleRows()); !eqInts(ids, []int{1, 5, 9, 197}) {
+	if ids := rowIDs(v.visibleRows()); !slices.Equal(ids, []int{1, 5, 9, 197}) {
 		t.Errorf("sortID = %v, want [1 5 9 197]", ids)
 	}
 
@@ -140,12 +136,12 @@ func TestVisibleRowsSortFilter(t *testing.T) {
 	}
 
 	v.sortBy, v.filter = sortID, filterPrefail
-	if ids := rowIDs(v.visibleRows()); !eqInts(ids, []int{1, 5}) {
+	if ids := rowIDs(v.visibleRows()); !slices.Equal(ids, []int{1, 5}) {
 		t.Errorf("filterPrefail = %v, want [1 5]", ids)
 	}
 
 	v.filter = filterConcerning
-	if ids := rowIDs(v.visibleRows()); !eqInts(ids, []int{197}) {
+	if ids := rowIDs(v.visibleRows()); !slices.Equal(ids, []int{197}) {
 		t.Errorf("filterConcerning = %v, want [197]", ids)
 	}
 }
@@ -212,32 +208,16 @@ func rowIDs(attrs []smart.ATAAttribute) []int {
 	return ids
 }
 
-func eqInts(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // TestNVMeSensorsCarrySeverity: a hot sensor must grade the Sensors row even
 // when the composite temperature sits comfortably in range.
 func TestNVMeSensorsCarrySeverity(t *testing.T) {
 	h := &smart.NVMeHealth{TemperatureSensors: []int{67, 43}}
-	var row attrKV
-	found := false
-	for _, r := range nvmeRows(h) {
-		if r.k == "Sensors" {
-			row, found = r, true
-		}
-	}
-	if !found {
+	rows := nvmeRows(h)
+	i := slices.IndexFunc(rows, func(r attrKV) bool { return r.k == "Sensors" })
+	if i < 0 {
 		t.Fatal("no Sensors row")
 	}
+	row := rows[i]
 	if row.sev != smart.SeverityFailing {
 		t.Errorf("row severity = %v, want Failing (hottest sensor is 67°C)", row.sev)
 	}
@@ -246,10 +226,7 @@ func TestNVMeSensorsCarrySeverity(t *testing.T) {
 	}
 }
 
-// TestUnreportedReadingUsesThemedDash: decodeReading returns "" for a raw value
-// the drive does not report, and the sink substitutes the themed dash after
-// escaping — the bare em-dash it used to return was the one not-reported
-// placeholder in the UI that ignored the theme.
+// TestUnreportedReadingUsesThemedDash: an unreported raw value renders as the themed dash.
 func TestUnreportedReadingUsesThemedDash(t *testing.T) {
 	setTheme(dark)
 	empty := smart.ATAAttribute{ID: 5}
@@ -263,10 +240,7 @@ func TestUnreportedReadingUsesThemedDash(t *testing.T) {
 	}
 }
 
-// TestNVMeKeyColumnIsNeutral: both Attributes tables render their non-severity
-// text in the same role. SelectionFg is the pin reached through
-// selectedRowStyle, and using it here made the NVMe key column a different
-// "neutral" from the ATA table's in every theme that separates the two.
+// TestNVMeKeyColumnIsNeutral: both Attributes tables render non-severity text as Neutral.
 func TestNVMeKeyColumnIsNeutral(t *testing.T) {
 	defer setTheme(dark)
 	for name, th := range themes {
@@ -287,11 +261,7 @@ func TestNVMeKeyColumnIsNeutral(t *testing.T) {
 }
 
 // One padding rule for every table cell, header and body alike: padded both
-// sides, except a right-aligned cell, which takes a leading pad only. tview
-// already spaces columns, so a trailing pad pushes a right-aligned value off
-// its own edge -- and across eight fleet columns it costs real width. The
-// Attributes table used to double-pad its right-aligned Reading column while
-// the headers above it and the whole fleet table did not.
+// sides, except a right-aligned cell, which takes a leading pad only.
 func TestTableCellPaddingIsOneRule(t *testing.T) {
 	for _, c := range []struct {
 		align int
