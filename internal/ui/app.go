@@ -5,6 +5,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -563,8 +564,14 @@ func (a *App) listRow(d smart.Device) (string, string) {
 // Run performs the initial scan and starts the event loop and poll goroutine.
 func (a *App) Run(ctx context.Context) error {
 	a.rootCtx = ctx
-	devices, err := smart.Scan(ctx)
+	// Bounded like every poll: a wedged device would otherwise hang startup on a blank terminal.
+	scanCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	devices, err := smart.Scan(scanCtx)
+	cancel()
 	if err != nil && len(devices) == 0 {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("scan drives: smartctl --scan-open did not respond within %s", fetchTimeout)
+		}
 		return fmt.Errorf("scan drives: %w (try running with sudo)", err)
 	}
 	a.devices = devices
