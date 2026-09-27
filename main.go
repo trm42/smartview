@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Command smartview is a cross-platform terminal UI for monitoring drive health
-// via smartmontools (smartctl). It runs on macOS and Linux.
+// Command smartview is a terminal UI for monitoring drive health via smartctl.
 package main
 
 import (
@@ -26,9 +25,10 @@ import (
 var version = "dev"
 
 func main() {
-	interval := flag.Duration("interval", 30*time.Second, "auto-refresh interval")
+	def := config.Default()
+	interval := flag.Duration("interval", def.RefreshInterval.Duration(), "auto-refresh interval")
 	fixtures := flag.String("fixtures", "", "load drive data from JSON fixtures in DIR instead of smartctl (requires -tags dev build)")
-	theme := flag.String("theme", "dark", "colour theme: "+ui.ThemeNames())
+	theme := flag.String("theme", def.Theme, "colour theme: "+ui.ThemeNames())
 	cfgPath := flag.String("config", "", "settings file (default: "+defaultPathHint()+")")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
@@ -38,8 +38,7 @@ func main() {
 		return
 	}
 
-	// Before the preflight, so a config typo is reported at once rather than
-	// after a 5s smartctl timeout.
+	// Before the preflight so a config typo is not reported after a 5s timeout.
 	cfg, err := loadConfig(*cfgPath, interval, theme)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "smartview:", err)
@@ -68,23 +67,18 @@ func main() {
 	}
 }
 
-// loadConfig resolves the settings: built-in defaults, then the config file,
-// then any flag the user actually typed. A flag left at its default must not
-// shadow the file, which is what flag.Visit distinguishes.
+// loadConfig layers defaults, the config file, then only flags the user typed
+// (flag.Visit), so a defaulted flag cannot shadow the file.
 func loadConfig(path string, interval *time.Duration, theme *string) (config.Config, error) {
 	cfg := config.Default()
-	switch resolved, err := configPath(path); {
-	case err != nil:
-		// No user config directory: run on defaults rather than refuse to start.
-	case path != "":
-		// A path the user named must exist; a missing default one need not.
-		if cfg, err = config.Load(resolved); err != nil {
-			return cfg, err
-		}
-	default:
-		if cfg, err = config.LoadIfPresent(resolved); err != nil {
-			return cfg, err
-		}
+	var err error
+	if path != "" {
+		cfg, err = config.Load(path)
+	} else if p, perr := config.Path(); perr == nil { // No user config dir: run on defaults.
+		cfg, err = config.LoadIfPresent(p)
+	}
+	if err != nil {
+		return cfg, err
 	}
 
 	var o config.Overrides
@@ -98,18 +92,15 @@ func loadConfig(path string, interval *time.Duration, theme *string) (config.Con
 	})
 	cfg = cfg.With(o)
 
-	// One validator for both sources, so a bad flag and a bad file read alike.
-	// Which themes exist is this program's knowledge, so the list is attached
-	// here and only to the error that wants it.
-	err := cfg.Validate(ui.HasTheme)
+	// The theme list is main's knowledge, so it is attached here.
+	err = cfg.Validate(ui.HasTheme)
 	if errors.Is(err, config.ErrUnknownTheme) {
 		return cfg, fmt.Errorf("%w (choices: %s)", err, ui.ThemeNames())
 	}
 	return cfg, err
 }
 
-// configPath returns the file to read: the one the user named, else the
-// platform default.
+// configPath returns the named file, else the platform default.
 func configPath(named string) (string, error) {
 	if named != "" {
 		return named, nil
@@ -126,8 +117,7 @@ func saveConfig(named string, c config.Config) error {
 	return config.Save(path, c)
 }
 
-// defaultPathHint names the default config file for -h. It degrades to a bare
-// description rather than failing: -h must always print.
+// defaultPathHint names the default config file for -h, which must print even without one.
 func defaultPathHint() string {
 	if p, err := config.Path(); err == nil {
 		return p
@@ -135,25 +125,21 @@ func defaultPathHint() string {
 	return "none; no user config directory"
 }
 
-// preflightTimeout bounds the startup check. It runs `smartctl -j -V`, which
-// touches no device, so this is a guard against a wedged binary rather than a
-// slow one.
+// preflightTimeout guards against a wedged smartctl; the probe touches no device.
 const preflightTimeout = 5 * time.Second
 
-// exitPreflight reports a failed startup check and exits. An interrupt is a
-// quiet abort rather than an error, and a deadline names the timeout instead of
-// printing the context that carried it.
+// exitPreflight reports a failed startup check and exits: 130 on interrupt,
+// the timeout named on deadline.
 func exitPreflight(err error) {
 	switch {
 	case errors.Is(err, context.Canceled):
-		os.Exit(130) // interrupted before the UI came up
+		os.Exit(130)
 	case errors.Is(err, context.DeadlineExceeded):
 		fmt.Fprintf(os.Stderr, "smartview: smartctl did not respond within %s\n", preflightTimeout)
 		os.Exit(1)
 	}
 	fmt.Fprintln(os.Stderr, "smartview:", err)
-	// Which package manager to name is this program's knowledge, not the data
-	// layer's, so the hint is attached here.
+	// Which package manager to name is main's knowledge, not the data layer's.
 	switch {
 	case errors.Is(err, smart.ErrNoSmartctl):
 		fmt.Fprintln(os.Stderr, "Install smartmontools:", installHint())
@@ -163,7 +149,7 @@ func exitPreflight(err error) {
 	os.Exit(1)
 }
 
-// preflight runs smart.Preflight under a deadline; a no-op in fixture mode.
+// preflight runs smart.Preflight under preflightTimeout.
 func preflight(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, preflightTimeout)
 	defer cancel()
@@ -195,20 +181,14 @@ func buildVersion() string {
 		}
 	}
 	if rev != "" {
-		if len(rev) > 12 {
-			rev = rev[:12]
-		}
-		return rev + suffix
+		return rev[:min(len(rev), 12)] + suffix
 	}
 	return version
 }
 
-// installHint returns the platform-appropriate install command.
 func installHint() string {
-	switch runtime.GOOS {
-	case "darwin":
+	if runtime.GOOS == "darwin" {
 		return "brew install smartmontools"
-	default:
-		return "apt install smartmontools  (or your distro's package manager)"
 	}
+	return "apt install smartmontools  (or your distro's package manager)"
 }
