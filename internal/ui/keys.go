@@ -266,6 +266,12 @@ func (a *App) forceRefresh() {
 // setInterval changes the poll cadence live and signals the poll loop's ticker.
 func (a *App) setInterval(d time.Duration) {
 	a.interval = d
+	// Drain first: the poll loop does not read while fetching, so a stale value
+	// would otherwise win over this one.
+	select {
+	case <-a.intervalCh:
+	default:
+	}
 	select {
 	case a.intervalCh <- d:
 	default:
