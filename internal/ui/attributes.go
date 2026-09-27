@@ -14,10 +14,6 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// The Attributes tab pairs a selectable table with a description footer:
-// attributesView for ATA, nvmeAttributesView for NVMe. Both refresh in place
-// so the selected row survives polls.
-
 // sortMode orders the ATA attribute rows.
 type sortMode int
 
@@ -25,6 +21,7 @@ const (
 	sortSeverity sortMode = iota // worst first, then by ID
 	sortID                       // ascending ID (smartctl's native order)
 	sortMargin                   // least threshold headroom first
+	sortModeCount
 )
 
 func (m sortMode) String() string {
@@ -45,6 +42,7 @@ const (
 	filterAll        filterMode = iota // every attribute
 	filterPrefail                      // only pre-fail attributes
 	filterConcerning                   // only caution/failing attributes
+	filterModeCount
 )
 
 func (m filterMode) String() string {
@@ -66,12 +64,7 @@ const attrFooterHeight = 5
 // name can't set the whole table's width.
 const attrNameWidth = 22
 
-// attributesView is the ATA attribute table plus footer, with sort (s) and
-// filter (f); rows rebuild in place so selection and focus survive.
-// attrScaffold is the frame both attribute tables share: a selectable table
-// over a description footer. Only the frame — the two views differ in how they
-// restore selection (by attribute ID vs by row index) and in which keys they
-// claim, so that stays with each.
+// attrScaffold is the selectable-table-over-footer frame both attribute views share.
 type attrScaffold struct {
 	*tview.Flex
 	table  *scrollTable
@@ -110,6 +103,8 @@ func (s attrScaffold) footerRow(row, n int) (int, bool) {
 	return i, true
 }
 
+// attributesView is the ATA attribute table plus footer, with sort (s) and
+// filter (f); rows rebuild in place so selection and focus survive.
 type attributesView struct {
 	attrScaffold
 	attrs  []smart.ATAAttribute
@@ -124,16 +119,10 @@ func newAttributesView(attrs []smart.ATAAttribute) *attributesView {
 	v.table.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch ev.Rune() {
 		case 's':
-			sel := v.selectedID()
-			v.sortBy = (v.sortBy + 1) % 3
-			v.renderRows()
-			v.selectByID(sel)
+			v.reorder(func() { v.sortBy = (v.sortBy + 1) % sortModeCount })
 			return nil
 		case 'f':
-			sel := v.selectedID()
-			v.filter = (v.filter + 1) % 3
-			v.renderRows()
-			v.selectByID(sel)
+			v.reorder(func() { v.filter = (v.filter + 1) % filterModeCount })
 			return nil
 		}
 		return ev
@@ -142,6 +131,14 @@ func newAttributesView(attrs []smart.ATAAttribute) *attributesView {
 	v.renderRows()
 	v.selectByID(-1)
 	return v
+}
+
+// reorder applies a sort or filter change, keeping the selected attribute.
+func (v *attributesView) reorder(step func()) {
+	sel := v.selectedID()
+	step()
+	v.renderRows()
+	v.selectByID(sel)
 }
 
 // refresh re-applies the latest data, keeping selection (by ID) and sort/filter.
@@ -183,8 +180,7 @@ func (v *attributesView) selectByID(id int) {
 	v.updateFooter(target)
 }
 
-// renderRows rebuilds the table body for the current sort/filter, preserving
-// the table primitive so focus is not lost; the caller applies selection.
+// renderRows rebuilds the table body for the current sort/filter; the caller applies selection.
 func (v *attributesView) renderRows() {
 	v.table.Clear()
 	titledBox(v.table.Box, fmt.Sprintf(
@@ -208,24 +204,20 @@ func (v *attributesView) renderRows() {
 	}
 }
 
-// setAttrRow fills table row (1-based) for attribute a; healthy rows render
-// neutral.
+// setAttrRow fills table row (1-based) for attribute a.
 func (v *attributesView) setAttrRow(row int, a smart.ATAAttribute) {
 	color := attrTextColor(a.Severity())
 	put := func(col int, text string, align int) {
 		v.table.SetCell(row, col, bodyCell(text, color, align))
 	}
-	// Name and reading are drive-controlled: esc() blocks markup injection.
 	put(0, fmt.Sprintf("%3d", a.ID), tview.AlignLeft)
 	put(1, esc(truncateRunes(humanAttrName(a.Name), attrNameWidth)), tview.AlignLeft)
 	put(2, attrKind(a), tview.AlignLeft)
 	put(3, attrState(a), tview.AlignLeft)
-	// Margin carries its own colour tags (a green bar even on a neutral row), so
-	// it takes no text colour of its own.
+	// Margin carries its own colour tags, so it takes no text colour.
 	v.table.SetCell(row, 4, tview.NewTableCell(cellPad(marginCell(a), tview.AlignLeft)).
 		SetSelectedStyle(selectedRowStyle(color)))
-	// decodeReading returns "" when the drive reports no raw value; the themed
-	// dash is substituted here, after escaping, as marginCell's cell does.
+	// The dash goes in after escaping.
 	put(5, orDash(esc(decodeReading(a))), tview.AlignRight)
 }
 
@@ -297,20 +289,20 @@ func (v *attributesView) updateFooter(row int) {
 		return
 	}
 	a := v.shown[i]
+	name := esc(humanAttrName(a.Name))
 	desc := ataDesc[a.ID]
 	if desc == "" {
-		desc = esc(humanAttrName(a.Name)) // drive-controlled fallback; escape markup
+		desc = name
 	}
-	// Numbers first, verdict, then description: the description is what wraps,
-	// so a narrow terminal runs out of prose rather than data.
+	// Description last: it is what wraps, so a narrow terminal loses prose, not data.
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s%d · %s[-]  %s%s · now/thr %s · worst %d · raw %s[-]\n",
-		accentTag(), a.ID, esc(humanAttrName(a.Name)),
+		accentTag(), a.ID, name,
 		mutedTag(), attrKind(a), attrLimits(a), a.Worst, esc(a.Raw.String))
 	if verdict := attrVerdict(a); verdict != "" {
 		fmt.Fprintf(&b, "%s\n", sevText(a.Severity(), verdict))
 	}
-	fmt.Fprintf(&b, "%s", desc)
+	b.WriteString(desc)
 	v.footer.SetText(b.String())
 }
 
@@ -356,8 +348,7 @@ func humanAttrName(s string) string {
 }
 
 // decodeReading converts well-known raw values into real-world figures,
-// falling back to the raw string. An unreported value returns "": the themed
-// dash is substituted at the sink rather than escaped along with the data.
+// falling back to the raw string, which may be "".
 func decodeReading(a smart.ATAAttribute) string {
 	switch a.ID {
 	case 9, 240: // power-on hours, head flying hours
@@ -401,20 +392,14 @@ func newNVMeAttributesView(h *smart.NVMeHealth) *nvmeAttributesView {
 	return v
 }
 
-// refresh re-applies the latest data, keeping the selected row (field order
-// is stable).
+// refresh re-applies the latest data, keeping the selected row (field order is stable).
 func (v *nvmeAttributesView) refresh(r *smart.Report, _ []float64) {
 	if r.NVMeHealth == nil {
 		return
 	}
 	row, _ := v.table.GetSelection()
 	v.setRows(r.NVMeHealth)
-	if row < 1 {
-		row = 1
-	}
-	if row > len(v.rows) {
-		row = len(v.rows)
-	}
+	row = min(max(row, 1), len(v.rows))
 	if len(v.rows) > 0 {
 		v.table.Select(row, 0)
 	}
@@ -450,12 +435,14 @@ func (v *nvmeAttributesView) setFooter(row int) {
 func nvmeRows(h *smart.NVMeHealth) []attrKV {
 	var rows []attrKV
 	add := func(k, v string, sev smart.Severity) { rows = append(rows, attrKV{k, v, sev}) }
-
-	warnSev := smart.SeverityOK
-	if h.CriticalWarning != 0 {
-		warnSev = smart.SeverityFailing
+	sevIf := func(set bool, s smart.Severity) smart.Severity {
+		if set {
+			return s
+		}
+		return smart.SeverityOK
 	}
-	add("Critical warning", fmt.Sprintf("0x%02x", h.CriticalWarning), warnSev)
+
+	add("Critical warning", fmt.Sprintf("0x%02x", h.CriticalWarning), sevIf(h.CriticalWarning != 0, smart.SeverityFailing))
 	if h.PercentageUsed != nil {
 		add("Percentage used", fmt.Sprintf("%d%%", *h.PercentageUsed), smart.PctUsedSeverity(*h.PercentageUsed))
 	}
@@ -469,11 +456,7 @@ func nvmeRows(h *smart.NVMeHealth) []attrKV {
 	if h.AvailableSpareThreshold != nil {
 		add("Spare threshold", fmt.Sprintf("%d%%", *h.AvailableSpareThreshold), smart.SeverityOK)
 	}
-	mediaSev := smart.SeverityOK
-	if h.MediaErrors > 0 {
-		mediaSev = smart.SeverityCaution
-	}
-	add("Media errors", fmt.Sprintf("%d", h.MediaErrors), mediaSev)
+	add("Media errors", fmt.Sprintf("%d", h.MediaErrors), sevIf(h.MediaErrors > 0, smart.SeverityCaution))
 	add("Error log entries", fmt.Sprintf("%d", h.NumErrLogEntries), smart.SeverityOK)
 	add("Power-on", humanDuration(h.PowerOnHours), smart.SeverityOK)
 	add("Power cycles", fmt.Sprintf("%d", h.PowerCycles), smart.SeverityOK)
@@ -487,19 +470,10 @@ func nvmeRows(h *smart.NVMeHealth) []attrKV {
 	if h.ControllerBusyTime > 0 {
 		add("Controller busy", humanMinutes(int(h.ControllerBusyTime)), smart.SeverityOK)
 	}
-	warnSevTemp := smart.SeverityOK
-	if h.WarningTempTime > 0 {
-		warnSevTemp = smart.SeverityCaution
-	}
-	add("Warn temp time", humanMinutes(h.WarningTempTime), warnSevTemp)
-	critSevTemp := smart.SeverityOK
-	if h.CriticalCompTime > 0 {
-		critSevTemp = smart.SeverityCaution
-	}
-	add("Crit temp time", humanMinutes(h.CriticalCompTime), critSevTemp)
+	add("Warn temp time", humanMinutes(h.WarningTempTime), sevIf(h.WarningTempTime > 0, smart.SeverityCaution))
+	add("Crit temp time", humanMinutes(h.CriticalCompTime), sevIf(h.CriticalCompTime > 0, smart.SeverityCaution))
 	if len(h.TemperatureSensors) > 0 {
-		// Grade each sensor and the row on the hottest: the composite can sit
-		// in range while one sensor is past the failing threshold.
+		// Grade on the hottest sensor: the composite can sit in range while one is past it.
 		parts := make([]string, len(h.TemperatureSensors))
 		rowSev := smart.SeverityOK
 		for i, t := range h.TemperatureSensors {
@@ -516,10 +490,7 @@ func headerCell(s string) *tview.TableCell {
 	return headerCellAligned(s, tview.AlignLeft)
 }
 
-// cellPad applies the table's one padding rule: a cell is padded both sides,
-// except a right-aligned one, which takes a leading pad only. tview already
-// spaces columns, and a trailing pad on a right-aligned cell pushes the value
-// off its own edge — and costs real width across eight fleet columns.
+// cellPad pads both sides, except right-aligned cells, which take a leading pad only.
 func cellPad(s string, align int) string {
 	if align == tview.AlignRight {
 		return " " + s
@@ -536,8 +507,7 @@ func headerCellAligned(s string, align int) *tview.TableCell {
 		SetSelectable(false)
 }
 
-// bodyCell is headerCellAligned's counterpart for data rows: same padding
-// rule, the row's own colour, and a selection style that keeps that colour.
+// bodyCell is a data cell in the row's colour, kept when selected.
 func bodyCell(text string, color tcell.Color, align int) *tview.TableCell {
 	return tview.NewTableCell(cellPad(text, align)).
 		SetTextColor(color).

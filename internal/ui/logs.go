@@ -9,8 +9,7 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// hasLogs reports whether the drive exposes any log/link diagnostics; gates
-// the Logs tab.
+// hasLogs reports whether the drive exposes any log/link diagnostics.
 func hasLogs(r *smart.Report) bool {
 	return r.ATASelfTestLog != nil || r.ATAErrorLog != nil ||
 		r.NVMeSelfTestLog != nil || r.NVMeErrorLog != nil ||
@@ -18,8 +17,7 @@ func hasLogs(r *smart.Report) bool {
 		r.ATAPendingDefects != nil || r.ATASCTErc != nil
 }
 
-// logsView renders the Logs tab, refreshing in place so the scroll position
-// survives polls.
+// logsView renders the Logs tab, refreshing in place so the scroll position survives polls.
 type logsView struct {
 	*scrollTextView
 }
@@ -96,8 +94,7 @@ func writePhyCounters(b *strings.Builder, e *smart.SATAPhyEvents) {
 			continue
 		}
 		nonzero++
-		// Only counters that indicate a bad cable/marginal link are graded; a
-		// couple of COMRESETs is a normal power-up.
+		// Only bad-link counters are graded; a couple of COMRESETs is a normal power-up.
 		tag := mutedTag()
 		if phyCounterConcerning(c.Name) {
 			tag = cautionTag()
@@ -130,12 +127,7 @@ func writeErrorLog(b *strings.Builder, r *smart.Report) {
 		writeNVMeErrorCount(b, r.NVMeErrorLog)
 		writeNVMeErrorEntries(b, r.NVMeErrorLog.Table)
 	case r.ATAErrorLog != nil && r.ATAErrorLog.Extended != nil:
-		n := r.ATAErrorLog.Extended.Count
-		if n == 0 {
-			fmt.Fprintln(b, nestIndent+"No errors logged")
-		} else {
-			fmt.Fprintf(b, nestIndent+cautionTag()+"%s logged[-]\n", plural(n, "error", "errors"))
-		}
+		b.WriteString(errorCountLine(r.ATAErrorLog.Extended.Count) + "\n")
 		writeATAErrorEntries(b, r, r.ATAErrorLog.Extended.Table)
 	default:
 		fmt.Fprintln(b, nestIndent+dash)
@@ -143,16 +135,19 @@ func writeErrorLog(b *strings.Builder, r *smart.Report) {
 	writePendingDefects(b, r.ATAPendingDefects)
 }
 
-// writeNVMeErrorCount states the logged-error count — len(Table), never the
-// log's slot capacity (Size is 256 on a drive with three errors).
+// errorCountLine states a logged-error count.
+func errorCountLine(n int) string {
+	if n == 0 {
+		return nestIndent + "No errors logged"
+	}
+	return nestIndent + cautionTag() + plural(n, "error", "errors") + " logged[-]"
+}
+
+// writeNVMeErrorCount states the logged-error count: len(Table), never the slot capacity (Size).
 func writeNVMeErrorCount(b *strings.Builder, l *smart.NVMeErrorLog) {
 	n := len(l.Table)
-	if n == 0 {
-		fmt.Fprintln(b, nestIndent+"No errors logged")
-		return
-	}
-	fmt.Fprintf(b, nestIndent+cautionTag()+"%s logged[-]", plural(n, "error", "errors"))
-	if l.Unread > 0 {
+	b.WriteString(errorCountLine(n))
+	if n > 0 && l.Unread > 0 {
 		fmt.Fprintf(b, mutedTag()+" (%d not read back)[-]", l.Unread)
 	}
 	b.WriteByte('\n')
@@ -161,9 +156,7 @@ func writeNVMeErrorCount(b *strings.Builder, l *smart.NVMeErrorLog) {
 // maxErrorEntries caps the decoded entries listed, newest first.
 const maxErrorEntries = 8
 
-// writeCapped writes at most maxErrorEntries rows of table via line, then says
-// how many it withheld. The cap and its "… N more" note are the same for ATA
-// and NVMe; only the row differs.
+// writeCapped writes at most maxErrorEntries rows of table via line, then says how many it withheld.
 func writeCapped[T any](b *strings.Builder, table []T, line func(T) string) {
 	for i, e := range table {
 		if i >= maxErrorEntries {
@@ -181,9 +174,7 @@ func writeNVMeErrorEntries(b *strings.Builder, table []smart.NVMeErrorLogEntry) 
 		if status == "" {
 			status = fmt.Sprintf("0x%x", e.StatusField.Value)
 		}
-		// colorResult, not a bare escape: the status is the decoded outcome and
-		// a failing one has to read as one. It carries its own colour, so the
-		// entry number keeps the caution tag and the status closes it.
+		// colorResult escapes and closes its own colour.
 		return fmt.Sprintf(nestIndent+cautionTag()+"#%d[-] %s %s(cmd %d)[-]\n",
 			e.ErrorCount, colorResult(status), mutedTag(), e.CommandID)
 	})
@@ -209,11 +200,11 @@ func driveAge(r *smart.Report, hours int) string {
 	if !ok || now < hours {
 		return fmt.Sprintf("at %s", humanDuration(hours))
 	}
-	if ago := now - hours; ago < 24 {
+	ago := now - hours
+	if ago < 24 {
 		return fmt.Sprintf("at %s · %d h ago", humanDuration(hours), ago)
-	} else {
-		return fmt.Sprintf("at %s · %s ago", humanDuration(hours), humanDuration(ago))
 	}
+	return fmt.Sprintf("at %s · %s ago", humanDuration(hours), humanDuration(ago))
 }
 
 // tidyErrorDescription drops smartctl's "Error: " prefix and keeps only the
@@ -253,8 +244,6 @@ func writeSelfTestSummary(b *strings.Builder, r *smart.Report, tbl []smart.ATASe
 			failed++
 		}
 	}
-	// Muted for the same reason as the rows below it: the interesting summary
-	// is the failure count, and that one keeps its colour.
 	verdict := mutedTag() + "all passed[-]"
 	if failed > 0 {
 		verdict = fmt.Sprintf("%s%s failed[-]", failingTag(), plural(failed, "run", "runs"))
@@ -297,10 +286,8 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 	}
 }
 
-// selfTestPassed is the single keyword test shared with colorResult, so the
-// summary and row colours can't disagree. "Completed" alone is not a pass
-// (failures read "Completed: read failure"); "without error" is checked first
-// since it contains "error" itself.
+// selfTestPassed is the keyword test shared with colorResult; "without error"
+// is checked before "error", and "Completed" alone is not a pass.
 func selfTestPassed(s string) bool {
 	low := strings.ToLower(s)
 	if strings.Contains(low, "without error") {
@@ -314,13 +301,7 @@ func selfTestPassed(s string) bool {
 	return strings.Contains(low, "completed")
 }
 
-// colorResult tints a self-test outcome by keyword; the test runs on the
-// original but the rendered copy is markup-escaped (drive-controlled string).
-// A pass takes the MUTED voice, not OK green: a drive with a long history
-// renders one row per run, and colouring every one of them green made the
-// passing runs the loudest thing on a tab whose actual errors sit above them
-// uncoloured. Colour marks exceptions, and the summary line already states
-// the verdict for the whole table.
+// colorResult tints a self-test outcome by keyword on the original string and escapes the rendered copy; a pass is muted, not green.
 func colorResult(s string) string {
 	low := strings.ToLower(s)
 	switch {

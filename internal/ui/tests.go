@@ -13,17 +13,11 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// selfTestActions are the App-supplied callbacks to start/cancel a self-test;
-// the App owns the smartctl calls, modals and refresh — the view only
-// renders state and forwards intent.
+// selfTestActions are App callbacks for starting and cancelling a self-test.
 type selfTestActions struct {
 	run    func(testType smart.SelfTestType)
 	cancel func()
-	// started reports the type of the self-test smartview itself started on this
-	// drive, or "" when it is unknown — a test already running when smartview
-	// launched, or one started by another tool. The drive cannot tell us: ATA's
-	// status string is "in progress, N% remaining" and names no type, so the
-	// running view's time estimate has no other source (see remainingTime).
+	// started returns the type smartview started on this drive, or ""; drives never report it.
 	started func() smart.SelfTestType
 }
 
@@ -36,9 +30,7 @@ const (
 	modeRunning
 )
 
-// testsView is the interactive Tests tab — the one tab that forwards user
-// intent. Each refresh picks between the running view (progress + cancel) and
-// the idle view (start Short/Long).
+// testsView is the interactive Tests tab, showing either running progress or the idle test list.
 type testsView struct {
 	*tview.Flex
 	actions selfTestActions
@@ -60,9 +52,8 @@ func newTestsView(r *smart.Report, actions selfTestActions) *testsView {
 	v.info.SetDynamicColors(true).SetScrollable(true)
 	titledBox(v.Box, " Tests ")
 	v.list.SetHighlightFullLine(true)
-	styleList(v.list.List) // theme secondary text + selection (else tview leaks green)
+	styleList(v.list.List)
 
-	// 'x' cancels a running test (the global handler lets it through).
 	v.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if v.mode == modeRunning && ev.Key() == tcell.KeyRune && ev.Rune() == 'x' {
 			if v.actions.cancel != nil {
@@ -77,7 +68,7 @@ func newTestsView(r *smart.Report, actions selfTestActions) *testsView {
 	return v
 }
 
-// setFocused accents the Tests tab's border (the Flex itself is bordered).
+// setFocused accents the Tests tab's border.
 func (v *testsView) setFocused(focused bool) {
 	v.SetBorderColor(borderColor(focused))
 }
@@ -91,19 +82,16 @@ func (v *testsView) refresh(r *smart.Report, _ []float64) {
 	v.showIdle(r)
 }
 
-// showRunning renders live self-test progress; the text rebuilds every poll
-// but the layout is only rewired on the transition into running mode.
+// showRunning renders progress; the layout is rewired only on entering running mode.
 func (v *testsView) showRunning(r *smart.Report, label string, pct int) {
 	var b strings.Builder
-	// A drive-supplied label replaces the generic heading, except an ATA
-	// "N% remaining" string that would duplicate the bar's own percent.
-	// label is drive-controlled: escape it.
+	// Use the drive's label unless it duplicates the bar's percent; label is drive-controlled.
 	heading := "Self-test in progress"
 	if label != "" && !strings.Contains(strings.ToLower(label), "remaining") {
 		heading = esc(label)
 	}
 	fmt.Fprintf(&b, "[::b]%s[-:-:-]\n\n", heading)
-	fmt.Fprintf(&b, "%s", progressBar(pct))
+	b.WriteString(progressBar(pct))
 	if left, ok := remainingTime(r, pct, v.startedType()); ok {
 		fmt.Fprintf(&b, "%s   about %s left[-]", mutedTag(), formatTestDuration(left))
 	}
@@ -120,8 +108,7 @@ func (v *testsView) showRunning(r *smart.Report, label string, pct int) {
 	v.AddItem(v.info, 0, 1, true)
 }
 
-// showIdle renders the test-selection list, rebuilt only on entering idle
-// mode so a poll doesn't reset the highlighted row.
+// showIdle renders the test list, rebuilt only on entering idle mode so a poll keeps the highlight.
 func (v *testsView) showIdle(r *smart.Report) {
 	if v.mode == modeIdle {
 		return
@@ -158,17 +145,14 @@ func (v *testsView) showIdle(r *smart.Report) {
 // barWidth is the fixed cell count of the self-test progress bar.
 const barWidth = 24
 
-// progressBar renders a fixed-width bar with the percent label after it (not
-// inside, where digits replaced fill cells). Same glyph vocabulary as
-// marginBar, so it survives mono.
+// progressBar renders a fixed-width bar with the percent after it.
 func progressBar(pct int) string {
 	pct = clampPct(pct)
 	full, empty := barGlyphs(pct*barWidth/100, barWidth)
 	return fmt.Sprintf("%s%s[-]%s%s[-]  %d%%", okTag(), full, mutedTag(), empty, pct)
 }
 
-// startedType returns the self-test type the App recorded for this drive, or ""
-// when none is known; nothing in the report can supply it.
+// startedType returns the self-test type the App recorded for this drive, or "".
 func (v *testsView) startedType() smart.SelfTestType {
 	if v.actions.started == nil {
 		return ""
@@ -176,10 +160,8 @@ func (v *testsView) startedType() smart.SelfTestType {
 	return v.actions.started()
 }
 
-// remainingTime estimates time left from the completion percentage and the
-// drive's whole-run estimate for testType. False when no duration is advertised
-// (NVMe never is), the run is complete, or the type is unknown — short and
-// extended differ by orders of magnitude, so a guess would be badly wrong.
+// remainingTime estimates time left from pct and the drive's estimate for
+// testType; false when no duration is advertised, the run is done, or the type is unknown.
 func remainingTime(r *smart.Report, pct int, testType smart.SelfTestType) (time.Duration, bool) {
 	total, ok := r.SelfTestDuration(testType)
 	if !ok || pct >= 100 {

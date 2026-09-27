@@ -4,43 +4,34 @@ package ui
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"os/exec"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
 )
 
-// TestDarkThemePinned pins every dark-theme role as an explicit hex value.
-// The palette used to name tcell colours, which are sent to the terminal as
-// palette indices: markup resolved them to RGB and every style path did not,
-// so a role rendered two different colours on any terminal whose scheme is not
-// the default. These are the RGB values those names already resolved to, with
-// three deliberate departures from the pre-theming original, each noted below.
+// TestDarkThemePinned pins every dark role in hex.
 func TestDarkThemePinned(t *testing.T) {
 	want := map[string]tcell.Color{
-		// Was ColorBlack. A ground one step off #000 gives the palette
-		// somewhere to build layers down from, and stops the app pasting a
-		// black rectangle into a terminal that is not itself black.
-		"Background": tcell.NewHexColor(0x0b0d10),
-		"Accent":     tcell.NewHexColor(0x00ffff), // was ColorAqua
-		"Muted":      tcell.NewHexColor(0x808080), // was ColorGray
-		"OK":         tcell.NewHexColor(0x008000), // was ColorGreen
-		"Caution":    tcell.NewHexColor(0xffff00), // was ColorYellow
-		"Failing":    tcell.NewHexColor(0xff0000), // was ColorRed
-		"Neutral":    tcell.NewHexColor(0xffffff), // was ColorWhite
-		"Inverse":    tcell.NewHexColor(0x000000), // was ColorBlack
-		// Was ColorDarkSlateGray (#2f4f4f), bright enough to drop Failing to
-		// 2.23:1 and OK to 1.74:1 on the selected row.
+		"Background":    tcell.NewHexColor(0x0b0d10),
+		"Accent":        tcell.NewHexColor(0x00ffff),
+		"Muted":         tcell.NewHexColor(0x808080),
+		"OK":            tcell.NewHexColor(0x008000),
+		"Caution":       tcell.NewHexColor(0xffff00),
+		"Failing":       tcell.NewHexColor(0xff0000),
+		"Neutral":       tcell.NewHexColor(0xffffff),
+		"Inverse":       tcell.NewHexColor(0x000000),
 		"SelectionBg":   tcell.NewHexColor(0x16202a),
-		"SelectionFg":   tcell.NewHexColor(0xffffff), // was ColorWhite
-		"BannerBg":      tcell.NewHexColor(0xffff00), // was ColorYellow
-		"BarHealthy":    tcell.NewHexColor(0x008080), // was ColorTeal
-		"ScrollArrow":   tcell.NewHexColor(0xffffff), // was ColorWhite
-		"ListSecondary": tcell.NewHexColor(0x808080), // was ColorGreen, == OK
+		"SelectionFg":   tcell.NewHexColor(0xffffff),
+		"BannerBg":      tcell.NewHexColor(0xffff00),
+		"BarHealthy":    tcell.NewHexColor(0x008080),
+		"ScrollArrow":   tcell.NewHexColor(0xffffff),
+		"ListSecondary": tcell.NewHexColor(0x808080),
 	}
 	got := themeRoles(dark)
 	if len(want) != len(got) {
@@ -57,11 +48,7 @@ func TestDarkThemePinned(t *testing.T) {
 }
 
 // TestPaintedThemesAreHexOnly: a palette that paints its own ground must spell
-// every role in RGB. A named colour resolves through the user's terminal
-// scheme, so pairing one with a painted ground lets the two disagree — the
-// defect dark carried. inheritingThemes are the deliberate exception: they take
-// the terminal's ground, so resolving through its scheme is what makes them
-// agree rather than what breaks them.
+// every role in RGB, or the terminal scheme can redefine a named colour.
 func TestPaintedThemesAreHexOnly(t *testing.T) {
 	for name, th := range themes {
 		if inheritingThemes[name] {
@@ -98,60 +85,28 @@ func themeRoles(th Theme) map[string]tcell.Color {
 	}
 }
 
-// inheritingThemes are the palettes that take colours from the terminal rather
-// than painting them: mono drops colour entirely, terminal keeps the ground and
-// body colour and adds the severity vocabulary back as named colours. Neither
-// can be measured for contrast, so every ratio test below skips them.
+// inheritingThemes take colours from the terminal, so every ratio test skips them.
 var inheritingThemes = map[string]bool{"mono": true, "terminal": true}
 
-// inheritingNames lists them for an error message, in a stable order.
-func inheritingNames() []string {
-	out := make([]string, 0, len(inheritingThemes))
-	for n := range inheritingThemes {
-		out = append(out, n)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// TestThemesComplete asserts every theme names itself and assigns every role.
-// ColorDefault is allowed only in mono, which defers to the terminal wholesale:
-// a palette that paints its own ground has to paint every foreground too.
+// TestThemesComplete asserts every theme has a unique name and, unless it
+// inherits from the terminal, assigns every role.
 func TestThemesComplete(t *testing.T) {
+	if len(themes) != len(themeList) {
+		t.Errorf("themeList has %d palettes but %d distinct names", len(themeList), len(themes))
+	}
 	for name, th := range themes {
-		if th.Name == "" {
-			t.Errorf("theme %q has empty Name", name)
-		}
-		if th.Name != name {
-			t.Errorf("theme registered as %q has Name %q", name, th.Name)
+		if name == "" {
+			t.Error("a theme has an empty Name")
 		}
 		if inheritingThemes[name] {
-			continue // these defer to the terminal on purpose
+			continue
 		}
 		for role, c := range themeRoles(th) {
 			if c == tcell.ColorDefault {
 				t.Errorf("theme %q role %s is ColorDefault (only %v may degrade)",
-					name, role, inheritingNames())
+					name, role, slices.Sorted(maps.Keys(inheritingThemes)))
 			}
 		}
-	}
-}
-
-// TestThemeCycleCoverage checks themeCycle and themes agree: every cycle entry
-// is a registered theme and vice versa, so the 'T' key visits each exactly once.
-func TestThemeCycleCoverage(t *testing.T) {
-	if len(themeCycle) != len(themes) {
-		t.Fatalf("themeCycle has %d entries, themes has %d", len(themeCycle), len(themes))
-	}
-	seen := map[string]bool{}
-	for _, n := range themeCycle {
-		if !HasTheme(n) {
-			t.Errorf("themeCycle entry %q is not a registered theme", n)
-		}
-		if seen[n] {
-			t.Errorf("themeCycle entry %q appears more than once", n)
-		}
-		seen[n] = true
 	}
 }
 
@@ -167,8 +122,7 @@ func TestTagRoundTrip(t *testing.T) {
 	if back := tcell.GetColor(rgbTok); back.TrueColor() != tcell.NewHexColor(0x00ffff) {
 		t.Errorf("GetColor(%q) = %v, want #00ffff", rgbTok, back)
 	}
-	// A named colour must render as its NAME and survive the round trip as the
-	// same palette index — resolving it to RGB is what broke the dark theme.
+	// A named colour must render as its NAME and round-trip to the same palette index.
 	for c := range namedTags {
 		tok := tag(c)
 		if tok == "-" || tok[0] == '#' {
@@ -210,8 +164,7 @@ func TestNextThemeNameWraps(t *testing.T) {
 	}
 }
 
-// TestSetThemeUpdatesDash confirms dash tracks the active theme's muted colour,
-// then restores the dark default so other tests/usage see the normal state.
+// TestSetThemeUpdatesDash confirms dash tracks the active theme's muted colour.
 func TestSetThemeUpdatesDash(t *testing.T) {
 	defer setTheme(dark)
 
@@ -225,13 +178,12 @@ func TestSetThemeUpdatesDash(t *testing.T) {
 	}
 }
 
-// TestListSecondaryIsNotOK guards the reason ListSecondary moved off green: the
-// drive-list metadata line renders on every drive regardless of health, so it
-// must not carry the colour that means "healthy" in any theme.
+// TestListSecondaryIsNotOK: the drive-list metadata line renders on every
+// drive, so it must not carry the healthy colour.
 func TestListSecondaryIsNotOK(t *testing.T) {
 	for name, th := range themes {
 		if th.ListSecondary == tcell.ColorDefault {
-			continue // mono drops all colour by design
+			continue // inheriting palette
 		}
 		if th.ListSecondary == th.OK {
 			t.Errorf("theme %q: ListSecondary equals OK (%v); a failing drive's "+
@@ -240,37 +192,27 @@ func TestListSecondaryIsNotOK(t *testing.T) {
 	}
 }
 
-// TestSeverityRampEscalates: every theme's severity ramp must look hotter as
-// it worsens, never fainter.
+// TestSeverityRampEscalates: phosphor, the monochrome palette that encodes
+// severity by intensity, must look hotter as it worsens, never fainter.
 func TestSeverityRampEscalates(t *testing.T) {
 	lum := func(c tcell.Color) float64 {
 		h := c.TrueColor().Hex()
 		r, g, b := float64((h>>16)&0xff), float64((h>>8)&0xff), float64(h&0xff)
 		return 0.2126*r + 0.7152*g + 0.0722*b
 	}
-	for name, th := range themes {
-		if th.OK == tcell.ColorDefault {
-			continue // mono drops all colour by design
-		}
-		if name != "phosphor" {
-			// Only a monochrome palette has to encode severity by intensity; the
-			// others carry it in hue, where luminance ordering means nothing.
-			continue
-		}
-		ok, caution, failing := lum(th.OK), lum(th.Caution), lum(th.Failing)
-		if !(ok < caution && caution < failing) {
-			t.Errorf("theme %q severity does not escalate: OK %.0f, Caution %.0f, Failing %.0f",
-				name, ok, caution, failing)
-		}
-		// And it must escalate by intensity, not by fading toward white: the
-		// green channel leads and red/blue stay low.
-		for _, c := range []tcell.Color{th.OK, th.Caution, th.Failing} {
-			h := c.TrueColor().Hex()
-			r, g, b := (h>>16)&0xff, (h>>8)&0xff, h&0xff
-			if r > g/2 || b > g/2 {
-				t.Errorf("theme %q colour #%06x is washing out: r=%d b=%d against g=%d",
-					name, h, r, b, g)
-			}
+	th := phosphor
+	ok, caution, failing := lum(th.OK), lum(th.Caution), lum(th.Failing)
+	if !(ok < caution && caution < failing) {
+		t.Errorf("phosphor severity does not escalate: OK %.0f, Caution %.0f, Failing %.0f",
+			ok, caution, failing)
+	}
+	// Escalate by intensity, not by fading toward white: green leads, red/blue stay low.
+	for _, c := range []tcell.Color{th.OK, th.Caution, th.Failing} {
+		h := c.TrueColor().Hex()
+		r, g, b := (h>>16)&0xff, (h>>8)&0xff, h&0xff
+		if r > g/2 || b > g/2 {
+			t.Errorf("phosphor colour #%06x is washing out: r=%d b=%d against g=%d",
+				h, r, b, g)
 		}
 	}
 }
@@ -305,7 +247,7 @@ func TestInverseIsLegibleOnItsFields(t *testing.T) {
 	const minRatio = 3.0
 	for name, th := range themes {
 		if th.Inverse == tcell.ColorDefault {
-			continue // mono drops all colour by design
+			continue // inheriting palette
 		}
 		for _, f := range []struct {
 			role string
@@ -410,18 +352,17 @@ func TestTerminalInheritsGroundAndInk(t *testing.T) {
 	}
 }
 
-// TestForegroundsAreLegibleOnTheirBackground: every role that renders as text
-// or glyphs sits on Background, so a palette that picks one carelessly is
-// unreadable. 3:1 is the floor TestInverseIsLegibleOnItsFields already uses.
+// foregroundRoles are the roles drawn as text or glyphs on Background.
+var foregroundRoles = []string{"Accent", "Muted", "OK", "Caution", "Failing", "Neutral",
+	"ListSecondary", "BarHealthy", "ScrollArrow"}
+
+// TestForegroundsAreLegibleOnTheirBackground holds every foreground role to 3:1 on the ground.
 func TestForegroundsAreLegibleOnTheirBackground(t *testing.T) {
 	const minRatio = 3.0
-	on := []string{"Accent", "Muted", "OK", "Caution", "Failing", "Neutral",
-		"ListSecondary", "BarHealthy", "ScrollArrow"}
 	for name, th := range themes {
 		roles := themeRoles(th)
-		for _, role := range on {
-			// A ColorDefault on either side resolves only in the terminal, so
-			// there is no ratio to measure.
+		for _, role := range foregroundRoles {
+			// ColorDefault resolves only in the terminal; nothing to measure.
 			if roles[role] == tcell.ColorDefault || th.Background == tcell.ColorDefault {
 				continue
 			}
@@ -441,7 +382,7 @@ func TestSelectionIsVisibleOnBackground(t *testing.T) {
 	const minBand, maxBand, minPin = 1.15, 3.0, 4.5
 	for name, th := range themes {
 		if th.Background == tcell.ColorDefault {
-			continue // mono drops all colour by design
+			continue // inheriting palette
 		}
 		band := contrastRatio(th.SelectionBg, th.Background)
 		if band < minBand {
@@ -460,11 +401,7 @@ func TestSelectionIsVisibleOnBackground(t *testing.T) {
 }
 
 // TestSeverityIsLegibleOnTheSelectionBand: the selected row keeps each cell's
-// own foreground and repaints the ground with SelectionBg, so the severity
-// colours are drawn on the band whenever the cursor is on a drive — which is
-// exactly the row the user cares about. Nothing pinned this, and four palettes
-// dropped a severity below the 3:1 floor every other pairing is held to; dark
-// put both ends of its ramp there (Failing 2.23, OK 1.74).
+// own foreground on SelectionBg, so severity must clear 3:1 there too.
 func TestSeverityIsLegibleOnTheSelectionBand(t *testing.T) {
 	const minRatio = 3.0
 	for name, th := range themes {
@@ -514,7 +451,7 @@ const darkGroundMax, lightGroundMin = 0.15, 0.5
 func TestGroundsAreDecisivelyDarkOrLight(t *testing.T) {
 	for name, th := range themes {
 		if th.Background == tcell.ColorDefault {
-			continue // mono inherits the terminal's, whatever it is
+			continue // inheriting palette
 		}
 		l := relLuminance(th.Background)
 		if l > darkGroundMax && l < lightGroundMin {
@@ -524,14 +461,9 @@ func TestGroundsAreDecisivelyDarkOrLight(t *testing.T) {
 	}
 }
 
-// TestLightGroundsClearAHigherFloor: on a light ground the 3:1 UI floor is not
-// enough. Dark ink on a bright field loses to glare, and a light palette has no
-// terminal default to fall back on — every role is one the palette itself
-// picked.
+// TestLightGroundsClearAHigherFloor: on a light ground dark ink loses to glare, so the floor is 4:1.
 func TestLightGroundsClearAHigherFloor(t *testing.T) {
 	const minRatio = 4.0
-	on := []string{"Accent", "Muted", "OK", "Caution", "Failing", "Neutral",
-		"ListSecondary", "BarHealthy", "ScrollArrow"}
 	light := 0
 	for name, th := range themes {
 		if th.Background == tcell.ColorDefault || relLuminance(th.Background) < lightGroundMin {
@@ -539,7 +471,7 @@ func TestLightGroundsClearAHigherFloor(t *testing.T) {
 		}
 		light++
 		roles := themeRoles(th)
-		for _, role := range on {
+		for _, role := range foregroundRoles {
 			if got := contrastRatio(roles[role], th.Background); got < minRatio {
 				t.Errorf("theme %q: %s on its light Background has contrast %.2f, want >= %.1f",
 					name, role, got, minRatio)
@@ -552,11 +484,7 @@ func TestLightGroundsClearAHigherFloor(t *testing.T) {
 	}
 }
 
-// TestTruecolorTermFollowsTheEnvironment runs in a child process on purpose:
-// terminfo's entry cache is process-global and LookupTerminfo *writes* the RGB
-// capabilities onto the cached entry, so a lookup made before the environment
-// was changed decides every lookup after it. One process per environment is
-// the only way to ask the question honestly.
+// TestTruecolorTermFollowsTheEnvironment runs in a child process: terminfo's entry cache is process-global.
 func TestTruecolorTermFollowsTheEnvironment(t *testing.T) {
 	if os.Getenv("SMARTVIEW_TRUECOLOR_CHILD") == "1" {
 		fmt.Printf("verdict:%v\n", truecolorTerm("xterm-256color"))

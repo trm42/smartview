@@ -11,11 +11,7 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// TestFixtureStandbyDriveRendersAsleep drives the whole stack the way the
-// --fixtures build does: real Scan/Info through the fixture source, into the
-// real poll path. A pty capture cannot answer this, because terminals emit
-// incremental diffs and the stale text of an earlier frame survives in the
-// byte stream.
+// TestFixtureStandbyDriveRendersAsleep drives real Scan/Info through the fixture source into the poll path.
 func TestFixtureStandbyDriveRendersAsleep(t *testing.T) {
 	if err := smart.UseFixtures("../smart/testdata"); err != nil {
 		t.Fatal(err)

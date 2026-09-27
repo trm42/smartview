@@ -9,11 +9,7 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// TestPollRepaintsTheDriveList is the regression that made the whole wide
-// layout lie: the rows carry the health glyph, model, capacity and
-// temperature, so a poll that folds reports into App state without
-// repopulating the list leaves every drive on "scanning…" for the session.
-// The narrow rail hides it, because showDevice redraws that one.
+// TestPollRepaintsTheDriveList: a poll must repopulate the list, or every row stays on "scanning…".
 func TestPollRepaintsTheDriveList(t *testing.T) {
 	a, _ := newSimApp(t, 120, 40)
 	const dev = "/dev/sdb"

@@ -21,96 +21,67 @@ import (
 // App is the smartview terminal application.
 type App struct {
 	app *tview.Application
-	// rootPages is the application root: the main layout on one page, a modal
-	// on a second one above it. A modal used to replace the root outright,
-	// which blanked the app behind it — including the Settings modal, whose
-	// own help line says the theme key cycles the palette live.
+	// rootPages holds the main layout on pageMain and any modal on pageModal above it.
 	rootPages *tview.Pages
-	root      *tview.Flex // main layout, the page under any modal
+	root      *tview.Flex
 	list      *tview.List
 	detail    *detail
-	// status, banner and the rail below carry no key binding, so they decline
-	// the mouse rather than let a click strand focus on them (inertTextView).
+	// Inert: no key binding, so a click must not strand focus on them.
 	status *inertTextView
 	banner *inertTextView
 
-	// bodyPages swaps the body between the per-drive view and the fleet
-	// comparison; it sits inside root so banner/status/modals are shared.
+	// bodyPages swaps the body between the per-drive view and the fleet comparison.
 	bodyPages *tview.Pages
 	fleet     *fleetView
 
-	// rail is the narrow-layout drive selector; narrow/lastWidth make the
-	// layout swap happen only when the width crosses the breakpoint.
+	// rail is the narrow-layout drive selector.
 	rail      *inertTextView
 	body      *tview.Flex
 	narrow    bool
 	lastWidth int
 
 	interval   time.Duration
-	themeName  string // active colour theme; cycled by the 'T' key
-	startView  string // config.StartDrives/StartFleet; consulted once, in Run
+	themeName  string
+	startView  string // consulted once, in Run
 	refreshCh  chan struct{}
-	wakeCh     chan struct{}      // 'R': refresh, waking spun-down drives
-	intervalCh chan time.Duration // runtime interval changes → poll-loop ticker reset
-	// settingsHelp is the settings modal's focus-following description line.
-	// Rebuilt with the modal on every open, so it never goes stale and is not
-	// a persistent widget.
+	wakeCh     chan struct{} // refresh that wakes spun-down drives
+	intervalCh chan time.Duration
+	// settingsHelp is the settings modal's focus-following help line; rebuilt per open.
 	settingsHelp *inertTextView
 
-	// save persists the settings modal's result. Injected so the UI never
-	// touches the filesystem and tests can assert on what would be written.
-	save func(config.Config) error
-	// rootCtx is the application context; interactive smartctl calls derive
-	// from it so they are cancelled on shutdown.
+	// save persists the settings modal's result; injected so the UI never touches the filesystem.
+	save    func(config.Config) error
 	rootCtx context.Context
 
-	// refreshing and standbyAware cross the poll goroutine, hence atomic —
-	// the only fields that do; the maps below stay event-loop-only.
-	refreshing atomic.Bool
-	// standbyAware is read by the poll goroutine when it picks the power
-	// policy, and written on the event loop when Settings applies.
+	// refreshing and standbyAware cross the poll goroutine, hence atomic.
+	refreshing   atomic.Bool
 	standbyAware atomic.Bool
-	spinFrame    int // animation frame; mutated only inside QueueUpdateDraw
+	spinFrame    int
 
-	// All fields below are touched only on the main (event-loop) goroutine,
-	// either directly or inside QueueUpdateDraw callbacks, so need no locking.
-	// One carve-out like refreshing above: devices is written once in Run,
-	// before the poll goroutine is started, and only read afterwards — so the
-	// poll loop may range over it off the event loop without synchronisation.
+	// Event-loop only, except devices: written once in Run before the poll goroutine starts.
 	devices []smart.Device
 	reports map[string]*smart.Report
 	history map[string][]float64 // runtime temperature series per device
-	// asleep and lastRead back the standby marks: which drives smartctl
-	// declined to wake, and when reports[name] was actually read.
+	// asleep: drives smartctl declined to wake; lastRead: when reports[name] was read.
 	asleep   map[string]bool
 	lastRead map[string]time.Time
-	// startedTests remembers, per device, the self-test type smartview itself
-	// started. The drive reports a running test's progress but never its type
-	// (ATA's status string is "in progress, N% remaining"), so this is the only
-	// source for the Tests tab's time estimate — a test smartview did not start
-	// stays absent and gets none. Entries age out in observeSelfTest.
+	// startedTests is the self-test type smartview started per device; drives never report it. Aged out in observeSelfTest.
 	startedTests map[string]startedTest
-	// sharedModels marks the model names more than one attached drive reports,
-	// so the list can disambiguate those rows. Rebuilt with the list.
+	// sharedModels marks model names more than one drive reports; rebuilt with the list.
 	sharedModels map[string]bool
-	inModal      bool // true while a modal overlay is shown
-	fleetMode    bool // true while the fleet comparison is on screen
+	inModal      bool
+	fleetMode    bool
 
-	// bannerShown: the root-warning banner is in the layout. Its text is set
-	// once at build, so theme cycles must call refreshBanner explicitly.
+	// bannerShown: its text is set once, so theme cycles must call refreshBanner.
 	bannerShown bool
 }
 
-// maxHistory bounds the temperature ring buffer backing the NVMe sparkline
-// (~60 min at the default 30s poll; a rough trend, not a fixed-time axis).
+// maxHistory bounds the NVMe temperature ring buffer (~60 min at 30s).
 const maxHistory = 120
 
-// spinnerInterval is the refresh spinner animation cadence.
 const spinnerInterval = 120 * time.Millisecond
 
-// New constructs the application from validated settings (main runs
-// config.Validate); the theme installs before build so widgets get its
-// colours. save persists what the settings modal produces.
+// New constructs the application from validated settings; save persists what the settings modal produces.
 func New(cfg config.Config, save func(config.Config) error) *App {
 	setTheme(themes[cfg.Theme])
 	a := &App{
@@ -140,8 +111,7 @@ func New(cfg config.Config, save func(config.Config) error) *App {
 	return a
 }
 
-// applyStartView opens the screen start_view names. It runs once, from Run:
-// afterwards the 'c' key owns which screen is up.
+// applyStartView opens the screen start_view names; runs once, from Run.
 func (a *App) applyStartView() {
 	if a.startView == config.StartFleet && !a.fleetMode {
 		a.toggleFleet()
@@ -187,7 +157,7 @@ func (a *App) build() {
 		cancel:  a.onSelfTestCancel,
 		started: a.selfTestStarted,
 	}
-	a.detail.onTabClick = a.openTab
+	a.detail.bar.onClick = a.openTab
 
 	a.root = root
 	a.rootPages = tview.NewPages().AddPage(pageMain, root, true, true)
@@ -195,9 +165,7 @@ func (a *App) build() {
 	a.app.SetInputCapture(a.onKey)
 	// Width is only known at draw time, so the layout choice lives here.
 	a.app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
-		// tview clears the screen with its default style before this hook runs,
-		// so SetStyle alone would first show one frame of the old ground, and a
-		// non-fullscreen modal root leaves the cleared area unpainted.
+		// tview has already cleared with its default style; SetStyle alone shows one frame of the old ground.
 		ground := tcell.StyleDefault.Background(activeTheme.Background)
 		screen.SetStyle(ground)
 		screen.Fill(' ', ground)
@@ -208,31 +176,21 @@ func (a *App) build() {
 		}
 		return false
 	})
-	// The drive list is the initial focus; accent its border from the start.
 	a.refreshFocusChrome()
 }
 
-// narrowBreakpoint is the width below which the drive list and the detail
-// pane cannot both be useful.
+// narrowBreakpoint is the width below which list and detail cannot both be useful.
 const narrowBreakpoint = 100
 
-// setNarrow switches between the two-pane and narrow layouts when the choice
-// changed. Runs on the event-loop goroutine (from the draw hook).
+// setNarrow switches layouts when the choice changed; runs from the draw hook.
 func (a *App) setNarrow(narrow bool) {
-	if narrow == a.narrow && a.body.GetItemCount() > 0 {
+	if narrow == a.narrow {
 		return
 	}
 	a.applyLayout(narrow)
-	a.refreshBanner()
 	a.refreshChrome()
-	// The list is not in the narrow layout, so focus cannot rest on it there:
-	// tview would then forward no key to anything, since the focused primitive
-	// is off-tree. The move has to be queued rather than done here — setNarrow
-	// runs from the before-draw hook, which tview calls with the application
-	// mutex held, and SetFocus takes that same (non-reentrant) mutex. Calling it
-	// inline self-deadlocks the event loop on the very first draw. The goroutine
-	// is required too: QueueUpdate blocks until the event loop runs the closure,
-	// which cannot happen until this draw returns.
+	// The list is off-tree when narrow. SetFocus would deadlock inside the draw
+	// hook (mutex held), and QueueUpdate blocks until the draw returns, hence the goroutine.
 	if narrow && a.list.HasFocus() {
 		go a.app.QueueUpdateDraw(a.focusDetail)
 	}
@@ -257,10 +215,7 @@ func (a *App) applyLayout(narrow bool) {
 // driveListWidth is the drive list's fixed column width in the wide layout.
 const driveListWidth = 38
 
-// alertCount is how many drives are not healthy. The rail has always shown
-// this; the wide layout, with far more room, showed nothing — so the layout
-// with the least space was the only one answering "is anything wrong?"
-// without reading every row.
+// alertCount is how many drives are not healthy.
 func (a *App) alertCount() int {
 	n := 0
 	for _, d := range a.devices {
@@ -271,8 +226,7 @@ func (a *App) alertCount() int {
 	return n
 }
 
-// driveListTitle is the wide layout's list title, carrying the same attention
-// and standby counts the narrow rail ends with.
+// driveListTitle is the wide list's title, carrying the rail's attention and standby counts.
 func (a *App) driveListTitle() string {
 	title := " Drives "
 	if n := a.alertCount(); n > 0 {
@@ -295,16 +249,14 @@ func (a *App) asleepCount() int {
 	return n
 }
 
-// renderRail draws the narrow drive selector: one row of severity glyphs and
-// short names, the drive at cur highlighted, plus an attention count. cur is
-// passed in because the list's changed-func runs before the new index is stored.
+// renderRail draws the narrow drive selector with the drive at cur highlighted.
+// cur is passed in because the list's changed-func runs before the new index is stored.
 func (a *App) renderRail(cur int) {
 	if !a.narrow {
 		return
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%sDrives[-] ", mutedTag())
-	alerts := 0
 	for i, d := range a.devices {
 		name := railName(d)
 		rep, ok := a.reports[d.Name]
@@ -313,9 +265,6 @@ func (a *App) renderRail(cur int) {
 			continue
 		}
 		sev := rep.Overall()
-		if sev != smart.SeverityOK {
-			alerts++
-		}
 		if i == cur {
 			// The ▸ marker keeps the selection visible under mono.
 			fmt.Fprintf(&b, " %s▸%s %s[-:-:-]",
@@ -324,11 +273,10 @@ func (a *App) renderRail(cur int) {
 		}
 		fmt.Fprintf(&b, "  %s %s", healthGlyph(sev), esc(name))
 	}
-	if alerts > 0 {
-		fmt.Fprintf(&b, "  %s▲ %d[-]", cautionTag(), alerts)
+	if n := a.alertCount(); n > 0 {
+		fmt.Fprintf(&b, "  %s▲ %d[-]", cautionTag(), n)
 	}
-	// The rail has no room for a per-drive mark at railDeviceWidth, so the
-	// standby drives are counted instead.
+	// No room for a per-drive standby mark, so count them.
 	if n := a.asleepCount(); n > 0 {
 		fmt.Fprintf(&b, "  %s%s %d[-]", mutedTag(), standbyGlyph, n)
 	}
@@ -344,16 +292,13 @@ func railName(d smart.Device) string {
 // railDeviceWidth bounds a name on the rail.
 const railDeviceWidth = 10
 
-// statusText renders the bottom key-hint bar: global keys, then a context
-// segment for the focused tab, then the refresh cadence.
+// statusText renders the bottom key-hint bar: global keys, the focused tab's
+// keys, then the theme and cadence.
 func (a *App) statusText() string {
 	aq := accentTag()
 	// Narrow terminals get a deliberately shorter bar, never a truncated one.
 	if a.narrow {
-		hint := aq + "↑/↓[-] drive   " + aq + "←/→[-] nav"
-		if n := a.detail.tabCount(); n >= 2 {
-			hint += fmt.Sprintf("   %s1-%d[-] tab", aq, n)
-		}
+		hint := a.driveNavHints()
 		if a.fleetMode {
 			hint = aq + "↑/↓[-] drive   " + aq + "←/→[-] section"
 		}
@@ -365,21 +310,22 @@ func (a *App) statusText() string {
 	if a.fleetMode {
 		hint = a.fleetHints()
 	} else {
-		hint = aq + "↑/↓[-] drive   " + aq + "←/→[-] nav"
-		if n := a.detail.tabCount(); n >= 2 {
-			hint += fmt.Sprintf("   %s1-%d[-] tab", aq, n)
-		}
-		hint += "   " + aq + "Tab[-] focus   " + aq + "c[-] compare   " +
+		hint = a.driveNavHints() + "   " + aq + "Tab[-] focus   " + aq + "c[-] compare   " +
 			aq + "r[-] refresh   " + aq + "q[-] quit"
 		hint += a.contextHints()
 	}
 	hint += "   " + aq + "+/-[-] rate   " + aq + "T[-] theme   " + aq + "S[-] settings"
-	// The summary is the two settings that already have keys, so it says what
-	// they are set to and lets +/- and T say what changes them. Spelling out
-	// "refresh every" restated the rate key and cost 14 columns on a bar that
-	// is already wider than the 100-column breakpoint it appears at; dropping
-	// it is what pays for the S key.
 	return hint + fmt.Sprintf("      %s · %s", a.themeName, a.interval)
+}
+
+// driveNavHints is the drive/nav/tab prefix of the per-drive hint bar.
+func (a *App) driveNavHints() string {
+	aq := accentTag()
+	hint := aq + "↑/↓[-] drive   " + aq + "←/→[-] nav"
+	if n := a.detail.tabCount(); n >= 2 {
+		hint += fmt.Sprintf("   %s1-%d[-] tab", aq, n)
+	}
+	return hint
 }
 
 // fleetHints is the fleet comparison's key-hint bar, swapped in wholesale.
@@ -402,10 +348,7 @@ func (a *App) contextHints() string {
 	aq := accentTag()
 	switch a.detail.activeID() {
 	case "attributes":
-		// Keyed on the live view, not the tab id: both protocols use the id
-		// "attributes", but only the ATA table binds s/f. The NVMe health view
-		// installs no input capture, so those keys fall through to onKey and are
-		// dropped — advertising a binding that does nothing is worse than silence.
+		// Both protocols use this id, but only the ATA table binds s/f.
 		if _, ok := a.detail.activeView().(*attributesView); !ok {
 			return ""
 		}
@@ -426,8 +369,7 @@ func (a *App) refreshChrome() {
 	a.status.SetText(a.statusText())
 }
 
-// refreshFocusChrome accents the focused pane's border and dims the other.
-// Must be called after focus has actually moved.
+// refreshFocusChrome accents the focused pane's border; call after focus has moved.
 func (a *App) refreshFocusChrome() {
 	a.fleet.setFocused(a.fleetMode)
 	if a.fleetMode {
@@ -440,8 +382,7 @@ func (a *App) refreshFocusChrome() {
 	a.detail.setContentFocus(!listFocused)
 }
 
-// refreshBanner re-renders the root-warning banner in the active theme — its
-// text is set once at build, so theme cycles would otherwise miss it.
+// refreshBanner re-renders the root-warning banner in the active theme.
 func (a *App) refreshBanner() {
 	if !a.bannerShown {
 		return
@@ -456,31 +397,24 @@ func (a *App) refreshBanner() {
 	a.banner.SetText(fgbgTag(activeTheme.Inverse, activeTheme.BannerBg) + text + "[-:-]")
 }
 
-// cycleTheme advances to the next theme and repaints. Runs on the UI
-// goroutine (from onKey), so no QueueUpdateDraw is needed.
+// cycleTheme advances to the next theme and repaints.
 func (a *App) cycleTheme() {
 	a.themeName = nextThemeName(a.themeName)
 	setTheme(themes[a.themeName])
 	a.repaintAll()
 }
 
-// repaintAll re-applies the theme everywhere colour was baked in at build
-// time: force a detail rebuild, then re-render list, fleet, chrome and
-// banner. Trade-off: the rebuild resets Attributes selection/scroll.
+// repaintAll re-applies the theme everywhere colour was baked in; the detail
+// rebuild resets Attributes selection and scroll.
 func (a *App) repaintAll() {
 	a.rebuildDetail()
 	styleList(a.list)
 	a.populateList()
-	// Widgets built once are not recreated by the rebuild, so they keep the
-	// ground tview baked in at construction until they are told again.
 	rethemeTree(a.rootPages)
-	// The off-tree half: applyLayout mounts the list or the rail, never both, so
-	// the walk above can only have reached one of them, and build() mounts the
-	// banner only when we are not root.
+	// rethemeTree reaches only mounted widgets; the list/rail and banner may be off-tree.
 	applyBackground(a.list, a.rail, a.banner)
-	// Default ink, for the chrome whose text is not all tagged markup.
 	applyTextColor(a.status, a.rail, a.banner)
-	// The fleet table bakes a colour into every cell, same miss as the banner.
+	// The fleet table bakes a colour into every cell.
 	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep)
 	a.refreshChrome()
 	a.refreshBanner()
@@ -499,17 +433,12 @@ func (a *App) showSelected() { a.showDevice(a.list.GetCurrentItem()) }
 
 // showDevice renders the cached report for the drive at index i.
 func (a *App) showDevice(i int) {
-	// The rail is the narrow layout's drive list, and the selection marker it
-	// carries has to follow the selection like the list's highlight does.
 	a.renderRail(i)
 	if i < 0 || i >= len(a.devices) {
 		return
 	}
 	dev := a.devices[i]
 	if rep, ok := a.reports[dev.Name]; ok {
-		// The note dates values that are on screen. With none, there is nothing
-		// to caveat and the placeholder below says it all — setting both put the
-		// same sentence on the panel twice.
 		a.detail.setNote(a.standbyNote(dev.Name))
 		a.observeSelfTest(dev.Name, rep)
 		a.detail.update(rep, a.history[dev.Name])
@@ -517,8 +446,6 @@ func (a *App) showDevice(i int) {
 	}
 	a.detail.setNote("")
 	if a.asleep[dev.Name] {
-		// Never read and spun down: say so and name the way out, rather than
-		// sit on "Loading…" for a drive that will never answer on its own.
 		a.detail.showPlaceholder(dev.Name + " is spun down.\n\n" +
 			"Press R to wake it and read, or turn off standby_aware in Settings.")
 		return
@@ -535,15 +462,11 @@ func (a *App) selectedDevice() (smart.Device, bool) {
 	return a.devices[i], true
 }
 
-// populateList fills the drive list from cached reports. Existing rows are
-// updated in place with SetItemText: Clear()+AddItem() fires SetChangedFunc,
-// which would flip the detail to another drive and back, rebuilding every tab.
+// populateList fills the drive list from cached reports, updating rows in
+// place: Clear()+AddItem() fires the changed-func and rebuilds every tab.
 func (a *App) populateList() {
 	a.sharedModels = a.duplicateModels()
-	// The rail renders the same rows in one line, so it is repainted wherever
-	// the list is — otherwise its glyphs, alert count and theme colours freeze
-	// at the moment the narrow layout was installed. No-op when not narrow.
-	// The wide layout's counts live in the box title and go stale the same way.
+	// The rail and the list title go stale with the rows; repaint both.
 	defer func() {
 		a.renderRail(a.list.GetCurrentItem())
 		a.list.SetTitle(a.driveListTitle())
@@ -566,9 +489,7 @@ func (a *App) populateList() {
 	}
 }
 
-// duplicateModels reports which model names are shared by more than one of the
-// drives currently reporting. The empty name is never shared: a drive with no
-// model falls back to its device name already.
+// duplicateModels reports which non-empty model names more than one reporting drive shares.
 func (a *App) duplicateModels() map[string]bool {
 	seen, dup := map[string]bool{}, map[string]bool{}
 	for _, d := range a.devices {
@@ -584,9 +505,7 @@ func (a *App) duplicateModels() map[string]bool {
 	return dup
 }
 
-// standbyGlyph marks a drive smartctl declined to wake. Like the ~ on an
-// approximate write total, it is a glyph plus a legend rather than a silent
-// substitution: the values beside it are real, just not current.
+// standbyGlyph marks a drive smartctl declined to wake: its values are real but not current.
 const standbyGlyph = "◌"
 
 // standbyMark returns the standby prefix for a drive, or "" when it is awake.
@@ -621,23 +540,16 @@ func (a *App) listRow(d smart.Device) (string, string) {
 		}
 		return fmt.Sprintf("%s●[-] %s", mutedTag(), esc(shortName(d))), sec
 	}
-	// Model and device name are drive-controlled; esc() blocks markup injection.
 	model := esc(rep.ModelName)
 	if rep.ModelName == "" {
 		model = esc(shortName(d))
 	}
 	main := fmt.Sprintf("%s %s", healthGlyph(rep.Overall()), model)
-	// A matched set is the normal case for this tool, and there the model is
-	// the same string on every row while the one thing that tells them apart
-	// sits in the muted secondary line. Name the device on the main line when
-	// the model does not identify the drive on its own.
+	// Identical models are common; name the device when the model alone is ambiguous.
 	if a.sharedModels[rep.ModelName] {
 		main += mutedTag() + " · " + esc(railName(d)) + "[-]"
 	}
-	// Temperature goes last: tempCell ends with a style reset that would drop
-	// the secondary colour for anything after it. The standby mark therefore
-	// goes first, and the health glyph is deliberately left undimmed: a
-	// failing drive must not lose its colour for being asleep.
+	// tempCell ends with a style reset, so the temperature goes last; the health glyph stays undimmed while asleep.
 	sec := fmt.Sprintf("%s%s · %s · %s",
 		a.standbyMark(d.Name), esc(shortName(d)), capacityString(rep), tempCell(rep))
 	return main, sec
@@ -668,8 +580,6 @@ func (a *App) Run(ctx context.Context) error {
 	return a.app.Run()
 }
 
-// spinnerFrames are single-width braille glyphs; swap for ASCII (`|/-\`) if a
-// target terminal can't render braille.
 var spinnerFrames = []rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
 
 // renderSpinner paints the top-right spinner cell; event-loop goroutine only.
@@ -682,8 +592,7 @@ func (a *App) renderSpinner() {
 	}
 }
 
-// animateSpinner advances the spinner while a refresh is underway; idle it
-// queues no redraws.
+// animateSpinner advances the spinner while a refresh is underway.
 func (a *App) animateSpinner(ctx context.Context) {
 	ticker := time.NewTicker(spinnerInterval)
 	defer ticker.Stop()
@@ -711,9 +620,8 @@ func shortName(d smart.Device) string {
 // listDeviceWidth is the display budget for a device name in the drive list.
 const listDeviceWidth = 30
 
-// shortDevice trims a device name to n runes — display only; names stay
-// verbatim everywhere else. Whole trailing path components are kept, since a
-// character cut makes every macOS IOService path look alike.
+// shortDevice trims a device name to n runes for display, keeping whole
+// trailing path components since a character cut makes IOService paths look alike.
 func shortDevice(name string, n int) string {
 	if len([]rune(name)) <= n {
 		return name

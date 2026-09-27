@@ -18,10 +18,9 @@ import (
 // verdict) beside protocol-specific gauges, plus a temperature sparkline.
 type overviewView struct {
 	*tview.Flex
-	identity *scrollTextView // the drive panel; scrolls (with arrows) when tall
+	identity *scrollTextView
 
-	// Width-aware lazy relayout, same pattern as farm.go: the column count
-	// depends on the width, known only at draw time. lastWidth -1 forces a rebuild.
+	// lastWidth -1 forces a relayout at the next Draw.
 	rep       *smart.Report
 	gauges    tview.Primitive
 	chart     tview.Primitive
@@ -49,7 +48,7 @@ func (v *overviewView) refresh(r *smart.Report, tempHistory []float64) {
 	v.rep = r
 	v.gauges = buildGauges(r)
 	v.chart = buildTempSparkline(r, tempHistory)
-	v.lastWidth = -1 // data changed: reformat and relayout at the current width
+	v.lastWidth = -1
 }
 
 // relayout rebuilds the tab for a panel width of w: the identity box is sized
@@ -59,7 +58,7 @@ func (v *overviewView) relayout(w, h int) {
 	v.identity.setTextKeepingScroll(text)
 
 	v.Clear()
-	mid := tview.NewFlex() // horizontal: identity | gauges
+	mid := tview.NewFlex()
 	mid.AddItem(v.identity, 0, 2, true)
 	if v.gauges != nil {
 		mid.AddItem(v.gauges, gaugeColumnWidth, 0, false)
@@ -93,12 +92,10 @@ const (
 // rows, axis, caption.
 const chartMinRows = 7
 
-// Draw reformats the identity panel when the width changed (or a refresh
-// invalidated it); width is only known here.
+// Draw reformats the identity panel when the width changed or a refresh invalidated it.
 func (v *overviewView) Draw(screen tcell.Screen) {
 	if _, _, w, h := v.GetInnerRect(); w != v.lastWidth && v.rep != nil {
-		// The panel's own width, once the gauges have taken their column.
-		panelW := w - 2 - 2*uiGutter
+		panelW := boxInner(w)
 		if v.gauges != nil {
 			panelW -= gaugeColumnWidth
 		}
@@ -108,7 +105,7 @@ func (v *overviewView) Draw(screen tcell.Screen) {
 	v.Flex.Draw(screen)
 }
 
-// setFocused accents the identity panel's border (the tab's one focusable element).
+// setFocused accents the identity panel's border.
 func (v *overviewView) setFocused(focused bool) {
 	v.identity.SetBorderColor(borderColor(focused))
 }
@@ -134,9 +131,7 @@ type identitySection struct {
 	fields []identityField
 }
 
-// identityText renders the identity/wear panel for a width of cols cells,
-// packing two columns when there is room. Every field is gated on presence so
-// a sparse drive degrades gracefully.
+// identityText renders the identity/wear panel for cols cells, packing two columns when there is room.
 func identityText(r *smart.Report, cols int) string {
 	var b strings.Builder
 	writeVerdict(&b, r)
@@ -145,8 +140,6 @@ func identityText(r *smart.Report, cols int) string {
 			continue
 		}
 		b.WriteByte('\n')
-		// Accented, not bold like sectionHeader: these are sub-headings inside
-		// the one Drive panel, not top-level sections of their own.
 		fmt.Fprintf(&b, "%s%s[-]\n", accentTag(), sec.title)
 		writeFields(&b, sec.fields, cols)
 	}
@@ -160,21 +153,14 @@ const identityColumnWidth = 40
 // identityValueCol is the column values start in: a 14-cell key plus a space.
 const identityValueCol = 15
 
-// identityWrap: the Device row carries a 150-character macOS IOService path,
-// which WordWrap hard-splits when it has no break opportunity — below a
-// nine-cell value column that blows up the line count the panel is sized from,
-// so the text is left alone instead.
+// identityWrap stops at nine cells: WordWrap hard-splits an unbreakable IOService path and the panel is sized from its line count.
 var identityWrap = hangingWrap{valueCol: identityValueCol, minValueW: 9}
 
 // writeFields lays out fields in as many columns as fit; a value too long for
 // a column takes a full row of its own after the paired ones.
 func writeFields(b *strings.Builder, fields []identityField, cols int) {
 	line := func(f identityField, width int) {
-		if width <= 0 {
-			fmt.Fprintf(b, "[::b]%-14s[-:-:-] %s", f.k, f.v)
-			return
-		}
-		fmt.Fprintf(b, "[::b]%-14s[-:-:-] %-*s", f.k, width, f.v)
+		fmt.Fprintf(b, "[::b]%-*s[-:-:-] %-*s", identityValueCol-1, f.k, width, f.v)
 	}
 	if cols < 2*identityColumnWidth {
 		for _, f := range fields {
@@ -184,7 +170,7 @@ func writeFields(b *strings.Builder, fields []identityField, cols int) {
 		return
 	}
 
-	valueWidth := identityColumnWidth - 15
+	valueWidth := identityColumnWidth - identityValueCol
 	var narrow, wide []identityField
 	for _, f := range fields {
 		if tview.TaggedStringWidth(f.v) > valueWidth {
@@ -248,8 +234,7 @@ func verdictEvidence(r *smart.Report) string {
 		case n == 0:
 			parts = append(parts, "error log empty")
 		case r.IsNVMe():
-			// NVMe entries accumulate benignly (see logSeverity), so state a
-			// count rather than a fault.
+			// NVMe entries accumulate benignly, so state a count rather than a fault.
 			parts = append(parts, fmt.Sprintf("%d error-log entries", n))
 		default:
 			parts = append(parts, fmt.Sprintf("%s logged", plural(n, "error", "errors")))
@@ -263,7 +248,6 @@ func verdictEvidence(r *smart.Report) string {
 
 // identitySections groups the panel's fields.
 func identitySections(r *smart.Report) []identitySection {
-	// Free-text fields are drive-controlled; esc() blocks markup injection.
 	id := identitySection{title: "Identity"}
 	add := func(sec *identitySection, k, v string) {
 		sec.fields = append(sec.fields, identityField{k, v})
@@ -290,8 +274,7 @@ func identitySections(r *smart.Report) []identitySection {
 	if r.NVMePCIVendor != nil {
 		add(&id, "PCI vendor", fmt.Sprintf("0x%04x", r.NVMePCIVendor.ID))
 	}
-	// The one surface showing the untrimmed device name; last because a macOS
-	// IOService path wraps to several lines.
+	// The untrimmed device name goes last: an IOService path wraps to several lines.
 	add(&id, "Device", esc(r.Device.Name))
 
 	geom := identitySection{title: "Capacity & geometry"}
@@ -323,8 +306,7 @@ func identitySections(r *smart.Report) []identitySection {
 		add(&wear, "Power cycles", fmt.Sprintf("%d", n))
 	}
 	if h := r.NVMeHealth; h != nil {
-		// The gauges beside the panel already show the standard fields; only
-		// the fallback sources need a row here.
+		// The gauges show the standard fields; only fallback sources need a row.
 		if h.PercentageUsed == nil {
 			if pct, ok := r.LifeUsedPercent(); ok {
 				add(&wear, "Life used", fmt.Sprintf("%d%%", pct))
@@ -387,8 +369,7 @@ func buildGauges(r *smart.Report) tview.Primitive {
 	}
 	h := r.NVMeHealth
 	col := tview.NewFlex().SetDirection(tview.FlexRow)
-	// shown and graded are separate: a gauge can read "90% left" while being
-	// coloured by the 10% consumed behind it.
+	// shown and graded differ: "90% left" is coloured by the 10% consumed.
 	addGauge := func(title string, shown int, graded smart.Severity) {
 		g := tvxwidgets.NewPercentageModeGauge()
 		g.SetTitle(title)
@@ -400,15 +381,10 @@ func buildGauges(r *smart.Report) tview.Primitive {
 	}
 
 	if h.PercentageUsed != nil {
-		// Endurance remaining, not consumed: the fleet's endurance bar drains as
-		// the drive wears, and two surfaces showing the same reading with
-		// opposite polarity read as a contradiction. Colour comes from the value
-		// itself, not the drive-wide verdict.
+		// Remaining endurance, so it fills toward healthy like the fleet bar.
 		addGauge(" Life left ", 100-clampPct(*h.PercentageUsed), lifeUsedSeverity(*h.PercentageUsed))
 	}
 	if h.AvailableSpare != nil {
-		// SparePercent resolves both the reading and the threshold it is graded
-		// against; re-deriving either here is how the two surfaces drift apart.
 		pct, thr, _ := r.SparePercent()
 		addGauge(" Spare avail ", pct, spareSeverityPct(pct, thr))
 	}
@@ -427,10 +403,8 @@ func lifeUsedSeverity(pct int) smart.Severity {
 	return smart.PctUsedSeverity(pct)
 }
 
-// spareSeverityPct grades available spare against the drive's own depletion
-// threshold: failing once spare has fallen to it, caution as it approaches.
-// It takes the pair SparePercent resolved rather than re-reading NVMeHealth,
-// which may be nil even when spare is reported.
+// spareSeverityPct grades spare against the drive's depletion threshold; it
+// takes the pair SparePercent resolved, since NVMeHealth may be nil when spare is reported.
 func spareSeverityPct(pct, threshold int) smart.Severity {
 	switch {
 	case pct <= threshold:
@@ -443,8 +417,7 @@ func spareSeverityPct(pct, threshold int) smart.Severity {
 }
 
 // buildTempSparkline returns a temperature trend widget: ATA seeds from the
-// SCT history, NVMe from the runtime series. Uses rangeChart, not
-// tvxwidgets.Sparkline, which scales against zero (see chart.go).
+// SCT history, NVMe from the runtime series.
 func buildTempSparkline(r *smart.Report, runtime []float64) tview.Primitive {
 	data := temperatureSeries(r, runtime)
 	if len(data) < 2 {
@@ -453,16 +426,14 @@ func buildTempSparkline(r *smart.Report, runtime []float64) tview.Primitive {
 	now := int(data[len(data)-1])
 	lo, hi, _ := dataRange(data)
 
-	// Colour by the current temperature, not the drive-wide verdict, and only
-	// once it leaves the band: a filled area painted OK green would make every
-	// healthy drive's Overview a wall of green (same rule as the FARM bars).
+	// Graded on the current temperature, and only once it leaves the band.
 	color := activeTheme.BarHealthy
 	if sev := tempSeverity(now); sev != smart.SeverityOK {
 		color = severityColor(sev)
 	}
 
 	c := newRangeChart().
-		setSeries(data, "°C", fmt.Sprintf("%d samples · oldest left, now right", len(data))).
+		setSeries(data, fmt.Sprintf("%d samples · oldest left, now right", len(data))).
 		setColor(color)
 	c.SetBorder(true)
 	c.SetTitle(fmt.Sprintf(" Temperature — now %d°C · range %.0f–%.0f°C ", now, lo, hi))

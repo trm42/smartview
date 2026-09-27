@@ -16,36 +16,29 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// testTimeout bounds every wait in this file. The narrow-layout bugs these tests
-// guard against hang the event loop rather than failing it, so nothing here may
-// wait forever: a regression has to fail loudly instead of stalling CI.
+// testTimeout bounds every wait: the bugs guarded here hang the event loop rather than fail.
 const testTimeout = 5 * time.Second
 
-// newSimApp builds an App backed by a tcell simulation screen of the given size.
-// It deliberately skips Run: Run's initial smart.Scan shells out to smartctl,
-// and the layout branch under test depends only on the terminal width.
+// newSimApp builds an App on a simulation screen, skipping Run, whose smart.Scan shells out.
 func newSimApp(t *testing.T, width, height int) (*App, tcell.SimulationScreen) {
 	t.Helper()
 	a, screen := newSimAppCfg(t, width, height, config.Default())
 	return a, screen
 }
 
-// newSimAppCfg is newSimApp with explicit settings. The saver only records:
-// no test may write a config file.
+// newSimAppCfg is newSimApp with explicit settings; no test may write a config file.
 func newSimAppCfg(t *testing.T, width, height int, cfg config.Config) (*App, tcell.SimulationScreen) {
 	t.Helper()
 	a := New(cfg, func(config.Config) error { return nil })
 	// New installs the theme globally; put it back so test order cannot matter.
 	t.Cleanup(func() { setTheme(themes["dark"]) })
 	screen := tcell.NewSimulationScreen("UTF-8")
-	a.app.SetScreen(screen) // SetScreen initialises the screen itself
+	a.app.SetScreen(screen)
 	screen.SetSize(width, height)
 	return a, screen
 }
 
-// runSim starts the event loop and waits for one complete draw, which is what
-// tells us the before-draw hook returned. It registers a cleanup that quits the
-// application and waits for Run to return.
+// runSim starts the event loop and waits for one complete draw; cleanup quits and waits for Run.
 func runSim(t *testing.T, a *App, screen tcell.SimulationScreen) {
 	t.Helper()
 	drawn := make(chan struct{}, 1)
@@ -80,13 +73,11 @@ func runSim(t *testing.T, a *App, screen tcell.SimulationScreen) {
 func widthOf(s tcell.SimulationScreen) int  { w, _ := s.Size(); return w }
 func heightOf(s tcell.SimulationScreen) int { _, h := s.Size(); return h }
 
-// onLoop runs fn on the event-loop goroutine and returns its result, so widget
-// state is read where every other read of it happens.
+// onLoop runs fn on the event-loop goroutine and returns its result.
 func onLoop[T any](t *testing.T, a *App, fn func() T) T {
 	t.Helper()
 	out := make(chan T, 1)
-	// QueueUpdateDraw blocks until the event loop runs the closure, so it has to
-	// be queued from a goroutine of its own.
+	// QueueUpdateDraw blocks until the loop runs the closure, so queue it from a goroutine.
 	go a.app.QueueUpdateDraw(func() { out <- fn() })
 	select {
 	case v := <-out:
@@ -98,10 +89,8 @@ func onLoop[T any](t *testing.T, a *App, fn func() T) T {
 	}
 }
 
-// TestNarrowStartupDrawsAndQuits is the regression test for the startup
-// deadlock: below narrowBreakpoint the before-draw hook switched layouts and
-// called Application.SetFocus, which takes the mutex draw() already holds, so
-// the first draw never returned and only SIGKILL ended the process.
+// TestNarrowStartupDrawsAndQuits: below narrowBreakpoint the draw hook must not
+// call SetFocus, which takes the mutex draw() already holds.
 func TestNarrowStartupDrawsAndQuits(t *testing.T) {
 	a, screen := newSimApp(t, 80, 30)
 	runSim(t, a, screen)
@@ -169,9 +158,8 @@ func TestNarrowLayoutOmitsDriveList(t *testing.T) {
 	}
 }
 
-// TestNarrowFocusStaysInTree covers the three call sites that used to focus the
-// off-tree drive list below the breakpoint. Each must leave focus somewhere the
-// root can still reach, or the application stops responding to keys entirely.
+// TestNarrowFocusStaysInTree: below the breakpoint no call site may focus the
+// off-tree drive list, or the application stops responding to keys.
 func TestNarrowFocusStaysInTree(t *testing.T) {
 	moves := []struct {
 		name string
@@ -235,9 +223,7 @@ func TestNarrowArrowsStepDrives(t *testing.T) {
 	}
 }
 
-// TestRailRepaintsAfterUpdate guards the rail's staleness bug: it was rendered
-// once by applyLayout and never again, so severity glyphs, the alert count and
-// the theme colours froze at the moment the narrow layout was installed.
+// TestRailRepaintsAfterUpdate: the rail must repaint with the list and the theme.
 func TestRailRepaintsAfterUpdate(t *testing.T) {
 	a, _ := newSimApp(t, 80, 30)
 	a.devices = []smart.Device{{Name: "/dev/sda"}}
@@ -264,15 +250,9 @@ func TestRailRepaintsAfterUpdate(t *testing.T) {
 	}
 }
 
-// TestThemeCycleRegroundsPersistentWidgets guards the same class of miss
-// CLAUDE.md names for the banner: tview bakes the ground into a widget at
-// construction, and repaintAll rebuilds only the detail's tab views, so every
-// widget that outlives a theme change has to be re-grounded.
-//
-// repaintAll walks the tree for this; the list below stays hand-written on
-// purpose. If both sides derived from the walk the test would assert nothing,
-// so production walks and the test enumerates — that is what catches a widget
-// the walk cannot reach and nobody grounded (the rail, in the narrow layout).
+// TestThemeCycleRegroundsPersistentWidgets: every widget that outlives a theme
+// change must be re-grounded. The list stays hand-written on purpose: one
+// derived from the walk would assert nothing.
 func TestThemeCycleRegroundsPersistentWidgets(t *testing.T) {
 	a, _ := newSimApp(t, 120, 40)
 	for range themeCycle {
@@ -315,12 +295,8 @@ func TestThemeCycleRegroundsPersistentWidgets(t *testing.T) {
 	}
 }
 
-// The root-warning banner is mounted only when euid != 0, so under sudo it is
-// not in the widget tree at all and rethemeTree cannot reach it. Tests run
-// non-root, where it *is* mounted — which is exactly why a walk-only repaint
-// looked correct here while leaving the banner stale for anyone running under
-// sudo. Unmount it to stand in for that layout and pin that repaintAll grounds
-// it anyway. The same holds for whichever of list/rail the layout left out.
+// Off-tree widgets (the banner under sudo, whichever of list/rail is unmounted)
+// are unreachable by rethemeTree; repaintAll must ground them anyway.
 func TestThemeCycleRegroundsWidgetsTheWalkCannotReach(t *testing.T) {
 	a, _ := newSimApp(t, 120, 40)
 
@@ -361,10 +337,7 @@ func TestThemeCycleRegroundsWidgetsTheWalkCannotReach(t *testing.T) {
 	}
 }
 
-// TestThemeCycleKeepsThePlaceholderMessage: with no drives the detail holds a
-// placeholder, and repaintAll has to rebuild it in the new theme without
-// changing what it says — "No drives found" is the actionable one and nothing
-// ever sets it a second time.
+// TestThemeCycleKeepsThePlaceholderMessage: repaintAll rebuilds the placeholder without changing its text.
 func TestThemeCycleKeepsThePlaceholderMessage(t *testing.T) {
 	a, _ := newSimApp(t, 120, 40)
 	const msg = "No drives found. Try running with sudo."
@@ -385,14 +358,8 @@ func TestThemeCycleKeepsThePlaceholderMessage(t *testing.T) {
 	}
 }
 
-// TestChromeSurvivesAThemeCycle: tview bakes Styles.PrimaryTextColor and
-// Styles.TitleColor in at construction, so a widget that outlives a theme
-// change keeps the old palette's ink. The failure is partial and easy to miss
-// — markup that names its colour survives, untagged text does not — so this
-// cycles all the way onto a paper ground and asserts nothing on screen is
-// drawn too faint to read. Before applyTextColor and rethemeTree's title pass,
-// the hint bar kept its accented keys and lost every label, and the drive list
-// kept its tagged counts and lost the word "Drives".
+// TestChromeSurvivesAThemeCycle: tview bakes default ink and title colour in at
+// construction, so this cycles onto a paper ground and asserts nothing on screen is too faint.
 func TestChromeSurvivesAThemeCycle(t *testing.T) {
 	const light = "daylight" // the first light palette in themeCycle
 	const minRatio = 1.5     // stale white on paper is ~1.02; every role clears 3:1
@@ -406,8 +373,7 @@ func TestChromeSurvivesAThemeCycle(t *testing.T) {
 		if cur == light {
 			break
 		}
-		// InjectKey is asynchronous, so wait for the press to land before the
-		// next one: pressing blindly overshoots the palette we want.
+		// InjectKey is asynchronous; wait for each press to land.
 		screen.InjectKey(tcell.KeyRune, 'T', tcell.ModNone)
 		for deadline := time.Now().Add(testTimeout); theme() == cur; {
 			if time.Now().After(deadline) {
@@ -419,14 +385,8 @@ func TestChromeSurvivesAThemeCycle(t *testing.T) {
 	if got := theme(); got != light {
 		t.Fatalf("cycling with T stopped at theme %q, want %q", got, light)
 	}
-	// onLoop draws after its closure, and the loop runs queued work in order, so
-	// the second call's closure runs only once the first one's frame is on the
-	// screen. (Calling Draw inside the closure instead self-deadlocks: the
-	// queued draw already holds the lock.) Scanning the screen from inside that
-	// closure is not a convenience either: GetContents hands back the live cell
-	// array rather than a copy, so a scan on the test goroutine races every
-	// draw the loop is still doing — which is what CI caught and a local
-	// -race run did not.
+	// The second onLoop runs after the first one's frame is drawn. Scan inside
+	// the closure: GetContents returns the live cell array, so scanning elsewhere races the draw.
 	onLoop(t, a, func() any { return nil })
 	faint := onLoop(t, a, func() []string {
 		var out []string

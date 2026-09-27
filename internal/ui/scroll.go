@@ -23,8 +23,7 @@ func (c clipScreen) SetContent(x, y int, primary rune, combining []rune, style t
 }
 
 // scrollView is a borderless container that vertically scrolls one inner
-// primitive; tview has no scrollable container for arbitrary primitives, so
-// widget-composed layouts (e.g. the FARM tab) need this.
+// primitive; tview has none for arbitrary primitives.
 type scrollView struct {
 	*tview.Box
 	inner         tview.Primitive
@@ -32,14 +31,12 @@ type scrollView struct {
 	offset        int
 }
 
-// newScrollView returns an empty, borderless scroll container. Inner content
-// supplies its own borders.
+// newScrollView returns an empty, borderless scroll container.
 func newScrollView() *scrollView {
 	return &scrollView{Box: tview.NewBox()}
 }
 
-// setContent stores the inner primitive and its full height. The scroll
-// offset survives so an in-place refresh doesn't jump; Draw clamps it.
+// setContent stores the inner primitive and its full height, keeping the offset; Draw clamps it.
 func (s *scrollView) setContent(p tview.Primitive, height int) {
 	s.inner = p
 	s.contentHeight = height
@@ -50,8 +47,7 @@ func (s *scrollView) clamp(h int) {
 	s.offset = min(max(s.offset, 0), max(s.contentHeight-h, 0))
 }
 
-// Draw paints the inner primitive at the current scroll offset, clipped to the
-// viewport, with up/down arrows when there is more content off-screen.
+// Draw paints the inner primitive at the scroll offset, clipped to the viewport, with scroll arrows.
 func (s *scrollView) Draw(screen tcell.Screen) {
 	s.DrawForSubclass(screen, s)
 	x, y, w, h := s.GetInnerRect()
@@ -60,8 +56,7 @@ func (s *scrollView) Draw(screen tcell.Screen) {
 	}
 	s.clamp(h)
 
-	// Clear the viewport: the inner Flex's spacer doesn't repaint on scroll,
-	// so stale rows would linger.
+	// The inner Flex's spacer doesn't repaint on scroll, so clear the viewport.
 	ground := tcell.StyleDefault.Background(s.GetBackgroundColor())
 	for cy := y; cy < y+h; cy++ {
 		for cx := x; cx < x+w; cx++ {
@@ -77,22 +72,19 @@ func (s *scrollView) Draw(screen tcell.Screen) {
 	drawScrollArrows(screen, s, s.offset, s.contentHeight)
 }
 
-// scrollable is the geometry and ground drawScrollArrows reads off the widget
-// it overlays; every tview widget satisfies it through its Box.
+// scrollable is the geometry and ground drawScrollArrows reads off the widget it overlays.
 type scrollable interface {
 	GetInnerRect() (int, int, int, int)
 	GetBackgroundColor() tcell.Color
 }
 
-// drawScrollArrows overlays ▲/▼ at the right edge of b's inner rect when
-// content overflows — the one scroll affordance every wrapper routes through.
+// drawScrollArrows overlays ▲/▼ at the right edge of b's inner rect when content overflows.
 func drawScrollArrows(screen tcell.Screen, b scrollable, offset, contentHeight int) {
 	x, y, w, h := b.GetInnerRect()
 	if w <= 0 || h <= 0 || contentHeight <= h {
 		return
 	}
-	// SetContent replaces the cell whole, so the arrow carries the panel's own
-	// ground or it punches a terminal-default hole in it.
+	// SetContent replaces the whole cell, so the arrow carries the panel's ground.
 	arrow := tcell.StyleDefault.
 		Foreground(activeTheme.ScrollArrow).
 		Background(b.GetBackgroundColor())
@@ -104,8 +96,7 @@ func drawScrollArrows(screen tcell.Screen, b scrollable, offset, contentHeight i
 	}
 }
 
-// scrollTextView is a TextView plus the shared scroll arrows; the widget
-// already scrolls itself, this only adds the off-screen cue.
+// scrollTextView is a TextView plus the shared scroll arrows.
 type scrollTextView struct {
 	*tview.TextView
 }
@@ -114,8 +105,7 @@ func newScrollTextView() *scrollTextView {
 	return &scrollTextView{TextView: tview.NewTextView()}
 }
 
-// setTextKeepingScroll replaces the text without moving the viewport, so an
-// in-place refresh does not jump the view out from under the reader.
+// setTextKeepingScroll replaces the text without moving the viewport.
 func (s *scrollTextView) setTextKeepingScroll(text string) {
 	row, col := s.GetScrollOffset()
 	s.SetText(text)
@@ -128,8 +118,7 @@ func (s *scrollTextView) Draw(screen tcell.Screen) {
 	drawScrollArrows(screen, s, row, s.GetWrappedLineCount())
 }
 
-// scrollTable is a Table plus the shared scroll arrows; row offset/count are
-// already in viewport-row units, so the overflow test lines up.
+// scrollTable is a Table plus the shared scroll arrows.
 type scrollTable struct {
 	*tview.Table
 }
@@ -196,7 +185,7 @@ func (s *scrollView) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 	})
 }
 
-// MouseHandler scrolls on the wheel (mouse is enabled via EnableMouse in app.go).
+// MouseHandler scrolls on the wheel.
 func (s *scrollView) MouseHandler() func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (consumed bool, capture tview.Primitive) {
 	return s.WrapMouseHandler(func(action tview.MouseAction, event *tcell.EventMouse, _ func(tview.Primitive)) (bool, tview.Primitive) {
 		x, y := event.Position()

@@ -4,6 +4,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,9 +12,6 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
-
-// The scaling is a pure function, so unlike the widgets it replaces it can be
-// tested. These cases pin the behaviour the old charts got wrong.
 
 // TestSeriesRowsScalesToRangeNotZero: a 35–40°C series scaled to its own
 // range must use the full height, not draw as a zero-anchored solid block.
@@ -68,11 +66,7 @@ func TestDownsampleKeepsSpikes(t *testing.T) {
 	if len(got) != 10 {
 		t.Fatalf("got %d points, want 10", len(got))
 	}
-	peak := 0.0
-	for _, v := range got {
-		peak = max(peak, v)
-	}
-	if peak != 70 {
+	if peak := slices.Max(got); peak != 70 {
 		t.Errorf("spike lost in downsampling: peak %v, want 70", peak)
 	}
 }
@@ -210,10 +204,7 @@ func headSeries(n int) []int {
 }
 
 // A chart must never drop bars off its right edge just because the default
-// pitch does not fit: the pitch narrows toward one cell first. Before this,
-// a 30-head drive at 60 columns painted 26 heads and said nothing -- and the
-// title's range named a maximum that was never drawn, which on a health
-// display is worse than a cramped chart.
+// pitch does not fit: the pitch narrows toward one cell first.
 func TestChartNarrowsPitchRatherThanDropBars(t *testing.T) {
 	const w, h = 60, 12
 	heads := headSeries(30)
@@ -224,9 +215,9 @@ func TestChartNarrowsPitchRatherThanDropBars(t *testing.T) {
 		t.Errorf("painted %d of %d heads at width %d:\n%s",
 			got, len(heads), w, strings.Join(rows, "\n"))
 	}
-	// Nothing was dropped, so nothing should claim otherwise.
-	if caption := rows[h-2]; strings.Contains(caption, "more") {
-		t.Errorf("caption reports dropped bars when all fit: %q", caption)
+	// Nothing was grouped, so nothing should claim otherwise.
+	if caption := rows[h-2]; strings.Contains(caption, "per bar") {
+		t.Errorf("caption reports grouped bars when all fit: %q", caption)
 	}
 }
 
@@ -291,10 +282,7 @@ func TestChartGroupingNoteIsNeverItselfClipped(t *testing.T) {
 }
 
 // The whole point of grouping over truncation: a fault on a late head must
-// still be drawn. Keeping the first N values dropped heads 32-59 at this
-// width, so a single failing head at 47 left a flat row of minimum marks --
-// the chart's one interesting bar, gone. Buckets take the MAXIMUM, the same
-// rule downsample uses to keep a spike in a filled series.
+// still be drawn.
 func TestChartKeepsAFaultInTheTail(t *testing.T) {
 	const w, h = 40, 10
 	const faulty = 47

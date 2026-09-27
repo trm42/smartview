@@ -16,8 +16,7 @@ import (
 type statisticsView struct {
 	*scrollTextView
 
-	// Width-aware lazy relayout, same pattern as farm.go/overview.go: values
-	// are pre-wrapped for the live width. lastWidth -1 forces a rebuild.
+	// raw is re-wrapped for the live width; lastWidth -1 forces it.
 	raw       string
 	lastWidth int
 }
@@ -38,7 +37,7 @@ func (v *statisticsView) setFocused(focused bool) {
 // refresh re-renders the text and invalidates the width for a re-wrap.
 func (v *statisticsView) refresh(r *smart.Report, _ []float64) {
 	v.raw = buildStatisticsText(r)
-	v.lastWidth = -1 // data changed: re-wrap against the current width
+	v.lastWidth = -1
 }
 
 // Draw re-wraps when the width changed (or a refresh invalidated it).
@@ -53,22 +52,20 @@ func (v *statisticsView) Draw(screen tcell.Screen) {
 // buildStatisticsText assembles the body: one section per page, valid entries
 // only, health-relevant counters tinted when nonzero.
 func buildStatisticsText(r *smart.Report) string {
-	var b strings.Builder
 	if r.ATADeviceStatistics == nil {
 		return ""
 	}
+	var b strings.Builder
 	// "Logical Sectors *" counts are in logical-block units (4096 B on 4Kn).
 	sectorBytes := r.SectorBytes()
-	first := true
 	for _, p := range r.ATADeviceStatistics.Pages {
 		valid := validStatEntries(p.Table)
 		if len(valid) == 0 {
 			continue
 		}
-		if !first {
+		if b.Len() > 0 {
 			b.WriteByte('\n')
 		}
-		first = false
 		sectionHeader(&b, orDash(esc(p.Name)))
 		for _, e := range valid {
 			fmt.Fprintf(&b, nestIndent+"%-*s %s\n", statLabelWidth, esc(e.Name), statValue(p, e, sectorBytes))

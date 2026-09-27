@@ -191,11 +191,14 @@ func TestPctBarsShareOnePolarity(t *testing.T) {
 	}
 }
 
+// ioServicePath is a real 150-character macOS device name.
+const ioServicePath = "IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@9600000/" +
+	"AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1"
+
 // TestShortDeviceKeepsDistinguishingPart: a trimmed macOS IOService path must
 // keep whole trailing components, not a mid-word character cut.
 func TestShortDeviceKeepsDistinguishingPart(t *testing.T) {
-	const apple = "IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@9600000/" +
-		"AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1"
+	const apple = ioServicePath
 	got := shortDevice(apple, 30)
 	if !strings.HasSuffix(got, "NS_01@1") {
 		t.Errorf("shortDevice = %q, want it to end at a whole path component", got)
@@ -217,12 +220,10 @@ func TestShortDeviceKeepsDistinguishingPart(t *testing.T) {
 	}
 }
 
-// TestHangingIndentSplitsOnDisplayColumns pins the fix for a byte-vs-display
-// mix-up: valueCol is a display measure, so a key wrapped in zero-width style
-// tags must still be cut at its own column, and the value must survive the
-// re-wrap verbatim (padding, colour tags and multi-byte runes included).
+// TestHangingIndentSplitsOnDisplayColumns: valueCol is a display column, so tagged
+// keys are cut at their own width and values survive verbatim.
 func TestHangingIndentSplitsOnDisplayColumns(t *testing.T) {
-	const valueCol = 15
+	const valueCol = identityValueCol
 	// The Overview identity row: 12 bytes of markup around a 14-cell key.
 	key := "[::b]" + padRight("Device", 14) + "[-:-:-] "
 	if w := tview.TaggedStringWidth(key); w != valueCol {
@@ -230,16 +231,13 @@ func TestHangingIndentSplitsOnDisplayColumns(t *testing.T) {
 	}
 
 	t.Run("ioservice path", func(t *testing.T) {
-		const path = "IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@9600000/" +
-			"AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1"
-		got := hangingIndent(key+path, hangingWrap{valueCol: valueCol, minValueW: 9}, 60)
+		const path = ioServicePath
+		got := hangingIndent(key+path, identityWrap, 60)
 		lines := strings.Split(got, "\n")
 		if len(lines) < 3 {
 			t.Fatalf("a 150-character path should wrap, got:\n%s", got)
 		}
-		// The key stays whole on the first line, and every continuation hangs
-		// under the value column — the byte slice used to cut mid-key and the
-		// field re-join used to shift wrapped rows left of unwrapped ones.
+		// The key stays whole on the first line, and every continuation hangs under the value column.
 		if !strings.HasPrefix(lines[0], key) {
 			t.Errorf("first line lost the key column: %q", lines[0])
 		}
@@ -258,7 +256,7 @@ func TestHangingIndentSplitsOnDisplayColumns(t *testing.T) {
 
 	t.Run("colour tags survive", func(t *testing.T) {
 		value := "193.6 TB " + cautionTag() + "(378186418521 sectors, checked twice)[-]"
-		got := hangingIndent(key+value, hangingWrap{valueCol: valueCol, minValueW: 9}, 50)
+		got := hangingIndent(key+value, identityWrap, 50)
 		if !strings.Contains(got, cautionTag()) || !strings.Contains(got, "[-]") {
 			t.Errorf("a colour tag was mangled by the re-wrap:\n%s", got)
 		}
@@ -276,7 +274,7 @@ func TestHangingIndentSplitsOnDisplayColumns(t *testing.T) {
 
 	t.Run("multi-byte runes", func(t *testing.T) {
 		value := strings.Repeat("温度", 12) + " 37°C"
-		got := hangingIndent(key+value, hangingWrap{valueCol: valueCol, minValueW: 9}, 40)
+		got := hangingIndent(key+value, identityWrap, 40)
 		if !strings.Contains(got, "37°C") {
 			t.Errorf("multi-byte tail was lost:\n%s", got)
 		}
@@ -298,7 +296,7 @@ func TestHangingIndentSplitsOnDisplayColumns(t *testing.T) {
 			"",
 			key + "one\n" + key + "two",
 		} {
-			if got := hangingIndent(line, hangingWrap{valueCol: valueCol, minValueW: 9}, 120); got != line {
+			if got := hangingIndent(line, identityWrap, 120); got != line {
 				t.Errorf("a line that fits was rewritten:\n%q\n%q", line, got)
 			}
 		}
@@ -336,10 +334,9 @@ func TestSplitAtWidth(t *testing.T) {
 // with no spaces, and callers disable tview's wrapping, so an unbreakable token
 // has to be split here or it is simply cut at the border.
 func TestHangingIndentBreaksLongTokens(t *testing.T) {
-	const path = "IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@9600000/" +
-		"AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1"
+	const path = ioServicePath
 	line := "Device         " + path
-	got := hangingIndent(line, hangingWrap{valueCol: 15, minValueW: 9}, 40)
+	got := hangingIndent(line, identityWrap, 40)
 	lines := strings.Split(got, "\n")
 	if len(lines) < 4 {
 		t.Fatalf("a 150-character token should break across lines, got %d:\n%s", len(lines), got)

@@ -89,16 +89,14 @@ func TestSelectTabDeclinesAnUnavailableTab(t *testing.T) {
 	if d.activeID() != "overview" {
 		t.Errorf("active moved to %q; the digit must do nothing", d.activeID())
 	}
-	// selectTabID routes through selectTab, so 't' keeps today's behaviour.
+	// selectTabID routes through selectTab.
 	if d.selectTabID("tests") {
 		t.Error("selectTabID accepted an unavailable tab")
 	}
 }
 
-// TestTabSetRebuildsWhenAvailabilityChanges is the sameTabs trap: with
-// show_unavailable_tabs the id list is constant across every drive and every
-// poll, so an id-only comparison would refresh in place and never replace an
-// unavailable tab's placeholder with the real view.
+// TestTabSetRebuildsWhenAvailabilityChanges: with show_unavailable_tabs the ids
+// never change, so availability must drive the rebuild.
 func TestTabSetRebuildsWhenAvailabilityChanges(t *testing.T) {
 	d := newDetail()
 	d.showAllTabs = true
@@ -136,8 +134,7 @@ func TestSameTabsComparesAvailability(t *testing.T) {
 	if sameTabs(a, nil) {
 		t.Error("different lengths should not match")
 	}
-	// Titles are part of the struct now, so a retitled tab rebuilds too. That
-	// is a behaviour change from sameTabIDs and it is the safe direction.
+	// A retitled tab rebuilds too.
 	if sameTabs(a, []tab{{id: "overview", title: "x", available: true}}) {
 		t.Error("a different title should not match")
 	}

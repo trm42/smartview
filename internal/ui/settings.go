@@ -12,24 +12,16 @@ import (
 	"github.com/trm42/smartview/internal/config"
 )
 
-// The settings modal: the only thing in smartview that writes the config file.
-// The T and +/- keys stay session-only, exactly as the README documents.
-
-// Modal size: a border, one row per setting, a blank, and the button row.
-// Vertical padding is 0 for density, as everywhere else in the UI.
+// settingsWidth is the modal's fixed outer width.
 const settingsWidth = 56
 
-// changedGlyph marks a row edited since the modal opened. It sits in a
-// two-column gutter left of every label rather than at the right edge,
-// because a tview Form row is label plus field with nothing after it.
+// changedGlyph marks a row edited since the modal opened, in a two-column gutter left of the label.
 const (
 	changedGlyph = "•"
 	rowGutter    = "  "
 )
 
-// settingsHelp is the one-line description shown under the form for whichever
-// row has focus. It is the only place a caveat like "ATA drives only" reaches
-// someone actually editing the setting — the config file and README do not.
+// settingsHelp is the focus-following help line per row.
 var settingsHelp = []string{
 	"Colour palette. T cycles it live.",
 	"How often every drive is re-read.",
@@ -38,15 +30,10 @@ var settingsHelp = []string{
 	"Which screen to open on. Next run.",
 }
 
-// settingsThemeApproxHelp replaces the theme row's help line on a terminal
-// without 24-bit colour, where the palette the user is choosing is not the one
-// they will see. The Settings modal is where someone picking a theme is
-// looking, so it is where the caveat belongs.
+// settingsThemeApproxHelp replaces the theme help without truecolor, where the palette is approximated.
 const settingsThemeApproxHelp = "Palette. Approximated — set COLORTERM=truecolor"
 
-// settingsHelpLine is the description for row, with that one substitution.
-// truecolor is passed rather than read, because the terminal's answer is
-// process-global and a test could not vary it otherwise.
+// settingsHelpLine is the help for row; truecolor is a parameter because the terminal's answer is process-global.
 func settingsHelpLine(row int, truecolor bool) string {
 	if row == 0 && !truecolor {
 		return settingsThemeApproxHelp
@@ -54,36 +41,28 @@ func settingsHelpLine(row int, truecolor bool) string {
 	return settingsHelp[row]
 }
 
-// settingsButtonHelp fills the description line while a button has focus, so
-// the row does not go blank when navigation leaves the settings.
+// settingsButtonHelp fills the help line while a button has focus.
 const settingsButtonHelp = "Save writes the file. Cancel discards."
 
-// settingsHeight is the border, one row per setting, a blank, the button row,
-// and the two-line footer (help + keys). Derived from settingsRows so adding a
-// setting cannot leave the box too short to show the buttons.
+// settingsHeight is border, rows, blank, buttons and the two-line footer.
 var settingsHeight = len(settingsRows) + 7
 
-// settingsKeys is the modal's hint line, in the status bar's vocabulary. The
-// modal was the one surface in the app that taught no keys.
+// settingsKeys is the modal's key hint line.
 const settingsKeys = "↑↓ move   ⏎/→ change   ← back   Esc cancel"
 
-// Checkbox state glyphs. Written unescaped here and escaped at the sink, so
-// what is intended is legible; see settingsForm for why escaping is required.
+// Checkbox state glyphs, escaped at the sink.
 const (
 	checkedGlyph   = "[x]"
 	uncheckedGlyph = "[ ]"
 )
 
-// settingsRows names the form's rows, in order. Its length sizes the modal, so
-// adding a setting cannot leave the box too short to show the buttons.
+// settingsRows names the form rows in order; its length sizes the modal.
 var settingsRows = []string{
 	"Theme", "Refresh", "Skip spun-down drives",
 	"Show unavailable tabs", "Start view",
 }
 
-// currentConfig snapshots the live settings. Derived rather than stored: a
-// stored copy would drift the moment T or +/- changed the session outside the
-// modal, and Save would then silently revert the theme the user is looking at.
+// currentConfig is derived from live state, never cached, so T and +/- cannot be reverted by Save.
 func (a *App) currentConfig() config.Config {
 	return config.Config{
 		Theme:               a.themeName,
@@ -94,21 +73,16 @@ func (a *App) currentConfig() config.Config {
 	}
 }
 
-// settingsForm builds the editor over a working copy of cfg. Every callback
-// writes to that copy, which is what makes Cancel free: nothing outside the
-// closure changes until Save runs.
+// settingsForm builds the editor over a working copy of cfg, so Cancel discards for free.
 func (a *App) settingsForm(cfg config.Config) *tview.Form {
 	original := cfg
 	a.settingsHelp = newInertTextView()
 	a.settingsHelp.SetBorderPadding(0, 0, uiGutter+1, uiGutter)
 	form := tview.NewForm()
-	// AddDropDown fires its callback during construction, so mark starts as a
-	// no-op and is reassigned once form exists for it to relabel.
+	// AddDropDown fires its callback during construction; mark is reassigned below.
 	mark := func() {}
-	form.SetItemPadding(0) // density, matching every other box in the UI
-	// NewForm defaults to SetBorderPadding(1, 1, 1, 1). The wrapper supplies
-	// the gutter, and a row of vertical padding pushes the button row outside
-	// the form's clip — which is exactly how the buttons went missing.
+	form.SetItemPadding(0)
+	// NewForm defaults to padding 1, which pushes the buttons outside the form's clip.
 	form.SetBorderPadding(0, 0, 0, 0)
 	intervals := intervalChoices(cfg.RefreshInterval.Duration())
 	views := []string{config.StartDrives, config.StartFleet}
@@ -135,10 +109,7 @@ func (a *App) settingsForm(cfg config.Config) *tview.Form {
 		a.applySettings(cfg)
 	})
 	form.AddButton("Cancel", a.popModal)
-	// Esc arrives here from two places. A DropDown closing its list routes it
-	// through the Form's finished handler first, while d.open is still set, so
-	// declining then is what stops leaving a chooser from taking the whole
-	// modal with it.
+	// A DropDown closing its list also routes Esc here while still open; decline then.
 	form.SetCancelFunc(func() {
 		if chooserOpen(form) {
 			return
@@ -146,38 +117,23 @@ func (a *App) settingsForm(cfg config.Config) *tview.Form {
 		a.popModal()
 	})
 
-	// A chooser has to look pressable. currentPrefix/currentSuffix wrap only
-	// the value on the row, not the entries in the open list.
+	// Explicit glyphs survive mono; escaped because Checkbox renders its state as markup and "[x]" is a tag.
 	for i := range form.GetFormItemCount() {
-		if dd, ok := form.GetFormItem(i).(*tview.DropDown); ok {
-			dd.SetTextOptions("", "", "‹ ", " ›", "")
-		}
-	}
-	a.installRowKeys(form)
-
-	// tview draws an unchecked box as a bare space — a one-cell background
-	// tint that disappears under mono, where colour is all we would have.
-	// Explicit glyphs survive it, like the ● that carries severity.
-	//
-	// Both strings go through tview.Escape: a Checkbox renders its state
-	// string as markup, so a bare "[x]" parses as a colour tag and is
-	// swallowed, leaving a checked box showing nothing at all. "[ ]" happens
-	// to survive unescaped because the space does not match the tag pattern —
-	// which is exactly the asymmetry that hid the bug.
-	for i := range form.GetFormItemCount() {
-		if cb, ok := form.GetFormItem(i).(*tview.Checkbox); ok {
-			cb.SetCheckedString(tview.Escape(checkedGlyph)).
+		switch it := form.GetFormItem(i).(type) {
+		case *tview.DropDown:
+			it.SetTextOptions("", "", "‹ ", " ›", "")
+		case *tview.Checkbox:
+			it.SetCheckedString(tview.Escape(checkedGlyph)).
 				SetUncheckedString(tview.Escape(uncheckedGlyph))
 		}
 	}
+	a.installRowKeys(form)
 	mark = func() { markChangedRows(form, original, cfg) }
 	mark()
 	return styleForm(form)
 }
 
-// markChangedRows puts a dot in each edited row's gutter. Labels keep a
-// constant two-column prefix so the form's label column cannot jump as rows
-// are marked.
+// markChangedRows puts a dot in each edited row's constant-width gutter.
 func markChangedRows(form *tview.Form, original, cur config.Config) {
 	changed := []bool{
 		cur.Theme != original.Theme,
@@ -195,9 +151,7 @@ func markChangedRows(form *tview.Form, original, cur config.Config) {
 	}
 }
 
-// setItemLabel relabels a form item. SetLabel is not on the FormItem
-// interface: each widget returns its own concrete type, so they cannot share
-// one.
+// setItemLabel relabels a form item; SetLabel is not on the FormItem interface.
 func setItemLabel(item tview.FormItem, label string) {
 	switch v := item.(type) {
 	case *tview.DropDown:
@@ -207,9 +161,7 @@ func setItemLabel(item tview.FormItem, label string) {
 	}
 }
 
-// boxed is the part of every form item the FormItem interface omits: both
-// hooks live on the embedded *tview.Box and are promoted, so one interface
-// covers DropDown and Checkbox alike.
+// boxed covers the Box hooks the FormItem interface omits.
 type boxed interface {
 	SetInputCapture(func(*tcell.EventKey) *tcell.EventKey) *tview.Box
 	SetFocusFunc(func()) *tview.Box
@@ -225,22 +177,14 @@ func chooserOpen(form *tview.Form) bool {
 	return false
 }
 
-// installRowKeys gives the form a list model: up/down move through the
-// settings and on to the buttons, Enter or Right activates the focused row,
-// and Left backs out of an open chooser.
-//
-// The captures go per item, not on the Form: Form.Focus delegates to the
-// child, so the application focuses the item and a capture on the Form is
-// never in the chain. They are also what stops tview opening a closed
-// DropDown on Up/Down/Home/End/PgUp/PgDn, which would swallow row navigation
-// on the very first keypress.
+// installRowKeys gives the form a list model: up/down move through settings
+// and buttons, Enter or Right activates, Left closes an open chooser.
+// Captures go per item: Form.Focus delegates to the child. They also stop a closed DropDown opening on Up/Down.
 func (a *App) installRowKeys(form *tview.Form) {
 	items, buttons := form.GetFormItemCount(), form.GetButtonCount()
 	total := items + buttons
-	// One index space over the settings and then the buttons, so the arrows
-	// do not dead-end at the last setting.
 	focusAt := func(i int) {
-		i = min(max(i, 0), total-1) // clamp, no wrap — the rule stepTab follows
+		i = min(max(i, 0), total-1)
 		form.SetFocus(i)
 		a.app.SetFocus(form)
 	}
@@ -254,14 +198,9 @@ func (a *App) installRowKeys(form *tview.Form) {
 		dd, _ := form.GetFormItem(i).(*tview.DropDown)
 		item.SetFocusFunc(func() { a.settingsHelp.SetText(mutedTag() + settingsHelpLine(row, hasTruecolor()) + "[-]") })
 		item.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-			// An open chooser owns the arrows. tview delivers Up/Down to the
-			// DropDown even while its list holds focus — the DropDown
-			// forwards them on — so without this the capture steals them and
-			// the highlight can never move.
+			// An open chooser owns the arrows: tview routes them to the DropDown, which forwards them to its list.
 			if dd != nil && dd.IsOpen() {
 				if ev.Key() == tcell.KeyLeft {
-					// Escape is how the list closes; SetCancelFunc keeps it
-					// from cancelling the modal on the way out.
 					return tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone)
 				}
 				return ev
@@ -274,8 +213,6 @@ func (a *App) installRowKeys(form *tview.Form) {
 				focusAt(row + 1)
 				return nil
 			case tcell.KeyRight:
-				// The widgets already do the right thing on Enter: a checkbox
-				// toggles, a closed chooser opens. One verb, two controls.
 				return tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone)
 			}
 			return ev
@@ -292,10 +229,10 @@ func (a *App) installRowKeys(form *tview.Form) {
 		btn.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch ev.Key() {
 			case tcell.KeyUp:
-				focusAt(items - 1) // back to the last setting
+				focusAt(items - 1)
 				return nil
 			case tcell.KeyDown:
-				return nil // nothing below; clamp rather than wrap
+				return nil
 			case tcell.KeyLeft:
 				focusAt(at - 1)
 				return nil
@@ -308,9 +245,7 @@ func (a *App) installRowKeys(form *tview.Form) {
 	}
 }
 
-// settingsModal builds the whole overlay: the form, then the focus-following
-// help line and the key hints under it. The border lives on the wrapper rather
-// than the form so the footer sits inside the box.
+// settingsModal builds the overlay: the form, then the help and key lines inside the same border.
 func (a *App) settingsModal() (tview.Primitive, *tview.Form) {
 	form := a.settingsForm(a.currentConfig())
 
@@ -318,54 +253,43 @@ func (a *App) settingsModal() (tview.Primitive, *tview.Form) {
 	keys.SetBorderPadding(0, 0, uiGutter+1, uiGutter)
 	keys.SetText(mutedTag() + settingsKeys + "[-]")
 
-	box := newOpaqueFlex()
-	box.SetDirection(tview.FlexRow).
-		AddItem(form, len(settingsRows)+2, 0, true). // rows + blank + buttons
-		AddItem(nil, 1, 0, false).                   // breathing room above the footer
+	box := modalBox(" Settings ", uiGutter)
+	box.AddItem(form, len(settingsRows)+2, 0, true).
+		AddItem(nil, 1, 0, false).
 		AddItem(a.settingsHelp, 1, 0, false).
 		AddItem(keys, 1, 0, false)
-	box.SetBackgroundColor(activeTheme.Background)
-	titledBox(box.Box, " Settings ")
-	box.SetBorderColor(activeTheme.Accent)
-	box.SetTitleColor(activeTheme.Neutral)
 	return centeredModal(box, settingsWidth, settingsHeight), form
 }
 
-// showSettings opens the editor. It is rebuilt on every open rather than
-// cached on App, so it is always born in the current theme — the whole
-// repaint-miss class, dodged rather than handled.
+// showSettings rebuilds the modal on every open, so it is always in the current theme.
 func (a *App) showSettings() {
 	modal, form := a.settingsModal()
 	a.pushModal(modal)
 	a.app.SetFocus(form)
 }
 
-// applySettings makes cfg live and persists it. It runs after popModal has
-// restored a.root, so repaintAll's rethemeTree walks the real tree.
+// applySettings makes cfg live and persists it; runs after popModal so rethemeTree walks the real tree.
 func (a *App) applySettings(cfg config.Config) {
 	old := a.currentConfig()
 
-	// Every field lands before anything repaints: repaintAll rebuilds the
-	// detail from showAllTabs, so setting the flag afterwards would leave the
-	// old tab set on screen until the next poll.
+	// Every field lands before anything repaints: repaintAll rebuilds from showAllTabs.
 	a.standbyAware.Store(cfg.StandbyAware)
 	a.detail.showAllTabs = cfg.ShowUnavailableTabs
-	a.startView = cfg.StartView // consulted only by Run
+	a.startView = cfg.StartView
 
 	switch {
 	case cfg.Theme != old.Theme:
 		a.themeName = cfg.Theme
 		setTheme(themes[cfg.Theme])
-		a.repaintAll() // also rebuilds the detail, so the tab set follows
+		a.repaintAll()
 	case cfg.ShowUnavailableTabs != old.ShowUnavailableTabs:
 		a.rebuildDetail()
 	}
 	if d := cfg.RefreshInterval.Duration(); d != a.interval {
-		a.setInterval(d) // signals intervalCh; the ticker resets live
+		a.setInterval(d)
 	}
 
-	// A write failure does not discard the settings: honouring the intent and
-	// reporting the disk problem separately beats losing both.
+	// A write failure keeps the applied settings and reports separately.
 	if a.save != nil {
 		if err := a.save(cfg); err != nil {
 			a.showError("save settings", err)
@@ -375,8 +299,7 @@ func (a *App) applySettings(cfg config.Config) {
 	a.refreshChrome()
 }
 
-// intervalChoices is the +/- ladder, with an off-ladder current value
-// prepended so the form can always represent what is in effect.
+// intervalChoices is the +/- ladder with an off-ladder current value prepended.
 func intervalChoices(current time.Duration) []time.Duration {
 	if slices.Contains(intervalPresets, current) {
 		return intervalPresets
@@ -393,8 +316,7 @@ func labelDurations(ds []time.Duration) []string {
 	return out
 }
 
-// indexOr is slices.Index with a fallback, so an unknown value cannot leave a
-// dropdown with nothing selected.
+// indexOr is slices.Index with a fallback.
 func indexOr[S ~[]E, E comparable](s S, v E, fallback int) int {
 	if i := slices.Index(s, v); i >= 0 {
 		return i
@@ -402,14 +324,7 @@ func indexOr[S ~[]E, E comparable](s S, v E, fallback int) int {
 	return fallback
 }
 
-// centeredBox centres a fixed-size primitive on the screen. pushModal calls
-// SetRoot(_, false), which never assigns the root a rect, so a plain Flex
-// would draw at 0x0 in the corner with its left edge clipped. tview.Modal
-// solves this by sizing itself from the screen in Draw; this is the same trick
-// for an arbitrary primitive.
-//
-// The nil Flex items are gaps: the before-draw hook fills the screen, so the
-// margin around the box is already grounded.
+// centeredBox centres a fixed-size primitive, sizing itself from the screen in Draw.
 type centeredBox struct {
 	*tview.Flex
 	column        *tview.Flex // the row holding p, resized to the screen
@@ -417,10 +332,7 @@ type centeredBox struct {
 	width, height int
 }
 
-// Draw claims the whole screen, then lets the Flex centre its child in it. The
-// box is clamped to the screen first: a Flex asked for a fixed size larger than
-// it has gives its gap items a negative share, which walks the box off the left
-// edge and clips the labels rather than the margin.
+// Draw clamps to the screen: an oversized fixed item gives the gaps a negative share.
 func (c *centeredBox) Draw(screen tcell.Screen) {
 	w, h := screen.Size()
 	c.SetRect(0, 0, w, h)
@@ -429,9 +341,7 @@ func (c *centeredBox) Draw(screen tcell.Screen) {
 	c.Flex.Draw(screen)
 }
 
-// centeredModal wraps p in a screen-filling, centring container. It shrinks to
-// the screen when the terminal is smaller than the box, so a small terminal
-// clips the margin rather than the content.
+// centeredModal wraps p in a screen-filling, centring container.
 func centeredModal(p tview.Primitive, width, height int) tview.Primitive {
 	column := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(nil, 0, 1, false).
@@ -449,19 +359,14 @@ func centeredModal(p tview.Primitive, width, height int) tview.Primitive {
 	}
 }
 
-// rebuildDetail forces the detail to rebuild its tab views from the cached
-// report. Shared with repaintAll so there is one rebuild idiom.
+// rebuildDetail forces the detail to rebuild its tab views from the cached report.
 func (a *App) rebuildDetail() {
-	// The rebuild destroys the page primitive focus points at, and nothing
-	// else re-homes it: the poll loop only restores focus it still sees on the
-	// detail. Without this every focused-content key lands on an off-tree
-	// widget until the user presses Tab.
+	// The rebuild destroys the focused page; re-home focus if it was on the detail.
 	focused := a.detail.HasFocus()
-	a.detail.device = "" // invalidate the cache so update() takes the rebuild branch
+	a.detail.device = "" // forces update's rebuild branch
 	a.showSelected()
 	if len(a.devices) == 0 {
-		// showDevice returns before the placeholder when there is nothing to
-		// show, and the message in place is the one the app last chose.
+		// showDevice returns early with no devices; re-show the last placeholder.
 		a.detail.showPlaceholder(a.detail.placeholder)
 	}
 	if focused {
