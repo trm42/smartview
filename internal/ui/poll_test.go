@@ -5,6 +5,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/trm42/smartview/internal/smart"
 )
@@ -47,5 +48,21 @@ func TestPollMarksAndUnmarksStandbyInTheList(t *testing.T) {
 	a.applyPoll(map[string]pollResult{dev: {standby: true}})
 	if _, sec := a.list.GetItemText(0); !strings.Contains(sec, standbyGlyph) {
 		t.Errorf("a spun-down drive has no standby glyph in the list: %q", sec)
+	}
+}
+
+// TestLatestIntervalWins: two changes while the poll loop is busy fetching
+// must leave the second one queued, not the first.
+func TestLatestIntervalWins(t *testing.T) {
+	a, _ := newSimApp(t, 120, 40)
+	a.setInterval(10 * time.Second)
+	a.setInterval(5 * time.Second)
+	select {
+	case d := <-a.intervalCh:
+		if d != 5*time.Second {
+			t.Errorf("intervalCh carried %s, want 5s", d)
+		}
+	default:
+		t.Fatal("intervalCh is empty")
 	}
 }

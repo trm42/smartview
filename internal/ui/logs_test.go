@@ -82,8 +82,8 @@ func TestTidyErrorDescription(t *testing.T) {
 // drive-reported string.
 func TestSelfTestPassedSharesColorResult(t *testing.T) {
 	for _, s := range []string{"Completed without error", "Completed"} {
-		if !selfTestPassed(s) {
-			t.Errorf("selfTestPassed(%q) = false, want true", s)
+		if selfTestOutcome(s) != testPassed {
+			t.Errorf("selfTestOutcome(%q) = %d, want passed", s, selfTestOutcome(s))
 		}
 		// A pass reads as recessive, not healthy-green: colour marks
 		// exceptions, and one row per run is the least exceptional thing here.
@@ -101,15 +101,50 @@ func TestSelfTestPassedSharesColorResult(t *testing.T) {
 		"Completed: read failure",
 		"Completed: electrical failure",
 		"Completed: unknown failure",
-		"Aborted by host",
-		"Interrupted (host reset)",
+		"Completed: handling damage??",
+		"Fatal or unknown error",
+		"Aborted: Self-test failed segment",
 	} {
-		if selfTestPassed(s) {
-			t.Errorf("selfTestPassed(%q) = true, want false", s)
+		if selfTestOutcome(s) != testFailed {
+			t.Errorf("selfTestOutcome(%q) = %d, want failed", s, selfTestOutcome(s))
 		}
 		if !strings.Contains(colorResult(s), failingTag()) {
 			t.Errorf("colorResult(%q) does not read as a failure", s)
 		}
+	}
+	// A run still going, or one the host stopped, says nothing about the drive:
+	// neither a pass nor a failure, and it takes neither colour.
+	for _, s := range []string{
+		"Self-test routine in progress",
+		"Aborted by host",
+		"Interrupted (host reset)",
+		"Aborted: Controller Reset",
+	} {
+		if selfTestOutcome(s) != testNeutral {
+			t.Errorf("selfTestOutcome(%q) = %d, want neutral", s, selfTestOutcome(s))
+		}
+		if c := colorResult(s); strings.Contains(c, failingTag()) || strings.Contains(c, mutedTag()) {
+			t.Errorf("colorResult(%q) = %q, want body text", s, c)
+		}
+	}
+}
+
+// TestSelfTestSummaryIgnoresNeutralRuns: a test in progress, or one the user
+// cancelled, is not counted as a failed run.
+func TestSelfTestSummaryIgnoresNeutralRuns(t *testing.T) {
+	r := &smart.Report{Device: smart.Device{Protocol: "ATA"}}
+	tbl := []smart.ATASelfTestEntry{
+		{Status: smart.StringValue{String: "Self-test routine in progress"}},
+		{Status: smart.StringValue{String: "Aborted by host"}},
+		{Status: smart.StringValue{String: "Completed without error"}},
+	}
+	var b strings.Builder
+	writeSelfTestSummary(&b, r, tbl)
+	if strings.Contains(b.String(), "failed") && !strings.Contains(b.String(), "none failed") {
+		t.Errorf("summary counts a neutral run as failed: %q", b.String())
+	}
+	if strings.Contains(b.String(), "all passed") {
+		t.Errorf("summary claims all passed with a run still in progress: %q", b.String())
 	}
 }
 

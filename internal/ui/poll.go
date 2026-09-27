@@ -98,6 +98,10 @@ func (a *App) applyResults(results map[string]pollResult) {
 		if res.standby {
 			continue // reports[name] and lastRead[name] stand
 		}
+		// A failed open still prints an envelope; it must not replace a real reading.
+		if prev := a.reports[name]; !res.rep.HasHealth() && prev != nil && prev.HasHealth() {
+			continue
+		}
 		a.reports[name] = res.rep
 		a.lastRead[name] = now
 		a.recordTemp(name, res.rep)

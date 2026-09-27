@@ -37,8 +37,8 @@ type ATARaw struct {
 
 // ATATemperatureHistory is the SCT temperature log (~128 recent samples).
 type ATATemperatureHistory struct {
-	LoggingIntervalMinutes int   `json:"logging_interval_minutes"`
-	Table                  []int `json:"table"`
+	LoggingIntervalMinutes int    `json:"logging_interval_minutes"`
+	Table                  []*int `json:"table"` // nil where smartctl wrote null for an empty slot
 }
 
 // ATASelfTestLog holds the extended self-test history.

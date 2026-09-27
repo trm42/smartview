@@ -27,9 +27,9 @@ func (s Severity) String() string {
 }
 
 // Overall derives a drive-level severity from the SMART status and the
-// protocol-specific health indicators.
+// protocol-specific health indicators; with no status it grades what is present.
 func (r *Report) Overall() Severity {
-	if !r.SmartStatus.Passed {
+	if r.SmartStatus != nil && !r.SmartStatus.Passed {
 		return SeverityFailing
 	}
 	worst := SeverityOK

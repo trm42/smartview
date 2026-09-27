@@ -33,8 +33,8 @@ func TestIdentityTextEscapesDriveFields(t *testing.T) {
 		ModelName:       hostile,
 		SerialNumber:    hostile,
 		FirmwareVersion: hostile,
+		SmartStatus:     &smart.SmartStatus{Passed: true}, // a genuinely healthy drive
 	}
-	r.SmartStatus.Passed = true // a genuinely healthy drive
 
 	// Both column layouts, so neither formatting path can leak a live tag.
 	out := identityText(r, 40) + identityText(r, 120)

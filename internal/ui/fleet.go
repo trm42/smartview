@@ -306,10 +306,10 @@ func (v *fleetView) setRow(rowIdx int, row fleetRow, secCells []fleetCell, n int
 			secCells = secCells[:n]
 		}
 		identity := []fleetCell{
-			{text: healthGlyph(row.rep.Overall()) + " " + standbyPrefix(row) + esc(fleetDevice(row.dev)),
+			{text: reportGlyph(row.rep) + " " + standbyPrefix(row) + esc(fleetDevice(row.dev)),
 				color: activeTheme.Neutral},
 			{text: esc(model), color: activeTheme.Neutral},
-			{text: esc(truncateRunes(orDash(row.rep.SerialNumber), fleetSerialWidth)),
+			{text: orDash(esc(truncateRunes(row.rep.SerialNumber, fleetSerialWidth))),
 				color: activeTheme.Muted},
 		}
 		cells = append(identity[:v.identityCols], secCells...)

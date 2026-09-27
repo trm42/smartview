@@ -198,12 +198,11 @@ func writeFields(b *strings.Builder, fields []identityField, cols int) {
 
 // writeVerdict renders the health verdict plus the evidence behind it.
 func writeVerdict(b *strings.Builder, r *smart.Report) {
-	sev := r.Overall()
 	fmt.Fprintf(b, "%s  %s%s[-]\n",
-		sevVerdict(sev, verdictWord(sev)), mutedTag(), verdictEvidence(r))
+		reportVerdict(r), mutedTag(), verdictEvidence(r))
 
 	// The raw SMART pass/fail only adds signal on a failure.
-	if !r.SmartStatus.Passed {
+	if r.SmartStatus != nil && !r.SmartStatus.Passed {
 		fmt.Fprintf(b, "%sSMART self-assessment: FAILED[-]\n", failingTag())
 	}
 	// A smartctl message is a data-availability caveat, not a verdict.
@@ -445,9 +444,9 @@ func temperatureSeries(r *smart.Report, runtime []float64) []float64 {
 	if r.ATATemperatureHistory != nil && len(r.ATATemperatureHistory.Table) > 1 {
 		out := make([]float64, 0, len(r.ATATemperatureHistory.Table))
 		for _, v := range r.ATATemperatureHistory.Table {
-			// SCT logs use a sentinel for "no reading"; skip implausible values.
-			if v > -40 && v < 200 {
-				out = append(out, float64(v))
+			// An empty slot is null; skip it and any implausible value.
+			if v != nil && *v > -40 && *v < 200 {
+				out = append(out, float64(*v))
 			}
 		}
 		return out

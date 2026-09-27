@@ -150,6 +150,23 @@ func (s *scrollList) Draw(screen tcell.Screen) {
 	drawScrollArrows(screen, s, offset*s.linesPerItem, s.GetItemCount()*s.linesPerItem)
 }
 
+// InputHandler adds j/k, which tview.List lacks; the narrow layout takes ↑/↓
+// for the drive selection, so they are the list's only line keys there.
+func (s *scrollList) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
+	inner := s.List.InputHandler()
+	return func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
+		if event.Key() == tcell.KeyRune {
+			switch event.Rune() {
+			case 'j':
+				event = tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+			case 'k':
+				event = tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+			}
+		}
+		inner(event, setFocus)
+	}
+}
+
 // InputHandler scrolls the viewport with the keys App.onKey lets through to
 // the focused primitive.
 func (s *scrollView) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {

@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strconv"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"github.com/trm42/smartview/internal/smart"
 )
 
 // TestSeriesRowsScalesToRangeNotZero: a 35–40°C series scaled to its own
@@ -356,5 +359,18 @@ func TestHeadAxisLabelsNameTheHeadBeneathThem(t *testing.T) {
 	}
 	if !sawCut {
 		t.Fatal("no width ever shortened the strip; the test proves nothing")
+	}
+}
+
+// TestTemperatureSeriesSkipsEmptySlots: smartctl writes an unfilled SCT slot
+// as null, which must not chart as 0°C and drag the range down to it.
+func TestTemperatureSeriesSkipsEmptySlots(t *testing.T) {
+	var r smart.Report
+	raw := `{"ata_sct_temperature_history":{"table":[35,null,36,null,37]}}`
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := temperatureSeries(&r, nil), []float64{35, 36, 37}; !slices.Equal(got, want) {
+		t.Errorf("temperatureSeries() = %v, want %v", got, want)
 	}
 }

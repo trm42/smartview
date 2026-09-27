@@ -494,3 +494,18 @@ func TestRunDoesNotOutliveItsDeadline(t *testing.T) {
 		t.Fatal("run still blocked a second after a 50ms deadline")
 	}
 }
+
+// TestParseNoData pins the envelope an unreadable device produces: no verdict,
+// which must not grade as failing, and the reason in the fatal message.
+func TestParseNoData(t *testing.T) {
+	r := parseFixture(t, "smart-sde-nodata.json")
+	if r.HasHealth() {
+		t.Error("HasHealth() = true for a report with no smart_status")
+	}
+	if got := r.Overall(); got != SeverityOK {
+		t.Errorf("Overall() = %v, want OK: an unread drive is not a failing one", got)
+	}
+	if _, ok := r.FatalMessage(); !ok {
+		t.Error("FatalMessage() found nothing; the permission error is the only explanation shown")
+	}
+}

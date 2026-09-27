@@ -12,7 +12,8 @@ and whether anything has ever failed.
 
 ## Features
 
-- Live drive list with a health glyph (`●` OK, `▲` caution, `■` failing),
+- Live drive list with a health glyph (`●` OK, `▲` caution, `■` failing,
+  `?` no data — the drive could not be read),
   protocol, capacity and temperature.
 - The ATA attribute table or NVMe health log, sorted by severity, with a
   plain-language explanation of whichever row you select.
@@ -173,7 +174,8 @@ Twenty-one of them, from a green-CRT phosphor to a set of light paper
 palettes. `--theme` picks the starting one, `T` cycles them live, and
 `smartview -h` lists the names.
 
-Severity is never colour alone: `●` healthy, `▲` caution, `■` failing, and a
+Severity is never colour alone: `●` healthy, `▲` caution, `■` failing, `?` no
+data, and a
 failing verdict is a filled chip rather than tinted text. That's what keeps
 `phosphor`, `amber` and `mono` readable.
 

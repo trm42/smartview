@@ -5,6 +5,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -70,7 +71,9 @@ type App struct {
 	// sharedModels marks model names more than one drive reports; rebuilt with the list.
 	sharedModels map[string]bool
 	inModal      bool
-	fleetMode    bool
+	// pendingNotices wait for the open modal to close; pushModal would replace it.
+	pendingNotices []string
+	fleetMode      bool
 
 	// bannerShown: its text is set once, so theme cycles must call refreshBanner.
 	bannerShown bool
@@ -264,14 +267,17 @@ func (a *App) renderRail(cur int) {
 			fmt.Fprintf(&b, " %s●[-] %s%s[-]", mutedTag(), mutedTag(), esc(name))
 			continue
 		}
-		sev := rep.Overall()
 		if i == cur {
+			markColor := severityColor(rep.Overall())
+			if noVerdict(rep) {
+				markColor = activeTheme.Muted
+			}
 			// The ▸ marker keeps the selection visible under mono.
 			fmt.Fprintf(&b, " %s▸%s %s[-:-:-]",
-				fgbgTag(severityColor(sev), activeTheme.SelectionBg), healthGlyph(sev), esc(name))
+				fgbgTag(markColor, activeTheme.SelectionBg), reportGlyph(rep), esc(name))
 			continue
 		}
-		fmt.Fprintf(&b, "  %s %s", healthGlyph(sev), esc(name))
+		fmt.Fprintf(&b, "  %s %s", reportGlyph(rep), esc(name))
 	}
 	if n := a.alertCount(); n > 0 {
 		fmt.Fprintf(&b, "  %s▲ %d[-]", cautionTag(), n)
@@ -544,7 +550,7 @@ func (a *App) listRow(d smart.Device) (string, string) {
 	if rep.ModelName == "" {
 		model = esc(shortName(d))
 	}
-	main := fmt.Sprintf("%s %s", healthGlyph(rep.Overall()), model)
+	main := fmt.Sprintf("%s %s", reportGlyph(rep), model)
 	// Identical models are common; name the device when the model alone is ambiguous.
 	if a.sharedModels[rep.ModelName] {
 		main += mutedTag() + " · " + esc(railName(d)) + "[-]"
@@ -558,8 +564,14 @@ func (a *App) listRow(d smart.Device) (string, string) {
 // Run performs the initial scan and starts the event loop and poll goroutine.
 func (a *App) Run(ctx context.Context) error {
 	a.rootCtx = ctx
-	devices, err := smart.Scan(ctx)
+	// Bounded like every poll: a wedged device would otherwise hang startup on a blank terminal.
+	scanCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	devices, err := smart.Scan(scanCtx)
+	cancel()
 	if err != nil && len(devices) == 0 {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("scan drives: smartctl --scan-open did not respond within %s", fetchTimeout)
+		}
 		return fmt.Errorf("scan drives: %w (try running with sudo)", err)
 	}
 	a.devices = devices

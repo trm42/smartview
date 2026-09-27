@@ -109,6 +109,31 @@ func healthGlyph(s smart.Severity) string {
 	return sevText(s, severityGlyph(s))
 }
 
+// noVerdict reports a drive that returned no SMART verdict and nothing else to grade,
+// which would otherwise read as healthy.
+func noVerdict(r *smart.Report) bool {
+	return !r.HasHealth() && r.Overall() == smart.SeverityOK
+}
+
+// reportGlyph is healthGlyph for a report, with a muted "?" for one with no verdict.
+func reportGlyph(r *smart.Report) string {
+	if noVerdict(r) {
+		return mutedTag() + noVerdictGlyph + "[-]"
+	}
+	return healthGlyph(r.Overall())
+}
+
+// reportVerdict is the verdict word for a report, muted "No data" for one with no verdict.
+func reportVerdict(r *smart.Report) string {
+	if noVerdict(r) {
+		return mutedTag() + "No data[-]"
+	}
+	sev := r.Overall()
+	return sevVerdict(sev, verdictWord(sev))
+}
+
+const noVerdictGlyph = "?"
+
 // severityGlyph is the bare mark for a severity, escalating by weight.
 func severityGlyph(s smart.Severity) string {
 	switch s {

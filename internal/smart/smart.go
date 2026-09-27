@@ -137,6 +137,10 @@ const standbyExit = 129
 // drive data.
 func (r *Report) InStandby() bool { return r.Smartctl.ExitStatus == standbyExit }
 
+// HasHealth reports that smartctl returned a SMART verdict; an open failure or a bridge
+// without SMART passthrough leaves smart_status out.
+func (r *Report) HasHealth() bool { return r.SmartStatus != nil }
+
 // powerArgs is the SkipStandby guard: -d because autodetection can spin the drive up, and no
 // STATUS2 so a drive without a power-mode check is still read.
 func powerArgs(d Device, policy PowerPolicy) []string {

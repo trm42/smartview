@@ -228,9 +228,14 @@ goroutine (`setNarrow` in app.go is the pattern).
   child, so a descendant still holding that pipe outlives the cancel; `run`
   sets `cmd.WaitDelay` for it. Without that, a stub that leaves a child behind
   printed the 5s preflight timeout and then held the process a further 55s.
-- **The JSON schema is sparse and drive-dependent.** Only `device`, `smartctl`,
-  and `smart_status` are reliably present (Apple internal SSDs omit capacity,
-  logs, etc.). Every other field in `types.go` is a pointer or slice so absent
+- **The JSON schema is sparse and drive-dependent.** Only `device` and
+  `smartctl` are reliably present (Apple internal SSDs omit capacity, logs,
+  etc.). Even `smart_status` goes missing when the open fails — permission
+  denied, a USB bridge with no SMART passthrough — so it is a pointer too, and
+  `Report.HasHealth()` is the test: a missing verdict is "No data" (`?`,
+  muted, `noVerdict` in format.go), never Failing, and `applyResults` never
+  lets such an envelope replace a report that had one. Every other field in
+  `types.go` is a pointer or slice so absent
   sections decode to nil. Nil-check before dereferencing; never assume a section
   exists. New fixtures should preserve this — `testdata/smart-apple-nvme.json`
   is the deliberate graceful-degradation guard.
@@ -348,7 +353,9 @@ goroutine (`setNarrow` in app.go is the pattern).
   show through its interior — use `newOpaqueFlex` (`tview.Modal` clears itself);
   and `Pages` passes an **unconsumed** click down to the page underneath, which
   is why every modal is wrapped in `modalLayer`, whose `MouseHandler` swallows
-  what the modal declines.
+  what the modal declines. There is one modal page, so a second `pushModal`
+  replaces the first: an asynchronous `notice` (a self-test error) queues in
+  `pendingNotices` while one is open and `popModal` shows it next.
 - **Mouse handlers run on the event-loop goroutine with no draw lock held** —
   the mirror image of the draw-hook rule above. `Application.SetFocus` and direct
   widget mutation are correct there; `QueueUpdate(Draw)` self-deadlocks, since the
@@ -662,7 +669,9 @@ unhealthy drive in the set — a pre-fail attribute below threshold (Failing), a
 past threshold dip (Caution), nonzero error counters and a failed SMART
 self-assessment. Every other fixture is healthy, so without it nothing exercises
 the severity path and the yellow/red rendering can only be eyeballed by editing
-data by hand. `metrics_test.go` covers the
+data by hand. `smart-sde-nodata.json` is the permission-denied envelope (no
+`smart_status`), the one fixture that renders the `?` No-data state.
+`metrics_test.go` covers the
 cross-protocol accessors against the same fixtures, pinning which source each
 drive falls through to (the Seagate reads writes from Device Statistics, the
 Samsung from attribute 241 and is therefore approximate) and that absent
