@@ -69,6 +69,11 @@ func (a *App) popModal() {
 		a.app.SetFocus(a.detail.content())
 	}
 	a.refreshChrome()
+	if len(a.pendingNotices) > 0 {
+		next := a.pendingNotices[0]
+		a.pendingNotices = a.pendingNotices[1:]
+		a.notice(next, "OK")
+	}
 }
 
 // styleModal grounds a modal in the active theme; Modal.SetBackgroundColor
@@ -283,8 +288,12 @@ func (a *App) keysModal() tview.Primitive {
 	return centeredModal(box, keysModalWidth, rows+4)
 }
 
-// notice shows a modal with one dismissing button.
+// notice shows a modal with one dismissing button, after any modal already open.
 func (a *App) notice(text, button string) {
+	if a.inModal {
+		a.pendingNotices = append(a.pendingNotices, text)
+		return
+	}
 	a.pushModal(styleModal(tview.NewModal()).
 		SetText(text).
 		AddButtons([]string{button}).

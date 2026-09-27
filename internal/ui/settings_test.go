@@ -204,3 +204,26 @@ func TestSettingsKeyOpensTheModal(t *testing.T) {
 	screen.InjectKey(tcell.KeyRune, 'S', tcell.ModNone)
 	waitFor(t, a, "settings modal to open on the S key", func() bool { return a.inModal })
 }
+
+// TestAsyncErrorWaitsForTheOpenModal: a self-test failure arriving while
+// Settings is open must not replace it and drop the unsaved edits.
+func TestAsyncErrorWaitsForTheOpenModal(t *testing.T) {
+	a, _ := recordingApp(t, config.Default())
+	a.showSettings()
+	_, settings := a.rootPages.GetFrontPage()
+
+	a.showError("start the self-test", errors.New("boom"))
+	if _, front := a.rootPages.GetFrontPage(); front != settings {
+		t.Fatal("the error replaced the open Settings modal")
+	}
+
+	a.popModal()
+	_, front := a.rootPages.GetFrontPage()
+	if !a.inModal || front == settings {
+		t.Fatal("the deferred error was not shown once Settings closed")
+	}
+	a.popModal()
+	if a.inModal {
+		t.Error("the error notice did not dismiss")
+	}
+}

@@ -353,7 +353,9 @@ goroutine (`setNarrow` in app.go is the pattern).
   show through its interior — use `newOpaqueFlex` (`tview.Modal` clears itself);
   and `Pages` passes an **unconsumed** click down to the page underneath, which
   is why every modal is wrapped in `modalLayer`, whose `MouseHandler` swallows
-  what the modal declines.
+  what the modal declines. There is one modal page, so a second `pushModal`
+  replaces the first: an asynchronous `notice` (a self-test error) queues in
+  `pendingNotices` while one is open and `popModal` shows it next.
 - **Mouse handlers run on the event-loop goroutine with no draw lock held** —
   the mirror image of the draw-hook rule above. `Application.SetFocus` and direct
   widget mutation are correct there; `QueueUpdate(Draw)` self-deadlocks, since the

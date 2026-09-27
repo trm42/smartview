@@ -70,7 +70,9 @@ type App struct {
 	// sharedModels marks model names more than one drive reports; rebuilt with the list.
 	sharedModels map[string]bool
 	inModal      bool
-	fleetMode    bool
+	// pendingNotices wait for the open modal to close; pushModal would replace it.
+	pendingNotices []string
+	fleetMode      bool
 
 	// bannerShown: its text is set once, so theme cycles must call refreshBanner.
 	bannerShown bool
