@@ -185,9 +185,9 @@ overridable with `--config PATH`. Five settings: `theme`, `refresh_interval`,
   the same index space as the rows, so `↓` runs off the last setting onto the
   buttons and `←`/`→` move between them; the buttons carry their own captures
   because `GetButton` returns a `*tview.Button`, not a `FormItem`.
-- **The Settings modal (`S`) is the only writer.** `T` and `+`/`-` stay
+- **The Settings modal (`S`) is the only writer.** `t`/`T` and `+`/`-` stay
   session-only, as the README says. `App.currentConfig()` is *derived* from the
-  live fields and never stored: a cached copy would drift the moment `T` changed
+  live fields and never stored: a cached copy would drift the moment `t` changed
   the session outside the modal, and Save would then silently revert the theme
   the user is looking at.
 - **The hint bar's right-hand summary names the settings that have keys.** It
@@ -348,7 +348,7 @@ goroutine (`setNarrow` in app.go is the pattern).
   modals.go). `a.rootPages` holds the main layout on `pageMain` and the modal on
   `pageModal`; `SetRoot(modal, false)` used to replace the tree, so the drive
   list and detail vanished — worst on the Settings modal, whose own footer says
-  `T` cycles the theme live. Two consequences to keep in mind when adding one:
+  `t`/`T` cycle the theme live. Two consequences to keep in mind when adding one:
   tview's `Flex` sets `dontClear`, so a modal built on a plain Flex lets the app
   show through its interior — use `newOpaqueFlex` (`tview.Modal` clears itself);
   and `Pages` passes an **unconsumed** click down to the page underneath, which
@@ -482,7 +482,7 @@ goroutine (`setNarrow` in app.go is the pattern).
   ground would silently take the lower one. Foregrounds clear 3:1 on the
   ground everywhere and 4:1 on a light one, where ink loses to glare and
   nothing falls back to the terminal. `--theme NAME` selects at startup, the
-  `T` key cycles live (`cycleTheme`→`repaintAll`, which forces a detail
+  `t`/`T` keys step forward/back live (`cycleTheme`→`repaintAll`, which forces a detail
   rebuild so widgets that baked colour in at build time get re-coloured — the
   one-shot root-warning banner is the easy miss, hence `refreshBanner`). List
   widgets (drive list, Tests-tab selector) must be themed via `styleList`

@@ -86,20 +86,17 @@ func (a *App) onKey(ev *tcell.EventKey) *tcell.EventKey {
 		case '+', '-':
 			a.setInterval(nextInterval(a.interval, r == '-'))
 			return nil
-		case 't':
-			if a.detail.selectTabID("tests") {
-				a.focusDetail()
-			}
-			return nil
 		case 'c':
 			a.toggleFleet()
 			return nil
 		case '?':
 			a.showKeys()
 			return nil
+		case 't':
+			a.cycleTheme(1)
+			return nil
 		case 'T':
-			// Uppercase cycles the theme; lowercase t (above) is the Tests tab.
-			a.cycleTheme()
+			a.cycleTheme(-1)
 			return nil
 		case 'S':
 			// Uppercase opens Settings; lowercase s (attributes.go) sorts.
@@ -128,10 +125,7 @@ func (a *App) onFleetKey(ev *tcell.EventKey) bool {
 		a.stepFleetSection(1)
 		return true
 	case tcell.KeyRune:
-		switch r := ev.Rune(); {
-		case r == 't':
-			return true // no drive on screen for the Tests tab to address
-		case r >= '1' && r <= '9':
+		if r := ev.Rune(); r >= '1' && r <= '9' {
 			a.fleet.selectSection(int(r - '1'))
 			a.refreshChrome()
 			return true

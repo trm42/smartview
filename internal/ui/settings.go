@@ -23,7 +23,7 @@ const (
 
 // settingsHelp is the focus-following help line per row.
 var settingsHelp = []string{
-	"Colour palette. T cycles it live.",
+	"Colour palette. t/T cycle it live.",
 	"How often every drive is re-read.",
 	"Leave parked drives asleep. ATA only.",
 	"Draw all six tabs, muting empty ones.",

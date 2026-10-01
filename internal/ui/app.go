@@ -320,7 +320,7 @@ func (a *App) statusText() string {
 			aq + "r[-] refresh   " + aq + "q[-] quit"
 		hint += a.contextHints()
 	}
-	hint += "   " + aq + "+/-[-] rate   " + aq + "T[-] theme   " + aq + "S[-] settings"
+	hint += "   " + aq + "+/-[-] rate   " + aq + "t/T[-] theme   " + aq + "S[-] settings"
 	return hint + fmt.Sprintf("      %s · %s", a.themeName, a.interval)
 }
 
@@ -403,9 +403,9 @@ func (a *App) refreshBanner() {
 	a.banner.SetText(fgbgTag(activeTheme.Inverse, activeTheme.BannerBg) + text + "[-:-]")
 }
 
-// cycleTheme advances to the next theme and repaints.
-func (a *App) cycleTheme() {
-	a.themeName = nextThemeName(a.themeName)
+// cycleTheme steps delta themes along the cycle and repaints.
+func (a *App) cycleTheme(delta int) {
+	a.themeName = stepThemeName(a.themeName, delta)
 	setTheme(themes[a.themeName])
 	a.repaintAll()
 }

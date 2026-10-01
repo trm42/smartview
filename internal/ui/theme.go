@@ -740,11 +740,11 @@ func ThemeNames() string {
 	return strings.Join(themeCycle, ", ")
 }
 
-// nextThemeName returns the theme after cur in themeCycle, wrapping; an unknown cur starts over.
-func nextThemeName(cur string) string {
+// stepThemeName returns the theme delta places from cur in themeCycle, wrapping; an unknown cur starts over.
+func stepThemeName(cur string, delta int) string {
 	for i, n := range themeCycle {
 		if n == cur {
-			return themeCycle[(i+1)%len(themeCycle)]
+			return themeCycle[(i+delta+len(themeCycle))%len(themeCycle)]
 		}
 	}
 	return themeCycle[0]

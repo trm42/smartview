@@ -244,7 +244,7 @@ func TestRailRepaintsAfterUpdate(t *testing.T) {
 
 	// A theme cycle must reach it too: renderRail bakes in the active colours.
 	themed := a.rail.GetText(false)
-	a.cycleTheme()
+	a.cycleTheme(1)
 	if got := a.rail.GetText(false); got == themed {
 		t.Errorf("rail markup unchanged after a theme cycle: %q", got)
 	}
@@ -256,7 +256,7 @@ func TestRailRepaintsAfterUpdate(t *testing.T) {
 func TestThemeCycleRegroundsPersistentWidgets(t *testing.T) {
 	a, _ := newSimApp(t, 120, 40)
 	for range themeCycle {
-		a.cycleTheme()
+		a.cycleTheme(1)
 		if activeTheme.Background != dark.Background {
 			break
 		}
@@ -319,7 +319,7 @@ func TestThemeCycleRegroundsWidgetsTheWalkCannotReach(t *testing.T) {
 	}
 
 	for range themeCycle {
-		a.cycleTheme()
+		a.cycleTheme(1)
 		if activeTheme.Background != dark.Background {
 			break
 		}
@@ -343,7 +343,7 @@ func TestThemeCycleKeepsThePlaceholderMessage(t *testing.T) {
 	const msg = "No drives found. Try running with sudo."
 	a.detail.showPlaceholder(msg)
 
-	a.cycleTheme()
+	a.cycleTheme(1)
 
 	name, page := a.detail.pages.GetFrontPage()
 	if name != "placeholder" {
@@ -374,7 +374,7 @@ func TestChromeSurvivesAThemeCycle(t *testing.T) {
 			break
 		}
 		// InjectKey is asynchronous; wait for each press to land.
-		screen.InjectKey(tcell.KeyRune, 'T', tcell.ModNone)
+		screen.InjectKey(tcell.KeyRune, 't', tcell.ModNone)
 		for deadline := time.Now().Add(testTimeout); theme() == cur; {
 			if time.Now().After(deadline) {
 				t.Fatalf("theme did not advance past %q within %s", cur, testTimeout)
@@ -383,7 +383,7 @@ func TestChromeSurvivesAThemeCycle(t *testing.T) {
 		}
 	}
 	if got := theme(); got != light {
-		t.Fatalf("cycling with T stopped at theme %q, want %q", got, light)
+		t.Fatalf("cycling with t stopped at theme %q, want %q", got, light)
 	}
 	// The second onLoop runs after the first one's frame is drawn. Scan inside
 	// the closure: GetContents returns the live cell array, so scanning elsewhere races the draw.
@@ -414,4 +414,34 @@ func TestChromeSurvivesAThemeCycle(t *testing.T) {
 		}
 		t.Errorf("%s, want >= %.1f", f, minRatio)
 	}
+}
+
+// TestThemeKeysStepBothWays: t steps forward and T back, in the fleet view as well.
+func TestThemeKeysStepBothWays(t *testing.T) {
+	a, screen := newSimApp(t, 120, 30)
+	runSim(t, a, screen)
+
+	theme := func() string { return onLoop(t, a, func() string { return a.themeName }) }
+	// InjectKey is asynchronous; wait for each press to land.
+	press := func(r rune, want string) {
+		t.Helper()
+		screen.InjectKey(tcell.KeyRune, r, tcell.ModNone)
+		for deadline := time.Now().Add(testTimeout); theme() != want; {
+			if time.Now().After(deadline) {
+				t.Fatalf("after %q the theme is %q, want %q", r, theme(), want)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	start := theme()
+	next, prev := stepThemeName(start, 1), stepThemeName(start, -1)
+	press('t', next)
+	press('T', start)
+	press('T', prev)
+	press('t', start)
+
+	onLoop(t, a, func() any { a.toggleFleet(); return nil })
+	press('t', next)
+	press('T', start)
 }
