@@ -171,7 +171,7 @@ respects that. `R` is the one key that wakes a drive.
 ### Themes
 
 Twenty-one of them, from a green-CRT phosphor to a set of light paper
-palettes. `--theme` picks the starting one, `T` cycles them live, and
+palettes. `--theme` picks the starting one, `t` / `T` step through them live, and
 `smartview -h` lists the names.
 
 Severity is never colour alone: `●` healthy, `▲` caution, `■` failing, `?` no
@@ -194,11 +194,10 @@ nearest xterm-256 colour.
 | `←` / `→` | Move between panes and step through tabs |
 | `Tab` | Toggle focus between the list and the detail pane |
 | `1`–`9` | Switch tab by number (a click on a tab does the same) |
-| `t` | Jump to the Tests tab |
 | `c` | Toggle the fleet comparison |
 | `r` / `R` | Refresh now / wake spun-down drives and refresh |
 | `+` / `-` | Slower / faster refresh (2s → 5s → 10s → 30s → 1m → 5m) |
-| `T` | Cycle the theme |
+| `t` / `T` | Next / previous theme |
 | `S` | Open Settings |
 | `?` | Show every binding |
 | `s` / `f` (Attributes) | Cycle the sort / filter |

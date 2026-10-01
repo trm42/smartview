@@ -144,23 +144,36 @@ func TestHasTheme(t *testing.T) {
 	}
 }
 
-func TestNextThemeNameWraps(t *testing.T) {
+func TestStepThemeNameWraps(t *testing.T) {
 	// Walk the whole cycle and confirm it returns to the start.
 	start := themeCycle[0]
 	cur := start
 	for range themeCycle {
-		cur = nextThemeName(cur)
+		cur = stepThemeName(cur, 1)
 	}
 	if cur != start {
 		t.Errorf("cycling %d times from %q landed on %q, want %q", len(themeCycle), start, cur, start)
 	}
 	// Each step advances to the next distinct theme.
-	if got := nextThemeName("dark"); got == "dark" || !HasTheme(got) {
-		t.Errorf("nextThemeName(\"dark\") = %q, want a different registered theme", got)
+	if got := stepThemeName("dark", 1); got == "dark" || !HasTheme(got) {
+		t.Errorf("stepThemeName(\"dark\", 1) = %q, want a different registered theme", got)
 	}
-	// An unknown current theme restarts the cycle.
-	if got := nextThemeName("bogus"); got != themeCycle[0] {
-		t.Errorf("nextThemeName(\"bogus\") = %q, want %q", got, themeCycle[0])
+	// Stepping back undoes a step forward, from every theme.
+	for _, name := range themeCycle {
+		if got := stepThemeName(stepThemeName(name, 1), -1); got != name {
+			t.Errorf("forward then back from %q landed on %q", name, got)
+		}
+	}
+	// Backwards off the head wraps to the tail.
+	last := themeCycle[len(themeCycle)-1]
+	if got := stepThemeName(start, -1); got != last {
+		t.Errorf("stepThemeName(%q, -1) = %q, want %q", start, got, last)
+	}
+	// An unknown current theme restarts the cycle, whichever way it steps.
+	for _, delta := range []int{1, -1} {
+		if got := stepThemeName("bogus", delta); got != start {
+			t.Errorf("stepThemeName(\"bogus\", %d) = %q, want %q", delta, got, start)
+		}
 	}
 }
 

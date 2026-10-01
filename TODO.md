@@ -38,7 +38,7 @@ for drive health via smartmontools.
 - [x] **Sortable / filterable attribute table**: `s` cycles the sort order and `f` the
       filter, both local view state with no smartctl call.
 - [x] **Colour themes**: `dark`, `electric`, `phosphor`, `amber`, `mono`; `--theme` picks
-      the starting palette and `T` cycles them live.
+      the starting palette and `t` / `T` step through them live.
 - [x] **Validated on real Linux SATA hardware**: the ATA path (attribute table, pre-fail
       row colouring, SCT-history-seeded temperature sparkline) and the Seagate FARM path
       (live `-l farm -j` fetch, the Seagate-ATA gate, the per-head charts).

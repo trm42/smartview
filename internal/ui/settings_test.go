@@ -26,11 +26,11 @@ func recordingApp(t *testing.T, cfg config.Config) (*App, *[]config.Config) {
 	return a, &saved
 }
 
-// TestCurrentConfigIsDerivedFromLiveState: a cached config would let Save revert a theme chosen with T.
+// TestCurrentConfigIsDerivedFromLiveState: a cached config would let Save revert a theme chosen with t.
 func TestCurrentConfigIsDerivedFromLiveState(t *testing.T) {
 	a, _ := recordingApp(t, config.Default())
 
-	a.cycleTheme()
+	a.cycleTheme(1)
 	a.setInterval(5 * time.Second)
 
 	got := a.currentConfig()
@@ -175,7 +175,7 @@ func TestSettingsModalOpensAndCancels(t *testing.T) {
 func TestSettingsFormIsThemed(t *testing.T) {
 	a, _ := recordingApp(t, config.Default())
 	for range themeCycle {
-		a.cycleTheme()
+		a.cycleTheme(1)
 		if activeTheme.Background != dark.Background {
 			break
 		}
