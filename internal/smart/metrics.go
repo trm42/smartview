@@ -236,8 +236,8 @@ func (r *Report) ErrorCounts() ErrorCounts {
 		e.MediaErrors = new(int64(h.MediaErrors))
 		e.ErrorLogEntries = new(int64(h.NumErrLogEntries))
 		e.UnsafeShutdowns = new(int64(h.UnsafeShutdowns))
-	} else if r.ATAErrorLog != nil && r.ATAErrorLog.Extended != nil {
-		e.ErrorLogEntries = new(int64(r.ATAErrorLog.Extended.Count))
+	} else if l := r.ATAErrors(); l != nil {
+		e.ErrorLogEntries = new(int64(l.Count))
 	}
 	return e
 }

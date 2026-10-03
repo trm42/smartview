@@ -41,11 +41,29 @@ type ATATemperatureHistory struct {
 	Table                  []*int `json:"table"` // nil where smartctl wrote null for an empty slot
 }
 
-// ATASelfTestLog holds the extended self-test history.
+// ATASelfTestLog is the self-test history: GP log 0x07, or the legacy SMART log without it.
 type ATASelfTestLog struct {
-	Extended *struct {
-		Table []ATASelfTestEntry `json:"table"`
-	} `json:"extended"`
+	Extended *ATASelfTestTable `json:"extended"`
+	Standard *ATASelfTestTable `json:"standard"`
+}
+
+// ATASelfTestTable is one self-test log; both shapes share the entry layout.
+type ATASelfTestTable struct {
+	Table []ATASelfTestEntry `json:"table"`
+}
+
+// ATASelfTests returns the self-test history, newest first, and whether the drive reported a log.
+func (r *Report) ATASelfTests() ([]ATASelfTestEntry, bool) {
+	l := r.ATASelfTestLog
+	switch {
+	case l == nil:
+		return nil, false
+	case l.Extended != nil:
+		return l.Extended.Table, true
+	case l.Standard != nil:
+		return l.Standard.Table, true
+	}
+	return nil, false
 }
 
 // ATASelfTestEntry is one self-test run.
@@ -55,22 +73,35 @@ type ATASelfTestEntry struct {
 	LifetimeHours int         `json:"lifetime_hours"`
 }
 
-// ATAErrorLog summarises logged ATA command errors.
+// ATAErrorLog is the logged ATA command errors: GP log 0x03, or the legacy SMART log without it.
 type ATAErrorLog struct {
 	Extended *ATAErrorLogExtended `json:"extended"`
+	Summary  *ATAErrorLogExtended `json:"summary"`
 }
 
-// ATAErrorLogExtended is the extended comprehensive error log; Table is empty on a healthy drive.
+// ATAErrorLogExtended is one error log of either shape; Table is empty on a healthy drive.
 type ATAErrorLogExtended struct {
 	Count int                `json:"count"`
 	Table []ATAErrorLogEntry `json:"table"`
 }
 
-// ATAErrorLogEntry is one entry of the extended comprehensive SMART error log.
+// ATAErrorLogEntry is one logged error; only the fields both shapes share are modelled.
 type ATAErrorLogEntry struct {
 	ErrorNumber      int    `json:"error_number"`
 	LifetimeHours    int    `json:"lifetime_hours"`
 	ErrorDescription string `json:"error_description"`
+}
+
+// ATAErrors returns the drive's error log, preferring the extended shape; nil when neither is reported.
+func (r *Report) ATAErrors() *ATAErrorLogExtended {
+	l := r.ATAErrorLog
+	switch {
+	case l == nil:
+		return nil
+	case l.Extended != nil:
+		return l.Extended
+	}
+	return l.Summary
 }
 
 // WWN is the drive's World Wide Name.
