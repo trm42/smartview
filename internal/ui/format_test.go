@@ -116,7 +116,7 @@ func TestDriveKind(t *testing.T) {
 	}{
 		{"nvme", smart.Report{Device: smart.Device{Protocol: "NVMe"}}, "NVMe SSD"},
 		{"hdd", smart.Report{Device: smart.Device{Protocol: "ATA"}, RotationRate: &rpm}, "HDD @ 7200 rpm"},
-		{"ssd nil rpm", smart.Report{Device: smart.Device{Protocol: "ATA"}}, "SATA SSD"},
+		{"ata nil rpm", smart.Report{Device: smart.Device{Protocol: "ATA"}}, dash},
 		{"ssd zero rpm", smart.Report{Device: smart.Device{Protocol: "ATA"}, RotationRate: &zero}, "SATA SSD"},
 		{"other", smart.Report{Device: smart.Device{Protocol: "SCSI"}}, "SCSI"},
 	}

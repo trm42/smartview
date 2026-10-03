@@ -249,20 +249,24 @@ var (
 	shortKindLabels = kindLabels{nvme: "NVMe", hdd: "HDD", ssd: "SSD"}
 )
 
-// kindLabel classifies the drive and names it from l; only the HDD label may carry %d.
+// kindLabel names the drive's kind from l, dash when an ATA drive reports none;
+// only the HDD label may carry %d.
 func kindLabel(r *smart.Report, l kindLabels) string {
+	kind, rpm, ok := r.Kind()
 	switch {
-	case r.IsNVMe():
+	case !ok && r.IsATA():
+		return dash
+	case !ok:
+		return esc(r.Device.Protocol)
+	case kind == smart.KindNVMe:
 		return l.nvme
-	case r.RotationRate != nil && *r.RotationRate > 0:
+	case kind == smart.KindHDD:
 		if strings.Contains(l.hdd, "%d") {
-			return fmt.Sprintf(l.hdd, *r.RotationRate)
+			return fmt.Sprintf(l.hdd, rpm)
 		}
 		return l.hdd
-	case r.IsATA():
-		return l.ssd
 	default:
-		return esc(r.Device.Protocol)
+		return l.ssd
 	}
 }
 
