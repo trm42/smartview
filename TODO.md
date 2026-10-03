@@ -37,8 +37,12 @@ for drive health via smartmontools.
       total is marked `~` as a vendor-defined estimate.
 - [x] **Sortable / filterable attribute table**: `s` cycles the sort order and `f` the
       filter, both local view state with no smartctl call.
-- [x] **Colour themes**: `dark`, `electric`, `phosphor`, `amber`, `mono`; `--theme` picks
-      the starting palette and `t` / `T` step through them live.
+- [x] **Colour themes**: 21 palettes — dark grounds (`dark`, `electric`, `phosphor`,
+      `amber`, `cga`, `neon`, `nord`, `gruvbox`, the colour-vision-safe `beacon`),
+      coloured grounds (`cobalt`, `ultraviolet`, `deepsea`, `oxblood`), light ones
+      (`daylight`, `parchment`, `sorbet`, `marigold`, `seafoam`, `sky`) and two that
+      inherit the terminal's own colours (`terminal`, `mono`). `--theme` or the config
+      file picks the starting palette; `t` steps to the next live and `T` to the previous.
 - [x] **Validated on real Linux SATA hardware**: the ATA path (attribute table, pre-fail
       row colouring, SCT-history-seeded temperature sparkline) and the Seagate FARM path
       (live `-l farm -j` fetch, the Seagate-ATA gate, the per-head charts).
@@ -51,6 +55,10 @@ for drive health via smartmontools.
       exiting 129 — has never run against a real drive. The dev Mac cannot
       exercise it: its only drive is an Apple NVMe, where `-n` is ignored by
       design. Needs the Linux SATA box, as FARM and self-tests did.
+- [ ] **Width-aware hint bar.** The bar is already wider than the 100-column
+      breakpoint it appears at, so its right-hand end overflows on a terminal
+      just past the breakpoint. It should shorten to what fits, as the narrow
+      bar already does, rather than run off the edge.
 - [x] **Validate the live self-test trigger**: started and tracked to completion on real
       self-test-capable hardware under `sudo` on the Linux SATA box.
 
@@ -59,9 +67,9 @@ for drive health via smartmontools.
 - [x] **Self-tests** (`smartctl -t short|long`): a capability-gated **Tests** tab triggers
       short/long tests, shows live progress with a cancel (`smartctl -X`) affordance, and
       flips back to the selector when idle. Conveyance/selective are deliberately excluded.
-      ATA + NVMe data paths are fixture/unit-tested; **live trigger needs validation on
-      real self-test-capable hardware under `sudo`** (the dev Mac's Apple NVMe reports no
-      self-test support, so the tab is hidden there).
+      ATA + NVMe data paths are fixture/unit-tested, and the live trigger has been
+      validated on the Linux SATA box (the dev Mac's Apple NVMe reports no self-test
+      support, so the tab is hidden there).
 - [ ] **Alerts / thresholds.** Optional notification or log when an attribute crosses
       into Caution/Failing; persist temperature history to disk for longer trends.
 - [x] **Config file / settings.** TOML at `os.UserConfigDir()/smartview/config.toml`
