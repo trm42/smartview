@@ -39,4 +39,8 @@ func TestSparseSCTLogFallsBackToRuntime(t *testing.T) {
 	if strings.Contains(legend(r), polls) {
 		t.Error("legend claims a runtime trend for a drive with a usable SCT log")
 	}
+
+	if got, _ := sctSeries(sctReport(t, `[35,-128,36,255]`)); !slices.Equal(got, []float64{35, 36}) {
+		t.Errorf("series = %v, want the implausible slots dropped", got)
+	}
 }

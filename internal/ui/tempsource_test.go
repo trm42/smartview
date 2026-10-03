@@ -47,6 +47,15 @@ func TestTempChartReadsTheCurrentTemperature(t *testing.T) {
 			if want := severityColor(tc.sev); c.color != want {
 				t.Errorf("chart colour = %v, want %v", c.color, want)
 			}
+			if last := c.data[len(c.data)-1]; int(last) != tc.current {
+				t.Errorf("newest plotted point = %v, want the live %d the caption calls now", last, tc.current)
+			}
+			if lo, hi, _ := dataRange(c.data); float64(tc.current) < lo || float64(tc.current) > hi {
+				t.Errorf("title %q: now lies outside the plotted range %v–%v", c.GetTitle(), lo, hi)
+			}
+			if want := "–" + tempText(tc.current); !strings.Contains(c.GetTitle(), want) {
+				t.Errorf("title %q states a range that excludes now", c.GetTitle())
+			}
 		})
 	}
 

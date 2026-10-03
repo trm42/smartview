@@ -4,6 +4,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -434,10 +435,12 @@ func buildTempSparkline(r *smart.Report, runtime []float64) tview.Primitive {
 	if len(data) < 2 {
 		return nil
 	}
-	// The SCT log lags by its logging interval, so the live reading wins.
+	// The SCT log lags by its logging interval, so the live reading is plotted as the newest point.
 	now, ok := r.CurrentTemp()
 	if !ok {
 		now = int(data[len(data)-1])
+	} else if int(data[len(data)-1]) != now {
+		data = append(slices.Clone(data), float64(now))
 	}
 	lo, hi, _ := dataRange(data)
 
