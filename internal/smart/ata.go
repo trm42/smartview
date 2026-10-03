@@ -202,11 +202,12 @@ type ATASelfTestStatus struct {
 	RemainingPercent *int   `json:"remaining_percent"`
 }
 
-// SelfTestPolling is how long each self-test type takes, in minutes.
+// SelfTestPolling is how long each self-test type takes, in minutes; smartctl
+// writes a key only for a test the drive supports, so nil is "not reported".
 type SelfTestPolling struct {
-	Short      int `json:"short"`
-	Extended   int `json:"extended"`
-	Conveyance int `json:"conveyance"`
+	Short      *int `json:"short"`
+	Extended   *int `json:"extended"`
+	Conveyance *int `json:"conveyance"`
 }
 
 // SATAPhyEvents is the SATA PHY event counter log (flaky cable/connection signal).
