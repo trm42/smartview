@@ -21,6 +21,8 @@ func TestLogsTabGatedOnRenderedSmartData(t *testing.T) {
 		{"empty self_test", `{"ata_smart_data":{"self_test":{}}}`, false},
 		{"status only", `{"ata_smart_data":{"self_test":{"status":{"value":0,"string":"completed without error"}}}}`, false},
 		{"capabilities only", `{"ata_smart_data":{"capabilities":{"self_tests_supported":true}}}`, false},
+		{"empty polling_minutes", `{"ata_smart_data":{"self_test":{"polling_minutes":{}}}}`, false},
+		{"reported zero", `{"ata_smart_data":{"self_test":{"polling_minutes":{"short":0}}}}`, true},
 		{"polling minutes", `{"ata_smart_data":{"self_test":{"polling_minutes":{"short":2,"extended":90}}}}`, true},
 	}
 	for _, c := range cases {
