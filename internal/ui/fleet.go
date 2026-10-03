@@ -130,6 +130,9 @@ func (v *fleetView) refresh(devices []smart.Device, reports map[string]*smart.Re
 	v.render()
 }
 
+// noDrivesText is the empty-scan message the detail pane and the fleet share.
+const noDrivesText = "No drives found. Try running with sudo."
+
 // standbyPrefix marks a spun-down drive in the fleet's identity cell.
 func standbyPrefix(row fleetRow) string {
 	if !row.asleep {
@@ -148,7 +151,7 @@ func (v *fleetView) render() {
 	if len(v.shown) == 0 {
 		v.table.Clear()
 		v.table.SetTitle(" Fleet ")
-		v.table.SetCell(0, 0, tview.NewTableCell(" Scanning for drives… ").
+		v.table.SetCell(0, 0, tview.NewTableCell(" "+noDrivesText+" ").
 			SetTextColor(activeTheme.Muted).SetSelectable(false))
 		v.legend.SetText("")
 		v.ordered = nil
@@ -158,10 +161,7 @@ func (v *fleetView) render() {
 	sec := v.shown[v.activeIndex()]
 	v.ordered = v.sortRows(sec)
 	v.renderTable(sec)
-	legend := sec.legend(v.rows)
-	if slices.ContainsFunc(v.rows, func(r fleetRow) bool { return r.asleep }) {
-		legend = standbyGlyph + " spun down; values as of the last read · " + legend
-	}
+	legend := fleetLegend(v.rows, sec)
 	if v.dropped > 0 {
 		legend = fmt.Sprintf("%s%s at a wider terminal[-] · %s",
 			cautionTag(), plural(v.dropped, "more column", "more columns"), legend)
@@ -170,7 +170,25 @@ func (v *fleetView) render() {
 	v.restoreSelection()
 }
 
-// availableSections filters out sections no drive in this fleet can fill.
+// fleetLegend prefixes the section's legend with what a spun-down or unread row means; a fleet with no report at all omits the section's own caveats.
+func fleetLegend(rows []fleetRow, sec fleetSection) string {
+	var parts []string
+	switch {
+	case slices.ContainsFunc(rows, func(r fleetRow) bool { return r.asleep && r.rep != nil }):
+		parts = append(parts, standbyGlyph+" spun down; values as of the last read")
+	case slices.ContainsFunc(rows, func(r fleetRow) bool { return r.asleep }):
+		parts = append(parts, standbyGlyph+" spun down")
+	}
+	if slices.ContainsFunc(rows, func(r fleetRow) bool { return r.rep == nil }) {
+		parts = append(parts, "a row of "+dash+" has not been read yet")
+	}
+	if slices.ContainsFunc(rows, func(r fleetRow) bool { return r.rep != nil }) {
+		parts = append(parts, sec.legend(rows))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// availableSections filters out sections no drive in this fleet can fill; empty only when there are no rows.
 func (v *fleetView) availableSections() []fleetSection {
 	if len(v.rows) == 0 {
 		return nil

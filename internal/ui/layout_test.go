@@ -230,7 +230,7 @@ func TestRailRepaintsAfterUpdate(t *testing.T) {
 	a.app.SetFocus(a.detail.content())
 	a.setNarrow(true)
 	a.populateList() // no reports yet: the muted "scanning" state
-	before := a.rail.GetText(true)
+	before := a.rail.GetText(false)
 
 	a.reports["/dev/sda"] = &smart.Report{
 		Device:      smart.Device{Name: "/dev/sda", Protocol: "ATA"},
@@ -238,8 +238,8 @@ func TestRailRepaintsAfterUpdate(t *testing.T) {
 		ModelName:   "TEST DRIVE",
 	}
 	a.populateList()
-	if got := a.rail.GetText(true); got == before {
-		t.Errorf("rail text unchanged after a report arrived: %q", got)
+	if got := a.rail.GetText(false); got == before {
+		t.Errorf("rail markup unchanged after a report arrived: %q", got)
 	}
 
 	// A theme cycle must reach it too: renderRail bakes in the active colours.
