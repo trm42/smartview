@@ -463,15 +463,21 @@ func nvmeRows(h *smart.NVMeHealth) []attrKV {
 	add("Unsafe shutdowns", fmt.Sprintf("%d", h.UnsafeShutdowns), smart.SeverityOK)
 	add("Data read", humanBytes(smart.DataUnitBytes(h.DataUnitsRead)), smart.SeverityOK)
 	add("Data written", humanBytes(smart.DataUnitBytes(h.DataUnitsWritten)), smart.SeverityOK)
-	if h.HostReads > 0 || h.HostWrites > 0 {
-		add("Read commands", fmt.Sprintf("%d", h.HostReads), smart.SeverityOK)
-		add("Write commands", fmt.Sprintf("%d", h.HostWrites), smart.SeverityOK)
+	if h.HostReads != nil {
+		add("Read commands", fmt.Sprintf("%d", *h.HostReads), smart.SeverityOK)
 	}
-	if h.ControllerBusyTime > 0 {
-		add("Controller busy", humanMinutes(int(h.ControllerBusyTime)), smart.SeverityOK)
+	if h.HostWrites != nil {
+		add("Write commands", fmt.Sprintf("%d", *h.HostWrites), smart.SeverityOK)
 	}
-	add("Warn temp time", humanMinutes(h.WarningTempTime), sevIf(h.WarningTempTime > 0, smart.SeverityCaution))
-	add("Crit temp time", humanMinutes(h.CriticalCompTime), sevIf(h.CriticalCompTime > 0, smart.SeverityCaution))
+	if h.ControllerBusyTime != nil {
+		add("Controller busy", humanMinutes(int(*h.ControllerBusyTime)), smart.SeverityOK)
+	}
+	if h.WarningTempTime != nil {
+		add("Warn temp time", humanMinutes(*h.WarningTempTime), sevIf(*h.WarningTempTime > 0, smart.SeverityCaution))
+	}
+	if h.CriticalCompTime != nil {
+		add("Crit temp time", humanMinutes(*h.CriticalCompTime), sevIf(*h.CriticalCompTime > 0, smart.SeverityCaution))
+	}
 	if len(h.TemperatureSensors) > 0 {
 		// Grade on the hottest sensor: the composite can sit in range while one is past it.
 		parts := make([]string, len(h.TemperatureSensors))
