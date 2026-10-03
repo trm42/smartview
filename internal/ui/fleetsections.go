@@ -94,9 +94,7 @@ func temperatureSection() fleetSection {
 		legend: func(rows []fleetRow) string {
 			s := "min/max is the drive's lifetime range where it reports one (ATA); " +
 				"otherwise the range observed in the trend window"
-			if anyRow(rows, func(r *smart.Report) bool {
-				return r.ATATemperatureHistory == nil || len(r.ATATemperatureHistory.Table) < 2
-			}) {
+			if anyRow(rows, func(r *smart.Report) bool { _, ok := sctSeries(r); return !ok }) {
 				s += " · drives without an on-device log build their trend over successive polls"
 			}
 			return s
