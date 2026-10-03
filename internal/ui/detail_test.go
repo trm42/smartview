@@ -41,9 +41,9 @@ func TestVisibleTabs(t *testing.T) {
 		{"nvme", smart.Report{
 			Device: smart.Device{Protocol: "NVMe"}, NVMeHealth: &smart.NVMeHealth{},
 		}, []string{"overview", "attributes"}},
-		{"with logs via self-test timing", smart.Report{
+		{"smart data without self-test timing", smart.Report{
 			Device: smart.Device{Protocol: "ATA"}, ATASmartData: &smart.ATASmartData{},
-		}, []string{"overview", "logs"}},
+		}, []string{"overview"}},
 		{"with farm", smart.Report{
 			Device:        smart.Device{Protocol: "ATA"},
 			ATAAttributes: &smart.ATAAttributes{Table: []smart.ATAAttribute{{ID: 5}}},
@@ -56,7 +56,7 @@ func TestVisibleTabs(t *testing.T) {
 					SelfTestsSupported bool `json:"self_tests_supported"`
 				}{SelfTestsSupported: true},
 			},
-		}, []string{"overview", "tests", "logs"}},
+		}, []string{"overview", "tests"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -76,7 +76,7 @@ func TestHasLogs(t *testing.T) {
 		{"none", smart.Report{}, false},
 		{"ata error log", smart.Report{ATAErrorLog: &smart.ATAErrorLog{}}, true},
 		{"nvme self-test", smart.Report{NVMeSelfTestLog: &smart.NVMeSelfTestLog{}}, true},
-		{"self-test timing", smart.Report{ATASmartData: &smart.ATASmartData{}}, true},
+		{"smart data without self-test timing", smart.Report{ATASmartData: &smart.ATASmartData{}}, false},
 		{"phy counters", smart.Report{SATAPhyEvents: &smart.SATAPhyEvents{}}, true},
 	}
 	for _, c := range cases {
