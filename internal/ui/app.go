@@ -577,7 +577,7 @@ func (a *App) Run(ctx context.Context) error {
 	a.devices = devices
 	a.populateList()
 	if len(devices) == 0 {
-		a.detail.showPlaceholder("No drives found. Try running with sudo.")
+		a.detail.showPlaceholder(noDrivesText)
 	}
 	a.applyStartView()
 

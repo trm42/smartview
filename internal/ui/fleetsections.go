@@ -110,9 +110,8 @@ func healthSection() fleetSection {
 		id:      "health",
 		title:   "Health & errors",
 		columns: []string{"State", "Realloc", "Pending", "Uncorr", "CRC", "Media", "Err log", "Unsafe"},
-		available: func(rows []fleetRow) bool {
-			return anyRow(rows, func(*smart.Report) bool { return true })
-		},
+		// Always available, so drives with no report yet still get their rows.
+		available: func(rows []fleetRow) bool { return len(rows) > 0 },
 		rank: func(row fleetRow) (float64, bool) {
 			if row.rep == nil || noVerdict(row.rep) {
 				return 0, false
