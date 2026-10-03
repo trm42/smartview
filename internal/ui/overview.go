@@ -4,6 +4,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -434,7 +435,13 @@ func buildTempSparkline(r *smart.Report, runtime []float64) tview.Primitive {
 	if len(data) < 2 {
 		return nil
 	}
-	now := int(data[len(data)-1])
+	// The SCT log lags by its logging interval, so the live reading is plotted as the newest point.
+	now, ok := r.CurrentTemp()
+	if !ok {
+		now = int(data[len(data)-1])
+	} else if int(data[len(data)-1]) != now {
+		data = append(slices.Clone(data), float64(now))
+	}
 	lo, hi, _ := dataRange(data)
 
 	// Graded on the current temperature, and only once it leaves the band.
@@ -453,15 +460,23 @@ func buildTempSparkline(r *smart.Report, runtime []float64) tview.Primitive {
 
 // temperatureSeries picks the best available temperature history for the drive.
 func temperatureSeries(r *smart.Report, runtime []float64) []float64 {
-	if r.ATATemperatureHistory != nil && len(r.ATATemperatureHistory.Table) > 1 {
-		out := make([]float64, 0, len(r.ATATemperatureHistory.Table))
-		for _, v := range r.ATATemperatureHistory.Table {
-			// An empty slot is null; skip it and any implausible value.
-			if v != nil && *v > -40 && *v < 200 {
-				out = append(out, float64(*v))
-			}
-		}
-		return out
+	if sct, ok := sctSeries(r); ok {
+		return sct
 	}
 	return runtime
+}
+
+// sctSeries returns the drive's own SCT temperature log, ok only when it holds a trend.
+func sctSeries(r *smart.Report) ([]float64, bool) {
+	if r.ATATemperatureHistory == nil {
+		return nil, false
+	}
+	out := make([]float64, 0, len(r.ATATemperatureHistory.Table))
+	for _, v := range r.ATATemperatureHistory.Table {
+		// An empty slot is null; skip it and any implausible value.
+		if v != nil && *v > -40 && *v < 200 {
+			out = append(out, float64(*v))
+		}
+	}
+	return out, len(out) > 1
 }

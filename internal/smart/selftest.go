@@ -55,24 +55,48 @@ func (r *Report) SelfTestProgress() (label string, percent int, running bool) {
 	}
 }
 
-// SelfTestDuration returns the advertised runtime for a self-test type; ATA
-// only, NVMe returns false.
-func (r *Report) SelfTestDuration(testType SelfTestType) (time.Duration, bool) {
+// SelfTestEstimate is one self-test runtime the drive advertises, under
+// smartctl's name for it.
+type SelfTestEstimate struct {
+	Name     string
+	Duration time.Duration
+}
+
+// SelfTestEstimates lists the self-test runtimes the drive reports, a reported
+// zero included, omitting any it does not; ATA only, NVMe returns nil.
+func (r *Report) SelfTestEstimates() []SelfTestEstimate {
 	if r.ATASmartData == nil || r.ATASmartData.SelfTest == nil || r.ATASmartData.SelfTest.PollingMinutes == nil {
-		return 0, false
+		return nil
 	}
 	p := r.ATASmartData.SelfTest.PollingMinutes
-	var minutes int
+	var out []SelfTestEstimate
+	for _, e := range []struct {
+		name    string
+		minutes *int
+	}{{"short", p.Short}, {"extended", p.Extended}, {"conveyance", p.Conveyance}} {
+		if e.minutes != nil {
+			out = append(out, SelfTestEstimate{e.name, time.Duration(*e.minutes) * time.Minute})
+		}
+	}
+	return out
+}
+
+// SelfTestDuration returns the advertised runtime for a self-test type, or
+// false when it is absent or not positive; ATA only, NVMe returns false.
+func (r *Report) SelfTestDuration(testType SelfTestType) (time.Duration, bool) {
+	var name string
 	switch testType {
 	case SelfTestShort:
-		minutes = p.Short
+		name = "short"
 	case SelfTestLong:
-		minutes = p.Extended
+		name = "extended"
 	default:
 		return 0, false
 	}
-	if minutes <= 0 {
-		return 0, false
+	for _, e := range r.SelfTestEstimates() {
+		if e.Name == name && e.Duration > 0 {
+			return e.Duration, true
+		}
 	}
-	return time.Duration(minutes) * time.Minute, true
+	return 0, false
 }
