@@ -63,9 +63,11 @@ type App struct {
 	devices []smart.Device
 	reports map[string]*smart.Report
 	history map[string][]float64 // runtime temperature series per device
-	// asleep: drives smartctl declined to wake; lastRead: when reports[name] was read.
-	asleep   map[string]bool
-	lastRead map[string]time.Time
+	// asleep: drives smartctl declined to wake; unreadable: drives whose read failed
+	// after a good one; lastRead: when reports[name] was read.
+	asleep     map[string]bool
+	unreadable map[string]bool
+	lastRead   map[string]time.Time
 	// startedTests is the self-test type smartview started per device; drives never report it. Aged out in observeSelfTest.
 	startedTests map[string]startedTest
 	// sharedModels marks model names more than one drive reports; rebuilt with the list.
@@ -105,6 +107,7 @@ func New(cfg config.Config, save func(config.Config) error) *App {
 		reports:      map[string]*smart.Report{},
 		history:      map[string][]float64{},
 		asleep:       map[string]bool{},
+		unreadable:   map[string]bool{},
 		lastRead:     map[string]time.Time{},
 		startedTests: map[string]startedTest{},
 	}
@@ -141,6 +144,7 @@ func (a *App) build() {
 	a.applyLayout(false)
 
 	a.fleet = newFleetView(a.openDrive)
+	a.fleet.unreadable = a.unreadable
 	a.bodyPages = tview.NewPages().
 		AddPage(pageDrives, a.body, true, true).
 		AddPage(pageFleet, a.fleet, true, false)
@@ -229,11 +233,14 @@ func (a *App) alertCount() int {
 	return n
 }
 
-// driveListTitle is the wide list's title, carrying the rail's attention and standby counts.
+// driveListTitle is the wide list's title, carrying the rail's attention, unreadable and standby counts.
 func (a *App) driveListTitle() string {
 	title := " Drives "
 	if n := a.alertCount(); n > 0 {
 		title += fmt.Sprintf("%s▲ %d[-] ", cautionTag(), n)
+	}
+	if n := a.unreadableCount(); n > 0 {
+		title += fmt.Sprintf("%s%s %d[-] ", cautionTag(), unreadableGlyph, n)
 	}
 	if n := a.asleepCount(); n > 0 {
 		title += fmt.Sprintf("%s%s %d[-] ", mutedTag(), standbyGlyph, n)
@@ -242,10 +249,16 @@ func (a *App) driveListTitle() string {
 }
 
 // asleepCount is how many of the current drives are spun down.
-func (a *App) asleepCount() int {
+func (a *App) asleepCount() int { return a.countDevices(a.asleep) }
+
+// unreadableCount is how many of the current drives show a reading their last read could not refresh.
+func (a *App) unreadableCount() int { return a.countDevices(a.unreadable) }
+
+// countDevices is how many of the current drives are set in flags.
+func (a *App) countDevices(flags map[string]bool) int {
 	n := 0
 	for _, d := range a.devices {
-		if a.asleep[d.Name] {
+		if flags[d.Name] {
 			n++
 		}
 	}
@@ -285,7 +298,10 @@ func (a *App) renderRail(cur int) {
 	if n := a.alertCount(); n > 0 {
 		fmt.Fprintf(&b, "  %s▲ %d[-]", cautionTag(), n)
 	}
-	// No room for a per-drive standby mark, so count them.
+	// No room for a per-drive stale mark, so count them.
+	if n := a.unreadableCount(); n > 0 {
+		fmt.Fprintf(&b, "  %s%s %d[-]", cautionTag(), unreadableGlyph, n)
+	}
 	if n := a.asleepCount(); n > 0 {
 		fmt.Fprintf(&b, "  %s%s %d[-]", mutedTag(), standbyGlyph, n)
 	}
@@ -448,7 +464,7 @@ func (a *App) showDevice(i int) {
 	}
 	dev := a.devices[i]
 	if rep, ok := a.reports[dev.Name]; ok {
-		a.detail.setNote(a.standbyNote(dev.Name))
+		a.detail.setNote(a.staleNote(dev.Name))
 		a.observeSelfTest(dev.Name, rep)
 		a.detail.update(rep, a.history[dev.Name])
 		return
@@ -517,26 +533,40 @@ func (a *App) duplicateModels() map[string]bool {
 // standbyGlyph marks a drive smartctl declined to wake: its values are real but not current.
 const standbyGlyph = "◌"
 
-// standbyMark returns the standby prefix for a drive, or "" when it is awake.
-func (a *App) standbyMark(name string) string {
-	if !a.asleep[name] {
-		return ""
+// unreadableGlyph marks a drive whose last read failed: its values are the last good ones.
+const unreadableGlyph = "⊘"
+
+// staleMark returns the prefix for a drive whose values are not current, or "" when they are.
+func (a *App) staleMark(name string) string {
+	switch {
+	case a.asleep[name]:
+		return mutedTag() + standbyGlyph + "[-] "
+	case a.unreadable[name]:
+		return cautionTag() + unreadableGlyph + "[-] "
 	}
-	return mutedTag() + standbyGlyph + "[-] "
+	return ""
 }
 
-// standbyNote dates a spun-down drive's cached values for the caveat row.
-func (a *App) standbyNote(name string) string {
-	if !a.asleep[name] {
-		return ""
-	}
+// staleNote dates a spun-down or unreadable drive's cached values for the caveat row.
+func (a *App) staleNote(name string) string {
 	read, ok := a.lastRead[name]
-	if !ok {
+	asOf := ""
+	if ok {
+		asOf = fmt.Sprintf("values as of %s, %s ago.[-]", read.Format("15:04"), roundDuration(time.Since(read)))
+	}
+	switch {
+	case a.asleep[name] && !ok:
 		return fmt.Sprintf("%s%s Spun down — no reading yet; press R to wake and read.[-]",
 			mutedTag(), standbyGlyph)
+	case a.asleep[name]:
+		return fmt.Sprintf("%s%s Spun down — %s", mutedTag(), standbyGlyph, asOf)
+	case a.unreadable[name] && !ok:
+		return fmt.Sprintf("%s%s Last read failed — values are from an earlier read.[-]",
+			cautionTag(), unreadableGlyph)
+	case a.unreadable[name]:
+		return fmt.Sprintf("%s%s Last read failed — %s", cautionTag(), unreadableGlyph, asOf)
 	}
-	return fmt.Sprintf("%s%s Spun down — values as of %s, %s ago.[-]",
-		mutedTag(), standbyGlyph, read.Format("15:04"), roundDuration(time.Since(read)))
+	return ""
 }
 
 // listRow renders the main/secondary text for a drive row.
@@ -545,7 +575,7 @@ func (a *App) listRow(d smart.Device) (string, string) {
 	if !ok {
 		sec := "scanning…"
 		if a.asleep[d.Name] {
-			sec = a.standbyMark(d.Name) + "asleep · R to read"
+			sec = a.staleMark(d.Name) + "asleep · R to read"
 		}
 		return fmt.Sprintf("%s●[-] %s", mutedTag(), esc(shortName(d))), sec
 	}
@@ -558,9 +588,9 @@ func (a *App) listRow(d smart.Device) (string, string) {
 	if a.sharedModels[rep.ModelName] {
 		main += mutedTag() + " · " + esc(railName(d)) + "[-]"
 	}
-	// tempCell ends with a style reset, so the temperature goes last; the health glyph stays undimmed while asleep.
+	// tempCell ends with a style reset, so the temperature goes last; the health glyph stays undimmed while stale.
 	sec := fmt.Sprintf("%s%s · %s · %s",
-		a.standbyMark(d.Name), esc(shortName(d)), capacityString(rep), tempCell(rep))
+		a.staleMark(d.Name), esc(shortName(d)), capacityString(rep), tempCell(rep))
 	return main, sec
 }
 
