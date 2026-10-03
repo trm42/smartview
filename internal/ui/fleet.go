@@ -38,6 +38,8 @@ type fleetView struct {
 	renderer bool       // true while rebuilding, to ignore transient selection events
 
 	onOpen func(device string)
+	// unreadable is the App's map, shared rather than copied; event-loop only.
+	unreadable map[string]bool
 }
 
 // fleetLegendHeight fits the longest caveat wrapped to two lines.
@@ -120,7 +122,7 @@ func (v *fleetView) refresh(devices []smart.Device, reports map[string]*smart.Re
 	history map[string][]float64, asleep map[string]bool) {
 	rows := make([]fleetRow, 0, len(devices))
 	for _, d := range devices {
-		row := fleetRow{dev: d, rep: reports[d.Name], asleep: asleep[d.Name]}
+		row := fleetRow{dev: d, rep: reports[d.Name], asleep: asleep[d.Name], unreadable: v.unreadable[d.Name]}
 		if row.rep != nil {
 			row.series = temperatureSeries(row.rep, history[d.Name])
 		}
@@ -133,12 +135,33 @@ func (v *fleetView) refresh(devices []smart.Device, reports map[string]*smart.Re
 // noDrivesText is the empty-scan message the detail pane and the fleet share.
 const noDrivesText = "No drives found. Try running with sudo."
 
-// standbyPrefix marks a spun-down drive in the fleet's identity cell.
-func standbyPrefix(row fleetRow) string {
-	if !row.asleep {
-		return ""
+// stalePrefix marks a spun-down or unreadable drive in the fleet's identity cell.
+func stalePrefix(row fleetRow) string {
+	switch {
+	case row.asleep:
+		return standbyGlyph + " "
+	case row.unreadable:
+		return cautionTag() + unreadableGlyph + "[-] "
 	}
-	return standbyGlyph + " "
+	return ""
+}
+
+// staleLegend explains the stale marks in use; no form may outgrow the standby-only one.
+func staleLegend(rows []fleetRow) string {
+	asleep := slices.ContainsFunc(rows, func(r fleetRow) bool { return r.asleep })
+	asleepRead := slices.ContainsFunc(rows, func(r fleetRow) bool { return r.asleep && r.rep != nil })
+	unreadable := slices.ContainsFunc(rows, func(r fleetRow) bool { return r.unreadable })
+	switch {
+	case asleep && unreadable:
+		return standbyGlyph + " spun down, " + unreadableGlyph + " read failed; last values"
+	case asleepRead:
+		return standbyGlyph + " spun down; values as of the last read"
+	case asleep:
+		return standbyGlyph + " spun down"
+	case unreadable:
+		return unreadableGlyph + " read failed; last good values"
+	}
+	return ""
 }
 
 // render rebuilds strip, table and legend, restoring selection by device name.
@@ -170,14 +193,11 @@ func (v *fleetView) render() {
 	v.restoreSelection()
 }
 
-// fleetLegend prefixes the section's legend with what a spun-down or unread row means; a fleet with no report at all omits the section's own caveats.
+// fleetLegend prefixes the section's legend with what a stale or unread row means; a fleet with no report at all omits the section's own caveats.
 func fleetLegend(rows []fleetRow, sec fleetSection) string {
 	var parts []string
-	switch {
-	case slices.ContainsFunc(rows, func(r fleetRow) bool { return r.asleep && r.rep != nil }):
-		parts = append(parts, standbyGlyph+" spun down; values as of the last read")
-	case slices.ContainsFunc(rows, func(r fleetRow) bool { return r.asleep }):
-		parts = append(parts, standbyGlyph+" spun down")
+	if stale := staleLegend(rows); stale != "" {
+		parts = append(parts, stale)
 	}
 	if slices.ContainsFunc(rows, func(r fleetRow) bool { return r.rep == nil }) {
 		parts = append(parts, "a row of "+dash+" has not been read yet")
@@ -307,7 +327,7 @@ func (v *fleetView) setRow(rowIdx int, row fleetRow, secCells []fleetCell, n int
 			waiting = "asleep"
 		}
 		cells = []fleetCell{
-			{text: mutedTag() + "●[-] " + standbyPrefix(row) + esc(fleetDevice(row.dev)),
+			{text: mutedTag() + "●[-] " + stalePrefix(row) + esc(fleetDevice(row.dev)),
 				color: activeTheme.Muted},
 			{text: waiting, color: activeTheme.Muted},
 			{text: dash, color: activeTheme.Muted},
@@ -324,7 +344,7 @@ func (v *fleetView) setRow(rowIdx int, row fleetRow, secCells []fleetCell, n int
 			secCells = secCells[:n]
 		}
 		identity := []fleetCell{
-			{text: reportGlyph(row.rep) + " " + standbyPrefix(row) + esc(fleetDevice(row.dev)),
+			{text: reportGlyph(row.rep) + " " + stalePrefix(row) + esc(fleetDevice(row.dev)),
 				color: activeTheme.Neutral},
 			{text: esc(model), color: activeTheme.Neutral},
 			{text: orDash(esc(truncateRunes(row.rep.SerialNumber, fleetSerialWidth))),
