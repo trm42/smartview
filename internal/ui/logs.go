@@ -13,7 +13,7 @@ import (
 func hasLogs(r *smart.Report) bool {
 	return r.ATASelfTestLog != nil || r.ATAErrorLog != nil ||
 		r.NVMeSelfTestLog != nil || r.NVMeErrorLog != nil ||
-		r.ATASmartData != nil || r.SATAPhyEvents != nil ||
+		selfTestDurations(r) != "" || r.SATAPhyEvents != nil ||
 		r.ATAPendingDefects != nil || r.ATASCTErc != nil
 }
 
