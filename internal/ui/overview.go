@@ -303,18 +303,14 @@ func identitySections(r *smart.Report) []identitySection {
 	if n, ok := r.PowerCycles(); ok {
 		add(&wear, "Power cycles", fmt.Sprintf("%d", n))
 	}
+	// A reading the gauges draw needs no row.
+	if pct, ok := r.LifeUsedPercent(); ok && !gaugesLife(r) {
+		add(&wear, "Life used", pctMarkup(pct, lifeUsedSeverity(pct)))
+	}
+	if pct, thr, ok := r.SparePercent(); ok && !gaugesSpare(r) {
+		add(&wear, "Spare avail", pctMarkup(pct, spareSeverityPct(pct, thr)))
+	}
 	if h := r.NVMeHealth; h != nil {
-		// The gauges show the standard fields; only fallback sources need a row.
-		if h.PercentageUsed == nil {
-			if pct, ok := r.LifeUsedPercent(); ok {
-				add(&wear, "Life used", fmt.Sprintf("%d%%", pct))
-			}
-		}
-		if h.AvailableSpare == nil {
-			if pct, _, ok := r.SparePercent(); ok {
-				add(&wear, "Spare avail", fmt.Sprintf("%d%%", pct))
-			}
-		}
 		add(&wear, "Media errors", fmt.Sprintf("%d", h.MediaErrors))
 		add(&wear, "Unsafe shutdn", fmt.Sprintf("%d", h.UnsafeShutdowns))
 	}
@@ -360,12 +356,28 @@ func yesNo(b bool) string {
 	return "no"
 }
 
+// pctMarkup renders a percentage, tinted only once it leaves its band.
+func pctMarkup(pct int, sev smart.Severity) string {
+	s := fmt.Sprintf("%d%%", pct)
+	if sev == smart.SeverityOK {
+		return s
+	}
+	return sevText(sev, s)
+}
+
+// gaugesLife reports whether the endurance gauge is drawn: only the NVMe
+// health log's own field gets one, a fallback source gets a row.
+func gaugesLife(r *smart.Report) bool {
+	return r.NVMeHealth != nil && r.NVMeHealth.PercentageUsed != nil
+}
+
+// gaugesSpare is gaugesLife for the spare gauge.
+func gaugesSpare(r *smart.Report) bool {
+	return r.NVMeHealth != nil && r.NVMeHealth.AvailableSpare != nil
+}
+
 // buildGauges returns NVMe wear gauges, nil without a percentage indicator.
 func buildGauges(r *smart.Report) tview.Primitive {
-	if r.NVMeHealth == nil {
-		return nil
-	}
-	h := r.NVMeHealth
 	col := tview.NewFlex().SetDirection(tview.FlexRow)
 	// shown and graded differ: "90% left" is coloured by the 10% consumed.
 	addGauge := func(title string, shown int, graded smart.Severity) {
@@ -378,11 +390,12 @@ func buildGauges(r *smart.Report) tview.Primitive {
 		col.AddItem(g, 3, 0, false)
 	}
 
-	if h.PercentageUsed != nil {
+	if gaugesLife(r) {
 		// Remaining endurance, so it fills toward healthy like the fleet bar.
-		addGauge(" Life left ", 100-clampPct(*h.PercentageUsed), lifeUsedSeverity(*h.PercentageUsed))
+		used, _ := r.LifeUsedPercent()
+		addGauge(" Life left ", 100-clampPct(used), lifeUsedSeverity(used))
 	}
-	if h.AvailableSpare != nil {
+	if gaugesSpare(r) {
 		pct, thr, _ := r.SparePercent()
 		addGauge(" Spare avail ", pct, spareSeverityPct(pct, thr))
 	}
