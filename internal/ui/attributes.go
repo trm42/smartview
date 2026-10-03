@@ -193,7 +193,7 @@ func (v *attributesView) renderRows() {
 
 	v.shown = v.visibleRows()
 	if len(v.shown) == 0 {
-		v.table.SetCell(1, 0, tview.NewTableCell(" No attributes match — all healthy ").
+		v.table.SetCell(1, 0, tview.NewTableCell(" "+emptyAttrNote(v.filter, len(v.attrs))+" ").
 			SetTextColor(activeTheme.Neutral).SetSelectable(false))
 		v.footer.SetText("")
 		return
@@ -201,6 +201,18 @@ func (v *attributesView) renderRows() {
 
 	for i, a := range v.shown {
 		v.setAttrRow(i+1, a)
+	}
+}
+
+// emptyAttrNote explains an empty table; only the concerning filter over real rows is an all-clear.
+func emptyAttrNote(filter filterMode, total int) string {
+	switch {
+	case total == 0:
+		return "No attributes reported by this drive"
+	case filter == filterConcerning:
+		return "No attributes match — all healthy"
+	default:
+		return "No attributes match this filter"
 	}
 }
 

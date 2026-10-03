@@ -291,7 +291,15 @@ var allTabs = []struct {
 
 // hasAttributes reports whether either protocol's attribute view has data.
 func hasAttributes(r *smart.Report) bool {
-	return (r.IsNVMe() && r.NVMeHealth != nil) || r.ATAAttributes != nil
+	return (r.IsNVMe() && r.NVMeHealth != nil) || len(ataAttributes(r)) > 0
+}
+
+// ataAttributes returns the ATA attribute rows, nil when the section is absent or empty.
+func ataAttributes(r *smart.Report) []smart.ATAAttribute {
+	if r.ATAAttributes == nil {
+		return nil
+	}
+	return r.ATAAttributes.Table
 }
 
 // visibleTabs returns the tabs to draw; showAll keeps unavailable ones, marked.
@@ -319,7 +327,7 @@ func (d *detail) buildTabView(t tab, r *smart.Report, tempHistory []float64) tab
 		if r.IsNVMe() && r.NVMeHealth != nil {
 			return newNVMeAttributesView(r.NVMeHealth)
 		}
-		return newAttributesView(r.ATAAttributes.Table)
+		return newAttributesView(ataAttributes(r))
 	case "statistics":
 		return newStatisticsView(r)
 	case "farm":

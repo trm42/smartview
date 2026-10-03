@@ -214,18 +214,17 @@ func writeVerdict(b *strings.Builder, r *smart.Report) {
 // verdictEvidence summarises what the verdict was derived from.
 func verdictEvidence(r *smart.Report) string {
 	var parts []string
-	if r.ATAAttributes != nil {
+	if attrs := ataAttributes(r); len(attrs) > 0 {
 		bad := 0
-		for i := range r.ATAAttributes.Table {
-			if r.ATAAttributes.Table[i].Severity() != smart.SeverityOK {
+		for i := range attrs {
+			if attrs[i].Severity() != smart.SeverityOK {
 				bad++
 			}
 		}
 		if bad == 0 {
-			parts = append(parts, fmt.Sprintf("%d attributes in range", len(r.ATAAttributes.Table)))
+			parts = append(parts, fmt.Sprintf("%d attributes in range", len(attrs)))
 		} else {
-			parts = append(parts, fmt.Sprintf("%d of %d attributes need attention",
-				bad, len(r.ATAAttributes.Table)))
+			parts = append(parts, fmt.Sprintf("%d of %d attributes need attention", bad, len(attrs)))
 		}
 	}
 	if e := r.ErrorCounts(); e.ErrorLogEntries != nil {
