@@ -17,11 +17,12 @@ type NVMeHealth struct {
 	MediaErrors             int   `json:"media_errors"`
 	NumErrLogEntries        int   `json:"num_err_log_entries"`
 	TemperatureSensors      []int `json:"temperature_sensors"`
-	HostReads               int64 `json:"host_reads"`
-	HostWrites              int64 `json:"host_writes"`
-	ControllerBusyTime      int64 `json:"controller_busy_time"` // minutes
-	WarningTempTime         int   `json:"warning_temp_time"`    // minutes
-	CriticalCompTime        int   `json:"critical_comp_time"`   // minutes
+	// Optional keys: nil means the drive did not report one.
+	HostReads          *int64 `json:"host_reads"`
+	HostWrites         *int64 `json:"host_writes"`
+	ControllerBusyTime *int64 `json:"controller_busy_time"` // minutes
+	WarningTempTime    *int   `json:"warning_temp_time"`    // minutes
+	CriticalCompTime   *int   `json:"critical_comp_time"`   // minutes
 }
 
 // NVMeErrorLog is the NVMe error information log. Size is the log's slot

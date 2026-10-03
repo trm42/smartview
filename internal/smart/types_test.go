@@ -39,10 +39,11 @@ func TestParseExtraFields(t *testing.T) {
 	if nvme.NVMeTotalCapacity == nil || *nvme.NVMeTotalCapacity != 2000398934016 {
 		t.Errorf("nvme total capacity = %v", nvme.NVMeTotalCapacity)
 	}
-	if nvme.NVMeHealth == nil || nvme.NVMeHealth.HostReads != 520343530 {
-		t.Errorf("host reads not parsed: %+v", nvme.NVMeHealth)
+	h := nvme.NVMeHealth
+	if h == nil || h.HostReads == nil || *h.HostReads != 520343530 {
+		t.Fatalf("host reads not parsed: %+v", h)
 	}
-	if nvme.NVMeHealth.ControllerBusyTime != 1131 {
-		t.Errorf("controller busy = %d, want 1131", nvme.NVMeHealth.ControllerBusyTime)
+	if h.ControllerBusyTime == nil || *h.ControllerBusyTime != 1131 {
+		t.Errorf("controller busy = %v, want 1131", h.ControllerBusyTime)
 	}
 }
