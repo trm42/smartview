@@ -34,7 +34,7 @@ func TestFleetHealthSortsNoVerdictLast(t *testing.T) {
 
 	v := newFleetView(nil)
 	v.activeID = "health"
-	v.refresh(devices, reports, nil, nil)
+	v.refresh(devices, reports, nil, nil, nil)
 
 	got := make([]string, 0, len(names))
 	for row := 1; row < v.table.GetRowCount(); row++ {

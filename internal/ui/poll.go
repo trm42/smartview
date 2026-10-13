@@ -107,7 +107,7 @@ func fetchDevice(ctx context.Context, d smart.Device, policy smart.PowerPolicy, 
 func (a *App) applyPoll(results map[string]pollResult) {
 	a.applyResults(results)
 	a.populateList()
-	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep)
+	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep, a.unreadable)
 	// A tab-set change rebuilds the views; restore focus.
 	detailFocused := a.detail.HasFocus()
 	a.showSelected()

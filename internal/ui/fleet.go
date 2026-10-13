@@ -38,8 +38,6 @@ type fleetView struct {
 	renderer bool       // true while rebuilding, to ignore transient selection events
 
 	onOpen func(device string)
-	// unreadable is the App's map, shared rather than copied; event-loop only.
-	unreadable map[string]bool
 }
 
 // fleetLegendHeight is the legend's minimum height; setLegend grows it to fit the wrapped text.
@@ -119,10 +117,10 @@ func (v *fleetView) syncWidth() bool {
 
 // refresh applies the latest poll; called even when hidden so the view is current on open.
 func (v *fleetView) refresh(devices []smart.Device, reports map[string]*smart.Report,
-	history map[string][]float64, asleep map[string]bool) {
+	history map[string][]float64, asleep, unreadable map[string]bool) {
 	rows := make([]fleetRow, 0, len(devices))
 	for _, d := range devices {
-		row := fleetRow{dev: d, rep: reports[d.Name], asleep: asleep[d.Name], unreadable: v.unreadable[d.Name]}
+		row := fleetRow{dev: d, rep: reports[d.Name], asleep: asleep[d.Name], unreadable: unreadable[d.Name]}
 		if row.rep != nil {
 			row.series = temperatureSeries(row.rep, history[d.Name])
 		}

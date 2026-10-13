@@ -186,7 +186,7 @@ func TestFleetLegendGrowsToFit(t *testing.T) {
 		"/dev/sda": fixtureReport(t, "smart-sda.json"),
 		"/dev/sdb": fixtureReport(t, "smart-sdb.json"),
 	}
-	v.refresh(devs, reports, nil, map[string]bool{"/dev/sda": true})
+	v.refresh(devs, reports, nil, map[string]bool{"/dev/sda": true}, nil)
 	v.Draw(screen)
 
 	_, _, w, h := v.legend.GetInnerRect()

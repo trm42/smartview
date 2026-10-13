@@ -144,7 +144,6 @@ func (a *App) build() {
 	a.applyLayout(false)
 
 	a.fleet = newFleetView(a.openDrive)
-	a.fleet.unreadable = a.unreadable
 	a.bodyPages = tview.NewPages().
 		AddPage(pageDrives, a.body, true, true).
 		AddPage(pageFleet, a.fleet, true, false)
@@ -436,7 +435,7 @@ func (a *App) repaintAll() {
 	applyBackground(a.list, a.rail, a.banner)
 	applyTextColor(a.status, a.rail, a.banner)
 	// The fleet table bakes a colour into every cell.
-	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep)
+	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep, a.unreadable)
 	a.refreshChrome()
 	a.refreshBanner()
 }
