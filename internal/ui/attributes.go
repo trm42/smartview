@@ -143,11 +143,12 @@ func (v *attributesView) reorder(step func()) {
 
 // refresh re-applies the latest data, keeping selection (by ID) and sort/filter.
 func (v *attributesView) refresh(r *smart.Report, _ []float64) {
-	if r.ATAAttributes == nil {
-		return
+	attrs := ataAttributes(r)
+	if len(attrs) == 0 {
+		return // hasAttributes now fails, so the tab is swapped for its placeholder
 	}
 	sel := v.selectedID()
-	v.attrs = r.ATAAttributes.Table
+	v.attrs = attrs
 	v.renderRows()
 	v.selectByID(sel)
 }
@@ -193,7 +194,7 @@ func (v *attributesView) renderRows() {
 
 	v.shown = v.visibleRows()
 	if len(v.shown) == 0 {
-		v.table.SetCell(1, 0, tview.NewTableCell(" "+emptyAttrNote(v.filter, len(v.attrs))+" ").
+		v.table.SetCell(1, 0, tview.NewTableCell(" "+emptyAttrNote(v.filter)+" ").
 			SetTextColor(activeTheme.Neutral).SetSelectable(false))
 		v.footer.SetText("")
 		return
@@ -204,16 +205,13 @@ func (v *attributesView) renderRows() {
 	}
 }
 
-// emptyAttrNote explains an empty table; only the concerning filter over real rows is an all-clear.
-func emptyAttrNote(filter filterMode, total int) string {
-	switch {
-	case total == 0:
-		return "No attributes reported by this drive"
-	case filter == filterConcerning:
+// emptyAttrNote explains a filtered-empty table; only the concerning filter is an all-clear,
+// since a drive with no attributes never gets this view (hasAttributes).
+func emptyAttrNote(filter filterMode) string {
+	if filter == filterConcerning {
 		return "No attributes match — all healthy"
-	default:
-		return "No attributes match this filter"
 	}
+	return "No attributes match this filter"
 }
 
 // setAttrRow fills table row (1-based) for attribute a.

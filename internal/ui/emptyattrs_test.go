@@ -72,28 +72,24 @@ func TestEmptyAttributeTableShowsPlaceholder(t *testing.T) {
 	}
 }
 
-// TestEmptyAttributeRowsNeverClaimHealthy pins that "all healthy" needs attributes to have been graded.
+// TestEmptyAttributeRowsNeverClaimHealthy pins that "all healthy" is only the concerning filter's answer.
 func TestEmptyAttributeRowsNeverClaimHealthy(t *testing.T) {
 	healthy := []smart.ATAAttribute{{ID: 9, Value: 90, Worst: 90}}
 	const (
-		noneReported = " No attributes reported by this drive "
-		noMatch      = " No attributes match this filter "
-		allHealthy   = " No attributes match — all healthy "
+		noMatch    = " No attributes match this filter "
+		allHealthy = " No attributes match — all healthy "
 	)
 	cases := []struct {
 		name   string
-		attrs  []smart.ATAAttribute
 		filter filterMode
 		want   string
 	}{
-		{"no attributes, all", nil, filterAll, noneReported},
-		{"no attributes, concerning", nil, filterConcerning, noneReported},
-		{"no pre-fail rows", healthy, filterPrefail, noMatch},
-		{"nothing concerning", healthy, filterConcerning, allHealthy},
+		{"no pre-fail rows", filterPrefail, noMatch},
+		{"nothing concerning", filterConcerning, allHealthy},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			v := newAttributesView(c.attrs)
+			v := newAttributesView(healthy)
 			v.filter = c.filter
 			v.renderRows()
 
@@ -101,5 +97,14 @@ func TestEmptyAttributeRowsNeverClaimHealthy(t *testing.T) {
 				t.Errorf("row = %q, want %q", got, c.want)
 			}
 		})
+	}
+}
+
+// TestEmptyRefreshKeepsRows: an empty poll leaves the rows for the tab swap to replace.
+func TestEmptyRefreshKeepsRows(t *testing.T) {
+	v := newAttributesView([]smart.ATAAttribute{{ID: 9, Value: 90, Worst: 90}})
+	v.refresh(decodeReport(t, emptyAttrEnvelopes["empty table"]), nil)
+	if len(v.attrs) != 1 {
+		t.Errorf("attrs = %d rows after an empty refresh, want the previous 1", len(v.attrs))
 	}
 }
