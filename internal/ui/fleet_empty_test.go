@@ -168,3 +168,30 @@ func TestFleetLegendQualifiesTheDash(t *testing.T) {
 		t.Errorf("legend with a read, parked drive = %q, want only the last-read caveat", got)
 	}
 }
+
+// TestFleetLegendGrowsToFit: every caveat at once still fits the legend at 80 columns.
+func TestFleetLegendGrowsToFit(t *testing.T) {
+	screen := tcell.NewSimulationScreen("")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 30)
+
+	v := newFleetView(nil)
+	v.SetRect(0, 0, 80, 30)
+	devs := []smart.Device{{Name: "/dev/sda"}, {Name: "/dev/sdb"}, {Name: "/dev/sdx"}}
+	reports := map[string]*smart.Report{
+		"/dev/sda": fixtureReport(t, "smart-sda.json"),
+		"/dev/sdb": fixtureReport(t, "smart-sdb.json"),
+	}
+	v.refresh(devs, reports, nil, map[string]bool{"/dev/sda": true})
+	v.Draw(screen)
+
+	_, _, w, h := v.legend.GetInnerRect()
+	text := v.legend.GetText(false)
+	if lines := len(tview.WordWrap(text, w)); lines <= fleetLegendHeight || lines > h {
+		t.Errorf("legend wraps to %d rows in a %d-row box (want more than %d, so the case exercises growth): %q",
+			lines, h, fleetLegendHeight, v.legend.GetText(true))
+	}
+}

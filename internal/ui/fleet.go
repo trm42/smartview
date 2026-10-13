@@ -40,7 +40,7 @@ type fleetView struct {
 	onOpen func(device string)
 }
 
-// fleetLegendHeight fits the longest caveat wrapped to two lines.
+// fleetLegendHeight is the legend's minimum height; setLegend grows it to fit the wrapped text.
 const fleetLegendHeight = 2
 
 func newFleetView(onOpen func(device string)) *fleetView {
@@ -153,7 +153,7 @@ func (v *fleetView) render() {
 		v.table.SetTitle(" Fleet ")
 		v.table.SetCell(0, 0, tview.NewTableCell(" "+noDrivesText+" ").
 			SetTextColor(activeTheme.Muted).SetSelectable(false))
-		v.legend.SetText("")
+		v.setLegend("")
 		v.ordered = nil
 		return
 	}
@@ -166,8 +166,19 @@ func (v *fleetView) render() {
 		legend = fmt.Sprintf("%s%s at a wider terminal[-] · %s",
 			cautionTag(), plural(v.dropped, "more column", "more columns"), legend)
 	}
-	v.legend.SetText(mutedTag() + legend + "[-]")
+	v.setLegend(mutedTag() + legend + "[-]")
 	v.restoreSelection()
+}
+
+// setLegend writes the legend and sizes its row to the wrapped text, so a long caveat list is never clipped.
+func (v *fleetView) setLegend(text string) {
+	v.legend.SetText(text)
+	_, _, w, _ := v.GetInnerRect()
+	h := fleetLegendHeight
+	if w -= 2 * uiGutter; w > 0 {
+		h = max(h, len(tview.WordWrap(text, w)))
+	}
+	v.ResizeItem(v.legend, h, 0)
 }
 
 // fleetLegend prefixes the section's legend with what a spun-down or unread row means; a fleet with no report at all omits the section's own caveats.
