@@ -544,25 +544,21 @@ func (a *App) staleMark(name string) string {
 }
 
 // staleNote dates a spun-down or unreadable drive's cached values for the caveat row.
+// An unreadable drive always has a lastRead: applyResults marks only a drive with a stored reading.
 func (a *App) staleNote(name string) string {
-	read, ok := a.lastRead[name]
-	asOf := ""
-	if ok {
-		asOf = fmt.Sprintf("values as of %s, %s ago.[-]", read.Format("15:04"), roundDuration(time.Since(read)))
+	if !a.asleep[name] && !a.unreadable[name] {
+		return ""
 	}
-	switch {
-	case a.asleep[name] && !ok:
+	read, ok := a.lastRead[name]
+	if !ok {
 		return fmt.Sprintf("%s%s Spun down — no reading yet; press R to wake and read.[-]",
 			mutedTag(), standbyGlyph)
-	case a.asleep[name]:
-		return fmt.Sprintf("%s%s Spun down — %s", mutedTag(), standbyGlyph, asOf)
-	case a.unreadable[name] && !ok:
-		return fmt.Sprintf("%s%s Last read failed — values are from an earlier read.[-]",
-			cautionTag(), unreadableGlyph)
-	case a.unreadable[name]:
-		return fmt.Sprintf("%s%s Last read failed — %s", cautionTag(), unreadableGlyph, asOf)
 	}
-	return ""
+	asOf := fmt.Sprintf("values as of %s, %s ago.[-]", read.Format("15:04"), roundDuration(time.Since(read)))
+	if a.asleep[name] {
+		return fmt.Sprintf("%s%s Spun down — %s", mutedTag(), standbyGlyph, asOf)
+	}
+	return fmt.Sprintf("%s%s Last read failed — %s", cautionTag(), unreadableGlyph, asOf)
 }
 
 // listRow renders the main/secondary text for a drive row.
