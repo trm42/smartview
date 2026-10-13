@@ -68,9 +68,16 @@ func (r *Report) ATASelfTests() ([]ATASelfTestEntry, bool) {
 
 // ATASelfTestEntry is one self-test run.
 type ATASelfTestEntry struct {
-	Type          StringValue `json:"type"`
-	Status        StringValue `json:"status"`
-	LifetimeHours int         `json:"lifetime_hours"`
+	Type          StringValue    `json:"type"`
+	Status        SelfTestResult `json:"status"`
+	LifetimeHours int            `json:"lifetime_hours"`
+}
+
+// SelfTestResult is a logged run's outcome; Passed is absent while the run is in progress.
+type SelfTestResult struct {
+	Value  int    `json:"value"`
+	String string `json:"string"`
+	Passed *bool  `json:"passed"`
 }
 
 // ATAErrorLog is the logged ATA command errors: GP log 0x03, or the legacy SMART log without it.
