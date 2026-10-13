@@ -122,7 +122,7 @@ func (v *fleetView) refresh(devices []smart.Device, reports map[string]*smart.Re
 	for _, d := range devices {
 		row := fleetRow{dev: d, rep: reports[d.Name], asleep: asleep[d.Name], unreadable: unreadable[d.Name]}
 		if row.rep != nil {
-			row.series = temperatureSeries(row.rep, history[d.Name])
+			row.series, row.onDeviceLog = temperatureSeries(row.rep, history[d.Name])
 		}
 		rows = append(rows, row)
 	}
