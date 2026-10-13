@@ -262,10 +262,10 @@ func (a *App) renderRail(cur int) {
 	fmt.Fprintf(&b, "%sDrives[-] ", mutedTag())
 	for i, d := range a.devices {
 		name := railName(d)
-		// A drive with no report yet differs only in glyph and colour.
-		glyph, markColor, nameTag := mutedTag()+"●[-]", activeTheme.Muted, mutedTag()
+		// A drive with no report yet differs only in glyph and colour, never in spacing.
+		glyph, markColor, label := mutedTag()+"●[-]", activeTheme.Muted, mutedTag()+esc(name)+"[-]"
 		if rep, ok := a.reports[d.Name]; ok {
-			glyph, nameTag = reportGlyph(rep), ""
+			glyph, label = reportGlyph(rep), esc(name)
 			if !noVerdict(rep) {
 				markColor = severityColor(rep.Overall())
 			}
@@ -276,11 +276,7 @@ func (a *App) renderRail(cur int) {
 				fgbgTag(markColor, activeTheme.SelectionBg), glyph, esc(name))
 			continue
 		}
-		if nameTag == "" {
-			fmt.Fprintf(&b, "  %s %s", glyph, esc(name))
-			continue
-		}
-		fmt.Fprintf(&b, " %s %s%s[-]", glyph, nameTag, esc(name))
+		fmt.Fprintf(&b, "  %s %s", glyph, label)
 	}
 	if n := a.alertCount(); n > 0 {
 		fmt.Fprintf(&b, "  %s▲ %d[-]", cautionTag(), n)
