@@ -152,8 +152,10 @@ func staleLegend(rows []fleetRow) string {
 	asleepRead := slices.ContainsFunc(rows, func(r fleetRow) bool { return r.asleep && r.rep != nil })
 	unreadable := slices.ContainsFunc(rows, func(r fleetRow) bool { return r.unreadable })
 	switch {
-	case asleep && unreadable:
+	case asleepRead && unreadable:
 		return standbyGlyph + " spun down, " + unreadableGlyph + " read failed; last values"
+	case asleep && unreadable:
+		return unreadableGlyph + " read failed, last good values; " + standbyGlyph + " spun down"
 	case asleepRead:
 		return standbyGlyph + " spun down; values as of the last read"
 	case asleep:

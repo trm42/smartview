@@ -97,3 +97,11 @@ func TestBothStaleMarksShareOneLegendLine(t *testing.T) {
 		t.Errorf("merged legend %q is not a single clause", got)
 	}
 }
+
+// TestMergedLegendClaimsNoValuesForAnUnreadSleeper: "last values" binds to ⊘ when the ◌ row was never read.
+func TestMergedLegendClaimsNoValuesForAnUnreadSleeper(t *testing.T) {
+	got := staleLegend([]fleetRow{{asleep: true}, {unreadable: true, rep: &smart.Report{}}})
+	if i := strings.Index(got, standbyGlyph); i < 0 || strings.Contains(got[i:], "values") {
+		t.Errorf("merged legend %q credits a never-read spun-down row with values", got)
+	}
+}
