@@ -106,8 +106,9 @@ func TestFleetListsDrivesThatHaveNoReport(t *testing.T) {
 			t.Errorf("parked fleet has no standby-marked row for %s:\n%s", d.Name, parked)
 		}
 	}
-	if n := onLoop(t, a, a.fleet.sectionCount); n == 0 {
-		t.Error("parked fleet offers no section, so its rows have nothing to render under")
+	if n := onLoop(t, a, a.fleet.sectionCount); n != 0 {
+		// A stand-in section would be the one shown, then swapped for the chosen one when a drive reports.
+		t.Errorf("parked, never-read fleet offers %d sections, want none until a drive reports", n)
 	}
 }
 

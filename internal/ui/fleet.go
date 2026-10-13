@@ -148,7 +148,7 @@ func (v *fleetView) render() {
 
 	v.shown = v.availableSections()
 	v.renderBar()
-	if len(v.shown) == 0 {
+	if len(v.rows) == 0 {
 		v.table.Clear()
 		v.table.SetTitle(" Fleet ")
 		v.table.SetCell(0, 0, tview.NewTableCell(" "+noDrivesText+" ").
@@ -158,7 +158,10 @@ func (v *fleetView) render() {
 		return
 	}
 
-	sec := v.shown[v.activeIndex()]
+	sec := identityOnlySection
+	if len(v.shown) > 0 {
+		sec = v.shown[v.activeIndex()]
+	}
 	v.ordered = v.sortRows(sec)
 	v.renderTable(sec)
 	legend := fleetLegend(v.rows, sec)
@@ -199,11 +202,14 @@ func fleetLegend(rows []fleetRow, sec fleetSection) string {
 	return strings.Join(parts, " · ")
 }
 
-// availableSections filters out sections no drive in this fleet can fill; empty only when there are no rows.
+// identityOnlySection lists the drives before any has reported, leaving the user's chosen section unchanged for when one does.
+var identityOnlySection = fleetSection{
+	title: "device",
+	rank:  func(fleetRow) (float64, bool) { return 0, false },
+}
+
+// availableSections filters out sections no drive in this fleet can fill; empty until a drive reports.
 func (v *fleetView) availableSections() []fleetSection {
-	if len(v.rows) == 0 {
-		return nil
-	}
 	out := make([]fleetSection, 0, len(v.sections))
 	for _, s := range v.sections {
 		if s.available(v.rows) {
