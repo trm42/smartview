@@ -65,6 +65,10 @@ var smartctlFetchers = fetchers{info: smart.Info, farm: smart.FarmLog}
 func (a *App) fetchAndApply(ctx context.Context, wake bool) {
 	a.refreshing.Store(true)
 	results := a.fetchAll(ctx, wake, smartctlFetchers)
+	if ctx.Err() != nil {
+		a.refreshing.Store(false)
+		return // reads cut short by shutdown are not the drives' failures
+	}
 	a.app.QueueUpdateDraw(func() { a.applyPoll(results) })
 }
 
