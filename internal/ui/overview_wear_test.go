@@ -4,8 +4,6 @@ package ui
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -17,12 +15,8 @@ import (
 // wearFixture decodes a captured fixture with the named top-level sections removed.
 func wearFixture(t *testing.T, name string, drop ...string) *smart.Report {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "smart", "testdata", name))
-	if err != nil {
-		t.Fatal(err)
-	}
 	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
+	if err := json.Unmarshal(fixtureBytes(t, name), &raw); err != nil {
 		t.Fatal(err)
 	}
 	for _, k := range drop {
@@ -108,17 +102,17 @@ func wearField(t *testing.T, r *smart.Report, key string) string {
 }
 
 // TestFallbackWearRowsAreGraded: a fallback row prints the resolved value,
-// plain in band and tinted with the gauges' graders out of it.
+// plain in band and marked by glyph and tint with the shared graders out of it.
 func TestFallbackWearRowsAreGraded(t *testing.T) {
 	cases := []struct {
 		name, key, want string
 		rep             *smart.Report
 	}{
 		{"life in band", "Life used", "7%", ataWearReport(t, 7)},
-		{"life exhausted", "Life used", sevText(smart.SeverityFailing, "100%"), ataWearReport(t, 100)},
+		{"life exhausted", "Life used", sevBold(smart.SeverityCaution, "▲ 100%"), ataWearReport(t, 100)},
 		{"spare in band", "Spare avail", "80%", spareOnlyReport(t, 80, 10)},
-		{"spare near threshold", "Spare avail", sevText(smart.SeverityCaution, "15%"), spareOnlyReport(t, 15, 10)},
-		{"spare below threshold", "Spare avail", sevText(smart.SeverityFailing, "5%"), spareOnlyReport(t, 5, 10)},
+		{"spare near threshold", "Spare avail", sevBold(smart.SeverityCaution, "▲ 15%"), spareOnlyReport(t, 15, 10)},
+		{"spare below threshold", "Spare avail", sevBold(smart.SeverityFailing, "■ 5%"), spareOnlyReport(t, 5, 10)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -156,8 +150,8 @@ func TestOverviewDrawsEveryResolvedWearReading(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, lifeOK := tc.rep.LifeUsedPercent()
-			_, _, spareOK := tc.rep.SparePercent()
+			_, _, lifeOK := tc.rep.LifeUsedPercent()
+			_, _, _, spareOK := tc.rep.SparePercent()
 			if lifeOK != tc.wantLife || spareOK != tc.wantSpare {
 				t.Fatalf("accessors report life=%v spare=%v, want %v %v: the case no longer covers its source",
 					lifeOK, spareOK, tc.wantLife, tc.wantSpare)

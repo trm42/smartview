@@ -4,8 +4,6 @@ package ui
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/trm42/smartview/internal/smart"
@@ -22,7 +20,7 @@ func nvmeRowMap(t *testing.T, data []byte) map[string]string {
 		t.Fatal("no NVMe health log")
 	}
 	rows := map[string]string{}
-	for _, kv := range nvmeRows(r.NVMeHealth) {
+	for _, kv := range nvmeRows(&r) {
 		rows[kv.k] = kv.v
 	}
 	return rows
@@ -30,11 +28,7 @@ func nvmeRowMap(t *testing.T, data []byte) map[string]string {
 
 func nvmeFixtureRows(t *testing.T, name string) map[string]string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "smart", "testdata", name))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return nvmeRowMap(t, data)
+	return nvmeRowMap(t, fixtureBytes(t, name))
 }
 
 // optionalNVMeRows pairs each optional health-log key with the row it renders
@@ -89,5 +83,15 @@ func TestWDNVMeKeepsReportedZeroTimers(t *testing.T) {
 	}
 	if v := rows["Controller busy"]; v != "~19 h" {
 		t.Errorf("Controller busy = %q, want ~19 h", v)
+	}
+}
+
+// TestNVMeThermalTimersAreUngraded: lifetime counters agree with Overall, which ignores them.
+func TestNVMeThermalTimersAreUngraded(t *testing.T) {
+	h := &smart.NVMeHealth{WarningTempTime: new(30), CriticalCompTime: new(30)}
+	for _, kv := range nvmeRows(&smart.Report{NVMeHealth: h}) {
+		if (kv.k == "Warn temp time" || kv.k == "Crit temp time") && kv.sev != smart.SeverityOK {
+			t.Errorf("%s graded %v, want OK", kv.k, kv.sev)
+		}
 	}
 }

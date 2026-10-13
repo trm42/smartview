@@ -74,7 +74,10 @@ func TestHasLogs(t *testing.T) {
 		want bool
 	}{
 		{"none", smart.Report{}, false},
-		{"ata error log", smart.Report{ATAErrorLog: &smart.ATAErrorLog{}}, true},
+		{"ata error log", smart.Report{ATAErrorLog: &smart.ATAErrorLog{Summary: &smart.ATAErrorTable{}}}, true},
+		{"ata logs of neither shape", smart.Report{
+			ATAErrorLog: &smart.ATAErrorLog{}, ATASelfTestLog: &smart.ATASelfTestLog{},
+		}, false},
 		{"nvme self-test", smart.Report{NVMeSelfTestLog: &smart.NVMeSelfTestLog{}}, true},
 		{"smart data without self-test timing", smart.Report{ATASmartData: &smart.ATASmartData{}}, false},
 		{"phy counters", smart.Report{SATAPhyEvents: &smart.SATAPhyEvents{}}, true},
