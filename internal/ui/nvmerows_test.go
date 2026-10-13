@@ -91,3 +91,13 @@ func TestWDNVMeKeepsReportedZeroTimers(t *testing.T) {
 		t.Errorf("Controller busy = %q, want ~19 h", v)
 	}
 }
+
+// TestNVMeThermalTimersAreUngraded: lifetime counters agree with Overall, which ignores them.
+func TestNVMeThermalTimersAreUngraded(t *testing.T) {
+	h := &smart.NVMeHealth{WarningTempTime: new(30), CriticalCompTime: new(30)}
+	for _, kv := range nvmeRows(h) {
+		if (kv.k == "Warn temp time" || kv.k == "Crit temp time") && kv.sev != smart.SeverityOK {
+			t.Errorf("%s graded %v, want OK", kv.k, kv.sev)
+		}
+	}
+}

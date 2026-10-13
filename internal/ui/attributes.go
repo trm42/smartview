@@ -472,11 +472,12 @@ func nvmeRows(h *smart.NVMeHealth) []attrKV {
 	if h.ControllerBusyTime != nil {
 		add("Controller busy", humanMinutes(int(*h.ControllerBusyTime)), smart.SeverityOK)
 	}
+	// Lifetime counters that never reset, so ungraded like Overall: grading would mark the drive forever.
 	if h.WarningTempTime != nil {
-		add("Warn temp time", humanMinutes(*h.WarningTempTime), sevIf(*h.WarningTempTime > 0, smart.SeverityCaution))
+		add("Warn temp time", humanMinutes(*h.WarningTempTime), smart.SeverityOK)
 	}
 	if h.CriticalCompTime != nil {
-		add("Crit temp time", humanMinutes(*h.CriticalCompTime), sevIf(*h.CriticalCompTime > 0, smart.SeverityCaution))
+		add("Crit temp time", humanMinutes(*h.CriticalCompTime), smart.SeverityOK)
 	}
 	if len(h.TemperatureSensors) > 0 {
 		// Grade on the hottest sensor: the composite can sit in range while one is past it.
