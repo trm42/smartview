@@ -21,7 +21,7 @@ func legendRows(t *testing.T, width int, asleep, unreadable bool) map[string]int
 	v := a.fleet
 	rows := make([]fleetRow, 0, len(legendFixtures))
 	for _, f := range legendFixtures {
-		rep := loadReport(t, f)
+		rep := fixtureReport(t, f)
 		rows = append(rows, fleetRow{dev: rep.Device, rep: rep, series: temperatureSeries(rep, nil)})
 	}
 	rows[0].asleep = asleep
@@ -61,7 +61,7 @@ func TestStandbyLegendIsUnchanged(t *testing.T) {
 	}
 }
 
-// TestUnreadableLegendIsNoTallerThanStandby: the legend is two rows, so a longer prefix clips the section's caveat.
+// TestUnreadableLegendIsNoTallerThanStandby: a longer prefix would grow the legend and cost the table a row.
 func TestUnreadableLegendIsNoTallerThanStandby(t *testing.T) {
 	for _, width := range []int{80, 100, 120, 140} {
 		plain := legendRows(t, width, false, false)
