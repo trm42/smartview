@@ -393,12 +393,12 @@ type nvmeAttributesView struct {
 	rows []attrKV
 }
 
-func newNVMeAttributesView(h *smart.NVMeHealth) *nvmeAttributesView {
+func newNVMeAttributesView(r *smart.Report) *nvmeAttributesView {
 	v := &nvmeAttributesView{}
 	v.attrScaffold = newAttrScaffold(func(row int) { v.setFooter(row) })
 	titledBox(v.table.Box, " NVMe health log ")
 
-	v.setRows(h)
+	v.setRows(r)
 	v.table.Select(1, 0)
 	v.setFooter(1)
 	return v
@@ -410,7 +410,7 @@ func (v *nvmeAttributesView) refresh(r *smart.Report, _ []float64) {
 		return
 	}
 	row, _ := v.table.GetSelection()
-	v.setRows(r.NVMeHealth)
+	v.setRows(r)
 	row = min(max(row, 1), len(v.rows))
 	if len(v.rows) > 0 {
 		v.table.Select(row, 0)
@@ -419,8 +419,8 @@ func (v *nvmeAttributesView) refresh(r *smart.Report, _ []float64) {
 }
 
 // setRows rebuilds the table body from the health log.
-func (v *nvmeAttributesView) setRows(h *smart.NVMeHealth) {
-	v.rows = nvmeRows(h)
+func (v *nvmeAttributesView) setRows(r *smart.Report) {
+	v.rows = nvmeRows(r)
 	v.table.Clear()
 	v.table.SetCell(0, 0, headerCell("Field"))
 	v.table.SetCell(0, 1, headerCell("Value"))
@@ -443,8 +443,9 @@ func (v *nvmeAttributesView) setFooter(row int) {
 	v.footer.SetText(fmt.Sprintf("%s\n%s%s: %s[-]", desc, mutedTag(), v.rows[i].k, v.rows[i].v))
 }
 
-// nvmeRows builds the NVMe health key/value rows with per-row severity.
-func nvmeRows(h *smart.NVMeHealth) []attrKV {
+// nvmeRows builds the NVMe health key/value rows with per-row severity; r.NVMeHealth must be set.
+func nvmeRows(r *smart.Report) []attrKV {
+	h := r.NVMeHealth
 	var rows []attrKV
 	add := func(k, v string, sev smart.Severity) { rows = append(rows, attrKV{k, v, sev}) }
 	sevIf := func(set bool, s smart.Severity) smart.Severity {
@@ -455,20 +456,12 @@ func nvmeRows(h *smart.NVMeHealth) []attrKV {
 	}
 
 	add("Critical warning", fmt.Sprintf("0x%02x", h.CriticalWarning), sevIf(h.CriticalWarning != 0, smart.SeverityFailing))
-	// Graded through the accessors and graders the Overview gauges use.
-	r := &smart.Report{NVMeHealth: h}
-	if h.PercentageUsed != nil {
-		pct, _, _ := r.LifeUsedPercent()
-		add("Percentage used", fmt.Sprintf("%d%%", pct), lifeUsedSeverity(pct))
+	// Graded through the accessors and graders the gauges and Overall use.
+	if pct, src, ok := r.LifeUsedPercent(); ok && src == smart.WearHealthLog {
+		add("Percentage used", fmt.Sprintf("%d%%", pct), smart.PctUsedSeverity(pct))
 	}
-	if h.AvailableSpare != nil {
-		pct, thr, _, _ := r.SparePercent()
-		// SparePercent reports an absent threshold as 0, which is not one to grade against.
-		sev := smart.SeverityOK
-		if h.AvailableSpareThreshold != nil {
-			sev = spareSeverityPct(pct, thr)
-		}
-		add("Available spare", fmt.Sprintf("%d%%", pct), sev)
+	if pct, thr, src, ok := r.SparePercent(); ok && src == smart.WearHealthLog {
+		add("Available spare", fmt.Sprintf("%d%%", pct), smart.SpareSeverity(pct, thr))
 	}
 	if h.AvailableSpareThreshold != nil {
 		add("Spare threshold", fmt.Sprintf("%d%%", *h.AvailableSpareThreshold), smart.SeverityOK)

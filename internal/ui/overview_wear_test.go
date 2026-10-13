@@ -115,7 +115,7 @@ func TestFallbackWearRowsAreGraded(t *testing.T) {
 		rep             *smart.Report
 	}{
 		{"life in band", "Life used", "7%", ataWearReport(t, 7)},
-		{"life exhausted", "Life used", sevText(smart.SeverityFailing, "100%"), ataWearReport(t, 100)},
+		{"life exhausted", "Life used", sevText(smart.SeverityCaution, "100%"), ataWearReport(t, 100)},
 		{"spare in band", "Spare avail", "80%", spareOnlyReport(t, 80, 10)},
 		{"spare near threshold", "Spare avail", sevText(smart.SeverityCaution, "15%"), spareOnlyReport(t, 15, 10)},
 		{"spare below threshold", "Spare avail", sevText(smart.SeverityFailing, "5%"), spareOnlyReport(t, 5, 10)},

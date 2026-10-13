@@ -305,10 +305,10 @@ func identitySections(r *smart.Report) []identitySection {
 	}
 	// A reading the gauges draw needs no row.
 	if pct, src, ok := r.LifeUsedPercent(); ok && src != smart.WearHealthLog {
-		add(&wear, "Life used", pctMarkup(pct, lifeUsedSeverity(pct)))
+		add(&wear, "Life used", pctMarkup(pct, smart.PctUsedSeverity(pct)))
 	}
 	if pct, thr, src, ok := r.SparePercent(); ok && src != smart.WearHealthLog {
-		add(&wear, "Spare avail", pctMarkup(pct, spareSeverityPct(pct, thr)))
+		add(&wear, "Spare avail", pctMarkup(pct, smart.SpareSeverity(pct, thr)))
 	}
 	if h := r.NVMeHealth; h != nil {
 		add(&wear, "Media errors", fmt.Sprintf("%d", h.MediaErrors))
@@ -381,37 +381,15 @@ func buildGauges(r *smart.Report) tview.Primitive {
 
 	if used, src, ok := r.LifeUsedPercent(); ok && src == smart.WearHealthLog {
 		// Remaining endurance, so it fills toward healthy like the fleet bar.
-		addGauge(" Life left ", 100-clampPct(used), lifeUsedSeverity(used))
+		addGauge(" Life left ", 100-clampPct(used), smart.PctUsedSeverity(used))
 	}
 	if pct, thr, src, ok := r.SparePercent(); ok && src == smart.WearHealthLog {
-		addGauge(" Spare avail ", pct, spareSeverityPct(pct, thr))
+		addGauge(" Spare avail ", pct, smart.SpareSeverity(pct, thr))
 	}
 	if col.GetItemCount() == 0 {
 		return nil
 	}
 	return col
-}
-
-// lifeUsedSeverity grades the "Life used" gauge; the data layer's
-// PctUsedSeverity never returns failing, so the >=100 red is added here.
-func lifeUsedSeverity(pct int) smart.Severity {
-	if pct >= 100 {
-		return smart.SeverityFailing
-	}
-	return smart.PctUsedSeverity(pct)
-}
-
-// spareSeverityPct grades spare against the drive's depletion threshold; it
-// takes the pair SparePercent resolved, since NVMeHealth may be nil when spare is reported.
-func spareSeverityPct(pct, threshold int) smart.Severity {
-	switch {
-	case pct <= threshold:
-		return smart.SeverityFailing
-	case pct <= threshold+10:
-		return smart.SeverityCaution
-	default:
-		return smart.SeverityOK
-	}
 }
 
 // buildTempSparkline returns a temperature trend widget: ATA seeds from the

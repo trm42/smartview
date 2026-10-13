@@ -200,11 +200,11 @@ func enduranceSection() fleetSection {
 			r := row.rep
 			life := fleetCell{text: dash, color: activeTheme.Neutral}
 			if pct, _, ok := r.LifeUsedPercent(); ok {
-				life = fleetCell{text: pctBarUsed(pct, lifeUsedSeverity(pct)), color: activeTheme.Neutral}
+				life = fleetCell{text: pctBarUsed(pct, smart.PctUsedSeverity(pct)), color: activeTheme.Neutral}
 			}
 			spare := fleetCell{text: dash, color: activeTheme.Neutral}
 			if pct, thr, _, ok := r.SparePercent(); ok {
-				spare = fleetCell{text: pctBar(pct, spareSeverityPct(pct, thr)), color: activeTheme.Neutral}
+				spare = fleetCell{text: pctBar(pct, smart.SpareSeverity(pct, thr)), color: activeTheme.Neutral}
 			}
 
 			written, perDay := numCell(dash), numCell(dash)
