@@ -19,7 +19,9 @@ type fleetRow struct {
 	dev    smart.Device
 	rep    *smart.Report
 	series []float64
-	asleep bool // rep is the last good reading, not a current one
+	// asleep, unreadable: rep is the last good reading, not a current one.
+	asleep     bool
+	unreadable bool
 }
 
 // fleetCell is one rendered cell; the producer must escape drive-controlled text.

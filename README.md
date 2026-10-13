@@ -75,7 +75,9 @@ between metric and device order, `Enter` opens the highlighted drive.
 ATA and NVMe expose different counters, so a `—` means this drive doesn't
 report that reading, never that it's zero. A write total like `~1.5 TB` came
 from vendor attribute 241, whose unit is vendor-defined. A drive marked `◌` is
-spun down, so its numbers are from the last read.
+spun down, so its numbers are from the last read. One marked `⊘` stopped
+answering: its last good reading stays on screen with its age until the next
+read succeeds.
 
 ![smartview fleet comparison — every drive ranked by health](docs/images/fleet.png)
 

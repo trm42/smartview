@@ -148,7 +148,7 @@ func (a *App) toggleFleet() {
 		return
 	}
 	a.fleetMode = true
-	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep)
+	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep, a.unreadable)
 	a.bodyPages.SwitchToPage(pageFleet)
 	a.app.SetFocus(a.fleet.table)
 	a.refreshChrome()
