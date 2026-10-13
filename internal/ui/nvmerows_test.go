@@ -4,8 +4,6 @@ package ui
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/trm42/smartview/internal/smart"
@@ -30,11 +28,7 @@ func nvmeRowMap(t *testing.T, data []byte) map[string]string {
 
 func nvmeFixtureRows(t *testing.T, name string) map[string]string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "smart", "testdata", name))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return nvmeRowMap(t, data)
+	return nvmeRowMap(t, fixtureBytes(t, name))
 }
 
 // optionalNVMeRows pairs each optional health-log key with the row it renders

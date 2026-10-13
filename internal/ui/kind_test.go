@@ -2,28 +2,7 @@
 
 package ui
 
-import (
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"testing"
-
-	"github.com/trm42/smartview/internal/smart"
-)
-
-// kindFixture parses one captured smartctl envelope.
-func kindFixture(t *testing.T, name string) *smart.Report {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "smart", "testdata", name))
-	if err != nil {
-		t.Fatalf("read fixture %s: %v", name, err)
-	}
-	var rep smart.Report
-	if err := json.Unmarshal(data, &rep); err != nil {
-		t.Fatalf("parse fixture %s: %v", name, err)
-	}
-	return &rep
-}
+import "testing"
 
 // TestUnreadDriveHasNoKind: an envelope with no rotation rate names no kind,
 // in the fleet column or the Overview Type row.
@@ -40,7 +19,7 @@ func TestUnreadDriveHasNoKind(t *testing.T) {
 		{"smart-apple-nvme.json", "NVMe", "NVMe SSD"},
 	}
 	for _, c := range cases {
-		r := kindFixture(t, c.fixture)
+		r := fixtureReport(t, c.fixture)
 		if got := shortKind(r); got != c.short {
 			t.Errorf("%s: shortKind = %q, want %q", c.fixture, got, c.short)
 		}

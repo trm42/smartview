@@ -4,8 +4,6 @@ package ui
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -17,10 +15,7 @@ import (
 // loadFARM decodes the captured Seagate FARM fixture.
 func loadFARM(t *testing.T) *smart.FARM {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "smart", "testdata", "smart-seagate-farm-log.json"))
-	if err != nil {
-		t.Fatalf("read FARM fixture: %v", err)
-	}
+	data := fixtureBytes(t, "smart-seagate-farm-log.json")
 	var w struct {
 		FARM *smart.FARM `json:"seagate_farm_log"`
 	}
