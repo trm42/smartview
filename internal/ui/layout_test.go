@@ -226,20 +226,26 @@ func TestNarrowArrowsStepDrives(t *testing.T) {
 // TestRailRepaintsAfterUpdate: the rail must repaint with the list and the theme.
 func TestRailRepaintsAfterUpdate(t *testing.T) {
 	a, _ := newSimApp(t, 80, 30)
-	a.devices = []smart.Device{{Name: "/dev/sda"}}
+	a.devices = []smart.Device{{Name: "/dev/sda"}, {Name: "/dev/sdb"}}
 	a.app.SetFocus(a.detail.content())
 	a.setNarrow(true)
 	a.populateList() // no reports yet: the muted "scanning" state
 	before := a.rail.GetText(true)
 
-	a.reports["/dev/sda"] = &smart.Report{
-		Device:      smart.Device{Name: "/dev/sda", Protocol: "ATA"},
-		SmartStatus: &smart.SmartStatus{Passed: true},
+	// A failing verdict changes the visible glyph, not only a colour tag.
+	a.reports["/dev/sdb"] = &smart.Report{
+		Device:      smart.Device{Name: "/dev/sdb", Protocol: "ATA"},
+		SmartStatus: &smart.SmartStatus{Passed: false},
 		ModelName:   "TEST DRIVE",
 	}
 	a.populateList()
-	if got := a.rail.GetText(true); got == before {
-		t.Errorf("rail text unchanged after a report arrived: %q", got)
+	got := a.rail.GetText(true)
+	if !strings.Contains(got, severityGlyph(smart.SeverityFailing)) {
+		t.Errorf("rail text after a failing report = %q, want its glyph", got)
+	}
+	// Reading a drive must not shift the entries around it.
+	if strings.Index(got, "sdb") != strings.Index(before, "sdb") {
+		t.Errorf("rail entry moved when its drive was read:\nbefore %q\nafter  %q", before, got)
 	}
 
 	// A theme cycle must reach it too: renderRail bakes in the active colours.

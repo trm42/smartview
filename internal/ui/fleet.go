@@ -40,7 +40,7 @@ type fleetView struct {
 	onOpen func(device string)
 }
 
-// fleetLegendHeight fits the longest caveat wrapped to two lines.
+// fleetLegendHeight is the legend's minimum height; setLegend grows it to fit the wrapped text.
 const fleetLegendHeight = 2
 
 func newFleetView(onOpen func(device string)) *fleetView {
@@ -130,6 +130,9 @@ func (v *fleetView) refresh(devices []smart.Device, reports map[string]*smart.Re
 	v.render()
 }
 
+// noDrivesText is the empty-scan message the detail pane and the fleet share.
+const noDrivesText = "No drives found. Try running with sudo."
+
 // standbyPrefix marks a spun-down drive in the fleet's identity cell.
 func standbyPrefix(row fleetRow) string {
 	if !row.asleep {
@@ -145,36 +148,68 @@ func (v *fleetView) render() {
 
 	v.shown = v.availableSections()
 	v.renderBar()
-	if len(v.shown) == 0 {
+	if len(v.rows) == 0 {
 		v.table.Clear()
 		v.table.SetTitle(" Fleet ")
-		v.table.SetCell(0, 0, tview.NewTableCell(" Scanning for drives… ").
+		v.table.SetCell(0, 0, tview.NewTableCell(" "+noDrivesText+" ").
 			SetTextColor(activeTheme.Muted).SetSelectable(false))
-		v.legend.SetText("")
+		v.setLegend("")
 		v.ordered = nil
 		return
 	}
 
-	sec := v.shown[v.activeIndex()]
+	sec := identityOnlySection
+	if len(v.shown) > 0 {
+		sec = v.shown[v.activeIndex()]
+	}
 	v.ordered = v.sortRows(sec)
 	v.renderTable(sec)
-	legend := sec.legend(v.rows)
-	if slices.ContainsFunc(v.rows, func(r fleetRow) bool { return r.asleep }) {
-		legend = standbyGlyph + " spun down; values as of the last read · " + legend
-	}
+	legend := fleetLegend(v.rows, sec)
 	if v.dropped > 0 {
 		legend = fmt.Sprintf("%s%s at a wider terminal[-] · %s",
 			cautionTag(), plural(v.dropped, "more column", "more columns"), legend)
 	}
-	v.legend.SetText(mutedTag() + legend + "[-]")
+	v.setLegend(mutedTag() + legend + "[-]")
 	v.restoreSelection()
 }
 
-// availableSections filters out sections no drive in this fleet can fill.
-func (v *fleetView) availableSections() []fleetSection {
-	if len(v.rows) == 0 {
-		return nil
+// setLegend writes the legend and sizes its row to the wrapped text, so a long caveat list is never clipped.
+func (v *fleetView) setLegend(text string) {
+	v.legend.SetText(text)
+	_, _, w, _ := v.GetInnerRect()
+	h := fleetLegendHeight
+	if w -= 2 * uiGutter; w > 0 {
+		h = max(h, len(tview.WordWrap(text, w)))
 	}
+	v.ResizeItem(v.legend, h, 0)
+}
+
+// fleetLegend prefixes the section's legend with what a spun-down or unread row means; a fleet with no report at all omits the section's own caveats.
+func fleetLegend(rows []fleetRow, sec fleetSection) string {
+	var parts []string
+	switch {
+	case slices.ContainsFunc(rows, func(r fleetRow) bool { return r.asleep && r.rep != nil }):
+		parts = append(parts, standbyGlyph+" spun down; values as of the last read")
+	case slices.ContainsFunc(rows, func(r fleetRow) bool { return r.asleep }):
+		parts = append(parts, standbyGlyph+" spun down")
+	}
+	if slices.ContainsFunc(rows, func(r fleetRow) bool { return r.rep == nil }) {
+		parts = append(parts, "a row of "+dash+" has not been read yet")
+	}
+	if slices.ContainsFunc(rows, func(r fleetRow) bool { return r.rep != nil }) {
+		parts = append(parts, sec.legend(rows))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// identityOnlySection lists the drives before any has reported, leaving the user's chosen section unchanged for when one does.
+var identityOnlySection = fleetSection{
+	title: "device",
+	rank:  func(fleetRow) (float64, bool) { return 0, false },
+}
+
+// availableSections filters out sections no drive in this fleet can fill; empty until a drive reports.
+func (v *fleetView) availableSections() []fleetSection {
 	out := make([]fleetSection, 0, len(v.sections))
 	for _, s := range v.sections {
 		if s.available(v.rows) {

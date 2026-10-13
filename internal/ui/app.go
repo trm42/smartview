@@ -262,22 +262,21 @@ func (a *App) renderRail(cur int) {
 	fmt.Fprintf(&b, "%sDrives[-] ", mutedTag())
 	for i, d := range a.devices {
 		name := railName(d)
-		rep, ok := a.reports[d.Name]
-		if !ok {
-			fmt.Fprintf(&b, " %s●[-] %s%s[-]", mutedTag(), mutedTag(), esc(name))
-			continue
+		// A drive with no report yet differs only in glyph and colour, never in spacing.
+		glyph, markColor, label := mutedTag()+"●[-]", activeTheme.Muted, mutedTag()+esc(name)+"[-]"
+		if rep, ok := a.reports[d.Name]; ok {
+			glyph, label = reportGlyph(rep), esc(name)
+			if !noVerdict(rep) {
+				markColor = severityColor(rep.Overall())
+			}
 		}
 		if i == cur {
-			markColor := severityColor(rep.Overall())
-			if noVerdict(rep) {
-				markColor = activeTheme.Muted
-			}
 			// The ▸ marker keeps the selection visible under mono.
 			fmt.Fprintf(&b, " %s▸%s %s[-:-:-]",
-				fgbgTag(markColor, activeTheme.SelectionBg), reportGlyph(rep), esc(name))
+				fgbgTag(markColor, activeTheme.SelectionBg), glyph, esc(name))
 			continue
 		}
-		fmt.Fprintf(&b, "  %s %s", reportGlyph(rep), esc(name))
+		fmt.Fprintf(&b, "  %s %s", glyph, label)
 	}
 	if n := a.alertCount(); n > 0 {
 		fmt.Fprintf(&b, "  %s▲ %d[-]", cautionTag(), n)
@@ -577,7 +576,7 @@ func (a *App) Run(ctx context.Context) error {
 	a.devices = devices
 	a.populateList()
 	if len(devices) == 0 {
-		a.detail.showPlaceholder("No drives found. Try running with sudo.")
+		a.detail.showPlaceholder(noDrivesText)
 	}
 	a.applyStartView()
 

@@ -114,7 +114,7 @@ func healthSection() fleetSection {
 			return anyRow(rows, func(*smart.Report) bool { return true })
 		},
 		rank: func(row fleetRow) (float64, bool) {
-			if row.rep == nil {
+			if row.rep == nil || noVerdict(row.rep) {
 				return 0, false
 			}
 			// Worst verdict first, then by logged errors as the tiebreaker.
