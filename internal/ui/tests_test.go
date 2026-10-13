@@ -25,7 +25,7 @@ func idleATAReport() *smart.Report {
 				Status         *smart.ATASelfTestStatus `json:"status"`
 				PollingMinutes *smart.SelfTestPolling   `json:"polling_minutes"`
 			}{
-				PollingMinutes: &smart.SelfTestPolling{Short: 2, Extended: 120},
+				PollingMinutes: &smart.SelfTestPolling{Short: new(2), Extended: new(120)},
 			},
 		},
 	}

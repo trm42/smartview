@@ -76,19 +76,18 @@ func ercTimerString(t *smart.ERCTimer) string {
 	return fmt.Sprintf("%.1f s", float64(t.Deciseconds)/10)
 }
 
-// selfTestDurations renders the polling time for each self-test type, or "".
+// selfTestDurations renders the polling times the drive reports, or "".
 func selfTestDurations(r *smart.Report) string {
-	if !hasSelfTestTiming(r) {
-		return ""
+	var parts []string
+	for _, e := range r.SelfTestEstimates() {
+		parts = append(parts, e.Name+" "+humanMinutes(e.Minutes))
 	}
-	p := r.ATASmartData.SelfTest.PollingMinutes
-	return fmt.Sprintf("short %s · extended %s · conveyance %s",
-		humanMinutes(p.Short), humanMinutes(p.Extended), humanMinutes(p.Conveyance))
+	return strings.Join(parts, " · ")
 }
 
-// hasSelfTestTiming reports whether the drive states its self-test durations.
+// hasSelfTestTiming reports whether the drive states any self-test duration.
 func hasSelfTestTiming(r *smart.Report) bool {
-	return r.ATASmartData != nil && r.ATASmartData.SelfTest != nil && r.ATASmartData.SelfTest.PollingMinutes != nil
+	return len(r.SelfTestEstimates()) > 0
 }
 
 // writePhyCounters summarises the SATA PHY event counters.

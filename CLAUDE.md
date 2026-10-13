@@ -651,7 +651,9 @@ goroutine (`setNarrow` in app.go is the pattern).
 - **Temperature sparkline**: ATA seeds it instantly from
   `ata_sct_temperature_history`; NVMe has no such log, so it accumulates a
   runtime ring buffer (`App.history`, capped at `maxHistory`) across polls — it
-  only appears after ≥2 samples.
+  only appears after ≥2 samples. The SCT log lags by its logging interval, so
+  `temperatureSeries` always closes it with the live reading (when plausible);
+  the Overview chart and the fleet's Min/Max/Trend both read that one series.
 - **Padding/gutters (TUI UX).** Every text/table/list box gets a uniform
   horizontal gutter via `SetBorderPadding(0, 0, uiGutter, uiGutter)`
   (`uiGutter` in `format.go`); never bake a left margin into format strings.

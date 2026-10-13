@@ -28,7 +28,7 @@ func TestParseExtraFields(t *testing.T) {
 		t.Errorf("trim = %v, want supported=false for this HDD", ata.Trim)
 	}
 	if ata.ATASmartData == nil || ata.ATASmartData.SelfTest == nil || ata.ATASmartData.SelfTest.PollingMinutes == nil ||
-		ata.ATASmartData.SelfTest.PollingMinutes.Extended != 1804 {
+		ata.ATASmartData.SelfTest.PollingMinutes.Extended == nil || *ata.ATASmartData.SelfTest.PollingMinutes.Extended != 1804 {
 		t.Errorf("self-test polling not parsed: %+v", ata.ATASmartData)
 	}
 	if ata.SATAPhyEvents == nil || len(ata.SATAPhyEvents.Table) == 0 {

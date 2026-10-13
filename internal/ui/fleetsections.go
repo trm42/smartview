@@ -19,6 +19,8 @@ type fleetRow struct {
 	dev    smart.Device
 	rep    *smart.Report
 	series []float64
+	// onDeviceLog: series is the drive's SCT log rather than one built over polls.
+	onDeviceLog bool
 	// asleep, unreadable: rep is the last good reading, not a current one.
 	asleep     bool
 	unreadable bool
@@ -94,9 +96,7 @@ func temperatureSection() fleetSection {
 		legend: func(rows []fleetRow) string {
 			s := "min/max is the drive's lifetime range where it reports one (ATA); " +
 				"otherwise the range observed in the trend window"
-			if anyRow(rows, func(r *smart.Report) bool {
-				return r.ATATemperatureHistory == nil || len(r.ATATemperatureHistory.Table) < 2
-			}) {
+			if slices.ContainsFunc(rows, func(r fleetRow) bool { return r.rep != nil && !r.onDeviceLog }) {
 				s += " · drives without an on-device log build their trend over successive polls"
 			}
 			return s

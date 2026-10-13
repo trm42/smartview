@@ -22,7 +22,8 @@ func legendRows(t *testing.T, width int, asleep, unreadable bool) map[string]int
 	rows := make([]fleetRow, 0, len(legendFixtures))
 	for _, f := range legendFixtures {
 		rep := fixtureReport(t, f)
-		rows = append(rows, fleetRow{dev: rep.Device, rep: rep, series: temperatureSeries(rep, nil)})
+		series, onDevice := temperatureSeries(rep, nil)
+		rows = append(rows, fleetRow{dev: rep.Device, rep: rep, series: series, onDeviceLog: onDevice})
 	}
 	rows[0].asleep = asleep
 	rows[1].unreadable = unreadable
