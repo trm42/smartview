@@ -67,11 +67,11 @@ func TestOverall(t *testing.T) {
 		// The attribute table can stay in range while the error log is populated.
 		{"ata logged error", Report{
 			Device: Device{Protocol: "ATA"}, SmartStatus: &SmartStatus{Passed: true},
-			ATAErrorLog: &ATAErrorLog{Extended: &ATAErrorLogExtended{Count: 2}},
+			ATAErrorLog: &ATAErrorLog{Extended: &ATAErrorTable{Count: 2}},
 		}, SeverityCaution},
 		{"ata empty error log", Report{
 			Device: Device{Protocol: "ATA"}, SmartStatus: &SmartStatus{Passed: true},
-			ATAErrorLog: &ATAErrorLog{Extended: &ATAErrorLogExtended{Count: 0}},
+			ATAErrorLog: &ATAErrorLog{Extended: &ATAErrorTable{Count: 0}},
 		}, SeverityOK},
 		{"ata pending defects", Report{
 			Device: Device{Protocol: "ATA"}, SmartStatus: &SmartStatus{Passed: true},
