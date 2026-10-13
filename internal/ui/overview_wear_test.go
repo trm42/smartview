@@ -4,8 +4,6 @@ package ui
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -17,12 +15,8 @@ import (
 // wearFixture decodes a captured fixture with the named top-level sections removed.
 func wearFixture(t *testing.T, name string, drop ...string) *smart.Report {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "smart", "testdata", name))
-	if err != nil {
-		t.Fatal(err)
-	}
 	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
+	if err := json.Unmarshal(fixtureBytes(t, name), &raw); err != nil {
 		t.Fatal(err)
 	}
 	for _, k := range drop {
