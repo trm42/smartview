@@ -356,13 +356,13 @@ func yesNo(b bool) string {
 	return "no"
 }
 
-// pctMarkup renders a percentage, tinted only once it leaves its band.
+// pctMarkup renders a percentage, marked by glyph and tint only once it leaves its band.
 func pctMarkup(pct int, sev smart.Severity) string {
 	s := fmt.Sprintf("%d%%", pct)
 	if sev == smart.SeverityOK {
 		return s
 	}
-	return sevText(sev, s)
+	return sevBold(sev, severityGlyph(sev)+" "+s)
 }
 
 // buildGauges returns the NVMe health log's wear gauges, nil without one; a fallback source gets a row.
