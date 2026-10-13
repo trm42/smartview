@@ -3,29 +3,12 @@
 package ui
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/trm42/smartview/internal/smart"
 )
-
-// fixtureReport decodes one captured smartctl envelope from the data layer's testdata.
-func fixtureReport(t *testing.T, name string) *smart.Report {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "smart", "testdata", name))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var r smart.Report
-	if err := json.Unmarshal(data, &r); err != nil {
-		t.Fatalf("%s: %v", name, err)
-	}
-	return &r
-}
 
 // TestFleetHealthSortsNoVerdictLast: a drive with no verdict cannot report the
 // health metric, so it sorts after every graded drive whatever its device name.
@@ -51,7 +34,7 @@ func TestFleetHealthSortsNoVerdictLast(t *testing.T) {
 
 	v := newFleetView(nil)
 	v.activeID = "health"
-	v.refresh(devices, reports, nil, nil)
+	v.refresh(devices, reports, nil, nil, nil)
 
 	got := make([]string, 0, len(names))
 	for row := 1; row < v.table.GetRowCount(); row++ {

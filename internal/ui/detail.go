@@ -325,7 +325,7 @@ func (d *detail) buildTabView(t tab, r *smart.Report, tempHistory []float64) tab
 		return newOverviewView(r, tempHistory)
 	case "attributes":
 		if r.IsNVMe() && r.NVMeHealth != nil {
-			return newNVMeAttributesView(r.NVMeHealth)
+			return newNVMeAttributesView(r)
 		}
 		return newAttributesView(ataAttributes(r))
 	case "statistics":

@@ -4,10 +4,7 @@ package ui
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -15,26 +12,12 @@ import (
 	"github.com/trm42/smartview/internal/smart"
 )
 
-// loadReport decodes one captured smartctl report fixture.
-func loadReport(t *testing.T, file string) *smart.Report {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "smart", "testdata", file))
-	if err != nil {
-		t.Fatalf("read fixture: %v", err)
-	}
-	var r smart.Report
-	if err := json.Unmarshal(data, &r); err != nil {
-		t.Fatalf("parse fixture %s: %v", file, err)
-	}
-	return &r
-}
-
 // TestOutcomeClassifiesAFetch: nothing back is a failed read, a parked drive is asleep, and neither is the other.
 func TestOutcomeClassifiesAFetch(t *testing.T) {
 	if got := outcome(nil); !got.failed || got.standby || got.rep != nil {
 		t.Errorf("outcome(nil) = %+v, want only failed set", got)
 	}
-	if got := outcome(loadReport(t, "smart-sdd-standby.json")); !got.standby || got.failed || got.rep != nil {
+	if got := outcome(fixtureReport(t, "smart-sdd-standby.json")); !got.standby || got.failed || got.rep != nil {
 		t.Errorf("outcome(standby envelope) = %+v, want only standby set", got)
 	}
 	if got := outcome(healthyReport("/dev/sdb")); got.failed || got.standby || got.rep == nil {
@@ -60,6 +43,23 @@ func TestFailedFetchBeforeAnyReadingStaysScanning(t *testing.T) {
 	a.applyResults(map[string]pollResult{dev: outcome(nil)})
 	if a.reports[dev] != nil || a.unreadable[dev] {
 		t.Errorf("reports = %v, unreadable = %v; want no report and no mark", a.reports[dev], a.unreadable[dev])
+	}
+}
+
+// TestFailedFetchKeepsAnUnreadSleeper: with no reading to mark stale, a failed fetch leaves the drive asleep.
+func TestFailedFetchKeepsAnUnreadSleeper(t *testing.T) {
+	a, _ := newSimApp(t, 120, 40)
+	d := smart.Device{Name: "/dev/sdb", Type: "sat"}
+	a.devices = []smart.Device{d}
+	a.populateList()
+	a.applyPoll(map[string]pollResult{d.Name: {standby: true}})
+	a.applyPoll(map[string]pollResult{d.Name: outcome(nil)})
+
+	if !a.asleep[d.Name] || a.unreadable[d.Name] {
+		t.Errorf("asleep = %v, unreadable = %v; want still asleep and unmarked", a.asleep[d.Name], a.unreadable[d.Name])
+	}
+	if _, sec := a.listRow(d); !strings.Contains(sec, "R to read") {
+		t.Errorf("row %q lost its asleep hint", sec)
 	}
 }
 

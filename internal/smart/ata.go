@@ -68,19 +68,26 @@ func (r *Report) ATASelfTests() ([]ATASelfTestEntry, bool) {
 
 // ATASelfTestEntry is one self-test run.
 type ATASelfTestEntry struct {
-	Type          StringValue `json:"type"`
-	Status        StringValue `json:"status"`
-	LifetimeHours int         `json:"lifetime_hours"`
+	Type          StringValue    `json:"type"`
+	Status        SelfTestResult `json:"status"`
+	LifetimeHours int            `json:"lifetime_hours"`
+}
+
+// SelfTestResult is a logged run's outcome; Passed is absent while the run is in progress.
+type SelfTestResult struct {
+	Value  int    `json:"value"`
+	String string `json:"string"`
+	Passed *bool  `json:"passed"`
 }
 
 // ATAErrorLog is the logged ATA command errors: GP log 0x03, or the legacy SMART log without it.
 type ATAErrorLog struct {
-	Extended *ATAErrorLogExtended `json:"extended"`
-	Summary  *ATAErrorLogExtended `json:"summary"`
+	Extended *ATAErrorTable `json:"extended"`
+	Summary  *ATAErrorTable `json:"summary"`
 }
 
-// ATAErrorLogExtended is one error log of either shape; Table is empty on a healthy drive.
-type ATAErrorLogExtended struct {
+// ATAErrorTable is one error log of either shape; Table is empty on a healthy drive.
+type ATAErrorTable struct {
 	Count int                `json:"count"`
 	Table []ATAErrorLogEntry `json:"table"`
 }
@@ -93,7 +100,7 @@ type ATAErrorLogEntry struct {
 }
 
 // ATAErrors returns the drive's error log, preferring the extended shape; nil when neither is reported.
-func (r *Report) ATAErrors() *ATAErrorLogExtended {
+func (r *Report) ATAErrors() *ATAErrorTable {
 	l := r.ATAErrorLog
 	switch {
 	case l == nil:

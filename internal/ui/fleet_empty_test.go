@@ -102,12 +102,13 @@ func TestFleetListsDrivesThatHaveNoReport(t *testing.T) {
 		t.Errorf("fleet with every drive parked marks %d rows asleep, want %d:\n%s", got, len(devs), parked)
 	}
 	for _, d := range devs {
-		if !strings.Contains(parked, standbyGlyph+" "+d.Name) {
+		if !strings.Contains(parked, staleMarkup(true, false)+d.Name) {
 			t.Errorf("parked fleet has no standby-marked row for %s:\n%s", d.Name, parked)
 		}
 	}
-	if n := onLoop(t, a, a.fleet.sectionCount); n == 0 {
-		t.Error("parked fleet offers no section, so its rows have nothing to render under")
+	if n := onLoop(t, a, a.fleet.sectionCount); n != 0 {
+		// A stand-in section would be the one shown, then swapped for the chosen one when a drive reports.
+		t.Errorf("parked, never-read fleet offers %d sections, want none until a drive reports", n)
 	}
 }
 
@@ -166,5 +167,32 @@ func TestFleetLegendQualifiesTheDash(t *testing.T) {
 	if got := fleetLegend([]fleetRow{read, parked}, sec); !strings.Contains(got, "values as of the last read") ||
 		strings.Contains(got, "has not been read yet") {
 		t.Errorf("legend with a read, parked drive = %q, want only the last-read caveat", got)
+	}
+}
+
+// TestFleetLegendGrowsToFit: every caveat at once still fits the legend at 80 columns.
+func TestFleetLegendGrowsToFit(t *testing.T) {
+	screen := tcell.NewSimulationScreen("")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 30)
+
+	v := newFleetView(nil)
+	v.SetRect(0, 0, 80, 30)
+	devs := []smart.Device{{Name: "/dev/sda"}, {Name: "/dev/sdb"}, {Name: "/dev/sdx"}}
+	reports := map[string]*smart.Report{
+		"/dev/sda": fixtureReport(t, "smart-sda.json"),
+		"/dev/sdb": fixtureReport(t, "smart-sdb.json"),
+	}
+	v.refresh(devs, reports, nil, map[string]bool{"/dev/sda": true}, nil)
+	v.Draw(screen)
+
+	_, _, w, h := v.legend.GetInnerRect()
+	text := v.legend.GetText(false)
+	if lines := len(tview.WordWrap(text, w)); lines <= fleetLegendHeight || lines > h {
+		t.Errorf("legend wraps to %d rows in a %d-row box (want more than %d, so the case exercises growth): %q",
+			lines, h, fleetLegendHeight, v.legend.GetText(true))
 	}
 }

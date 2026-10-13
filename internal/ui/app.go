@@ -144,7 +144,6 @@ func (a *App) build() {
 	a.applyLayout(false)
 
 	a.fleet = newFleetView(a.openDrive)
-	a.fleet.unreadable = a.unreadable
 	a.bodyPages = tview.NewPages().
 		AddPage(pageDrives, a.body, true, true).
 		AddPage(pageFleet, a.fleet, true, false)
@@ -275,10 +274,10 @@ func (a *App) renderRail(cur int) {
 	fmt.Fprintf(&b, "%sDrives[-] ", mutedTag())
 	for i, d := range a.devices {
 		name := railName(d)
-		// A drive with no report yet differs only in glyph and colour.
-		glyph, markColor, nameTag := mutedTag()+"●[-]", activeTheme.Muted, mutedTag()
+		// A drive with no report yet differs only in glyph and colour, never in spacing.
+		glyph, markColor, label := mutedTag()+"●[-]", activeTheme.Muted, mutedTag()+esc(name)+"[-]"
 		if rep, ok := a.reports[d.Name]; ok {
-			glyph, nameTag = reportGlyph(rep), ""
+			glyph, label = reportGlyph(rep), esc(name)
 			if !noVerdict(rep) {
 				markColor = severityColor(rep.Overall())
 			}
@@ -289,11 +288,7 @@ func (a *App) renderRail(cur int) {
 				fgbgTag(markColor, activeTheme.SelectionBg), glyph, esc(name))
 			continue
 		}
-		if nameTag == "" {
-			fmt.Fprintf(&b, "  %s %s", glyph, esc(name))
-			continue
-		}
-		fmt.Fprintf(&b, " %s %s%s[-]", glyph, nameTag, esc(name))
+		fmt.Fprintf(&b, "  %s %s", glyph, label)
 	}
 	if n := a.alertCount(); n > 0 {
 		fmt.Fprintf(&b, "  %s▲ %d[-]", cautionTag(), n)
@@ -440,7 +435,7 @@ func (a *App) repaintAll() {
 	applyBackground(a.list, a.rail, a.banner)
 	applyTextColor(a.status, a.rail, a.banner)
 	// The fleet table bakes a colour into every cell.
-	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep)
+	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep, a.unreadable)
 	a.refreshChrome()
 	a.refreshBanner()
 }
@@ -538,35 +533,36 @@ const unreadableGlyph = "⊘"
 
 // staleMark returns the prefix for a drive whose values are not current, or "" when they are.
 func (a *App) staleMark(name string) string {
+	return staleMarkup(a.asleep[name], a.unreadable[name])
+}
+
+// staleMarkup is the stale prefix the drive list, rail and fleet share; asleep wins.
+func staleMarkup(asleep, unreadable bool) string {
 	switch {
-	case a.asleep[name]:
+	case asleep:
 		return mutedTag() + standbyGlyph + "[-] "
-	case a.unreadable[name]:
+	case unreadable:
 		return cautionTag() + unreadableGlyph + "[-] "
 	}
 	return ""
 }
 
 // staleNote dates a spun-down or unreadable drive's cached values for the caveat row.
+// An unreadable drive always has a lastRead: applyResults marks only a drive with a stored reading.
 func (a *App) staleNote(name string) string {
-	read, ok := a.lastRead[name]
-	asOf := ""
-	if ok {
-		asOf = fmt.Sprintf("values as of %s, %s ago.[-]", read.Format("15:04"), roundDuration(time.Since(read)))
+	if !a.asleep[name] && !a.unreadable[name] {
+		return ""
 	}
-	switch {
-	case a.asleep[name] && !ok:
+	read, ok := a.lastRead[name]
+	if !ok {
 		return fmt.Sprintf("%s%s Spun down — no reading yet; press R to wake and read.[-]",
 			mutedTag(), standbyGlyph)
-	case a.asleep[name]:
-		return fmt.Sprintf("%s%s Spun down — %s", mutedTag(), standbyGlyph, asOf)
-	case a.unreadable[name] && !ok:
-		return fmt.Sprintf("%s%s Last read failed — values are from an earlier read.[-]",
-			cautionTag(), unreadableGlyph)
-	case a.unreadable[name]:
-		return fmt.Sprintf("%s%s Last read failed — %s", cautionTag(), unreadableGlyph, asOf)
 	}
-	return ""
+	asOf := fmt.Sprintf("values as of %s, %s ago.[-]", read.Format("15:04"), roundDuration(time.Since(read)))
+	if a.asleep[name] {
+		return fmt.Sprintf("%s%s Spun down — %s", mutedTag(), standbyGlyph, asOf)
+	}
+	return fmt.Sprintf("%s%s Last read failed — %s", cautionTag(), unreadableGlyph, asOf)
 }
 
 // listRow renders the main/secondary text for a drive row.

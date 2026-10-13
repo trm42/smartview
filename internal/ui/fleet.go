@@ -38,11 +38,9 @@ type fleetView struct {
 	renderer bool       // true while rebuilding, to ignore transient selection events
 
 	onOpen func(device string)
-	// unreadable is the App's map, shared rather than copied; event-loop only.
-	unreadable map[string]bool
 }
 
-// fleetLegendHeight fits the longest caveat wrapped to two lines.
+// fleetLegendHeight is the legend's minimum height; setLegend grows it to fit the wrapped text.
 const fleetLegendHeight = 2
 
 func newFleetView(onOpen func(device string)) *fleetView {
@@ -119,10 +117,10 @@ func (v *fleetView) syncWidth() bool {
 
 // refresh applies the latest poll; called even when hidden so the view is current on open.
 func (v *fleetView) refresh(devices []smart.Device, reports map[string]*smart.Report,
-	history map[string][]float64, asleep map[string]bool) {
+	history map[string][]float64, asleep, unreadable map[string]bool) {
 	rows := make([]fleetRow, 0, len(devices))
 	for _, d := range devices {
-		row := fleetRow{dev: d, rep: reports[d.Name], asleep: asleep[d.Name], unreadable: v.unreadable[d.Name]}
+		row := fleetRow{dev: d, rep: reports[d.Name], asleep: asleep[d.Name], unreadable: unreadable[d.Name]}
 		if row.rep != nil {
 			row.series = temperatureSeries(row.rep, history[d.Name])
 		}
@@ -135,25 +133,16 @@ func (v *fleetView) refresh(devices []smart.Device, reports map[string]*smart.Re
 // noDrivesText is the empty-scan message the detail pane and the fleet share.
 const noDrivesText = "No drives found. Try running with sudo."
 
-// stalePrefix marks a spun-down or unreadable drive in the fleet's identity cell.
-func stalePrefix(row fleetRow) string {
-	switch {
-	case row.asleep:
-		return standbyGlyph + " "
-	case row.unreadable:
-		return cautionTag() + unreadableGlyph + "[-] "
-	}
-	return ""
-}
-
 // staleLegend explains the stale marks in use; no form may outgrow the standby-only one.
 func staleLegend(rows []fleetRow) string {
 	asleep := slices.ContainsFunc(rows, func(r fleetRow) bool { return r.asleep })
 	asleepRead := slices.ContainsFunc(rows, func(r fleetRow) bool { return r.asleep && r.rep != nil })
 	unreadable := slices.ContainsFunc(rows, func(r fleetRow) bool { return r.unreadable })
 	switch {
-	case asleep && unreadable:
+	case asleepRead && unreadable:
 		return standbyGlyph + " spun down, " + unreadableGlyph + " read failed; last values"
+	case asleep && unreadable:
+		return unreadableGlyph + " read failed, last good values; " + standbyGlyph + " spun down"
 	case asleepRead:
 		return standbyGlyph + " spun down; values as of the last read"
 	case asleep:
@@ -171,17 +160,20 @@ func (v *fleetView) render() {
 
 	v.shown = v.availableSections()
 	v.renderBar()
-	if len(v.shown) == 0 {
+	if len(v.rows) == 0 {
 		v.table.Clear()
 		v.table.SetTitle(" Fleet ")
 		v.table.SetCell(0, 0, tview.NewTableCell(" "+noDrivesText+" ").
 			SetTextColor(activeTheme.Muted).SetSelectable(false))
-		v.legend.SetText("")
+		v.setLegend("")
 		v.ordered = nil
 		return
 	}
 
-	sec := v.shown[v.activeIndex()]
+	sec := identityOnlySection
+	if len(v.shown) > 0 {
+		sec = v.shown[v.activeIndex()]
+	}
 	v.ordered = v.sortRows(sec)
 	v.renderTable(sec)
 	legend := fleetLegend(v.rows, sec)
@@ -189,8 +181,19 @@ func (v *fleetView) render() {
 		legend = fmt.Sprintf("%s%s at a wider terminal[-] · %s",
 			cautionTag(), plural(v.dropped, "more column", "more columns"), legend)
 	}
-	v.legend.SetText(mutedTag() + legend + "[-]")
+	v.setLegend(mutedTag() + legend + "[-]")
 	v.restoreSelection()
+}
+
+// setLegend writes the legend and sizes its row to the wrapped text, so a long caveat list is never clipped.
+func (v *fleetView) setLegend(text string) {
+	v.legend.SetText(text)
+	_, _, w, _ := v.GetInnerRect()
+	h := fleetLegendHeight
+	if w -= 2 * uiGutter; w > 0 {
+		h = max(h, len(tview.WordWrap(text, w)))
+	}
+	v.ResizeItem(v.legend, h, 0)
 }
 
 // fleetLegend prefixes the section's legend with what a stale or unread row means; a fleet with no report at all omits the section's own caveats.
@@ -208,11 +211,14 @@ func fleetLegend(rows []fleetRow, sec fleetSection) string {
 	return strings.Join(parts, " · ")
 }
 
-// availableSections filters out sections no drive in this fleet can fill; empty only when there are no rows.
+// identityOnlySection lists the drives before any has reported, leaving the user's chosen section unchanged for when one does.
+var identityOnlySection = fleetSection{
+	title: "device",
+	rank:  func(fleetRow) (float64, bool) { return 0, false },
+}
+
+// availableSections filters out sections no drive in this fleet can fill; empty until a drive reports.
 func (v *fleetView) availableSections() []fleetSection {
-	if len(v.rows) == 0 {
-		return nil
-	}
 	out := make([]fleetSection, 0, len(v.sections))
 	for _, s := range v.sections {
 		if s.available(v.rows) {
@@ -327,7 +333,7 @@ func (v *fleetView) setRow(rowIdx int, row fleetRow, secCells []fleetCell, n int
 			waiting = "asleep"
 		}
 		cells = []fleetCell{
-			{text: mutedTag() + "●[-] " + stalePrefix(row) + esc(fleetDevice(row.dev)),
+			{text: mutedTag() + "●[-] " + staleMarkup(row.asleep, row.unreadable) + esc(fleetDevice(row.dev)),
 				color: activeTheme.Muted},
 			{text: waiting, color: activeTheme.Muted},
 			{text: dash, color: activeTheme.Muted},
@@ -344,7 +350,7 @@ func (v *fleetView) setRow(rowIdx int, row fleetRow, secCells []fleetCell, n int
 			secCells = secCells[:n]
 		}
 		identity := []fleetCell{
-			{text: reportGlyph(row.rep) + " " + stalePrefix(row) + esc(fleetDevice(row.dev)),
+			{text: reportGlyph(row.rep) + " " + staleMarkup(row.asleep, row.unreadable) + esc(fleetDevice(row.dev)),
 				color: activeTheme.Neutral},
 			{text: esc(model), color: activeTheme.Neutral},
 			{text: orDash(esc(truncateRunes(row.rep.SerialNumber, fleetSerialWidth))),

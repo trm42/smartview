@@ -110,8 +110,9 @@ func healthSection() fleetSection {
 		id:      "health",
 		title:   "Health & errors",
 		columns: []string{"State", "Realloc", "Pending", "Uncorr", "CRC", "Media", "Err log", "Unsafe"},
-		// Always available, so drives with no report yet still get their rows.
-		available: func(rows []fleetRow) bool { return len(rows) > 0 },
+		available: func(rows []fleetRow) bool {
+			return anyRow(rows, func(*smart.Report) bool { return true })
+		},
 		rank: func(row fleetRow) (float64, bool) {
 			if row.rep == nil || noVerdict(row.rep) {
 				return 0, false
@@ -181,26 +182,29 @@ func enduranceSection() fleetSection {
 		columns: []string{"Kind", "Life left", "Spare", "Written", "Per day"},
 		available: func(rows []fleetRow) bool {
 			return anyRow(rows, func(r *smart.Report) bool {
-				if _, ok := r.LifeUsedPercent(); ok {
+				if _, _, ok := r.LifeUsedPercent(); ok {
 					return true
 				}
-				if _, _, ok := r.SparePercent(); ok {
+				if _, _, _, ok := r.SparePercent(); ok {
 					return true
 				}
 				_, ok := r.DataWritten()
 				return ok
 			})
 		},
-		rank: rankBy((*smart.Report).LifeUsedPercent),
+		rank: rankBy(func(r *smart.Report) (int, bool) {
+			pct, _, ok := r.LifeUsedPercent()
+			return pct, ok
+		}),
 		cells: func(row fleetRow) []fleetCell {
 			r := row.rep
 			life := fleetCell{text: dash, color: activeTheme.Neutral}
-			if pct, ok := r.LifeUsedPercent(); ok {
-				life = fleetCell{text: pctBarUsed(pct, lifeUsedSeverity(pct)), color: activeTheme.Neutral}
+			if pct, _, ok := r.LifeUsedPercent(); ok {
+				life = fleetCell{text: pctBarUsed(pct, smart.PctUsedSeverity(pct)), color: activeTheme.Neutral}
 			}
 			spare := fleetCell{text: dash, color: activeTheme.Neutral}
-			if pct, thr, ok := r.SparePercent(); ok {
-				spare = fleetCell{text: pctBar(pct, spareSeverityPct(pct, thr)), color: activeTheme.Neutral}
+			if pct, thr, _, ok := r.SparePercent(); ok {
+				spare = fleetCell{text: pctBar(pct, smart.SpareSeverity(pct, thr)), color: activeTheme.Neutral}
 			}
 
 			written, perDay := numCell(dash), numCell(dash)

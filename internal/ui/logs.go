@@ -11,9 +11,10 @@ import (
 
 // hasLogs reports whether the drive exposes any log/link diagnostics.
 func hasLogs(r *smart.Report) bool {
-	return r.ATASelfTestLog != nil || r.ATAErrorLog != nil ||
+	_, ataTests := r.ATASelfTests()
+	return ataTests || r.ATAErrors() != nil ||
 		r.NVMeSelfTestLog != nil || r.NVMeErrorLog != nil ||
-		selfTestDurations(r) != "" || r.SATAPhyEvents != nil ||
+		hasSelfTestTiming(r) || r.SATAPhyEvents != nil ||
 		r.ATAPendingDefects != nil || r.ATASCTErc != nil
 }
 
@@ -82,6 +83,11 @@ func selfTestDurations(r *smart.Report) string {
 		parts = append(parts, e.Name+" "+humanMinutes(int(e.Duration.Minutes())))
 	}
 	return strings.Join(parts, " · ")
+}
+
+// hasSelfTestTiming reports whether the drive states any self-test duration.
+func hasSelfTestTiming(r *smart.Report) bool {
+	return len(r.SelfTestEstimates()) > 0
 }
 
 // writePhyCounters summarises the SATA PHY event counters.

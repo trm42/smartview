@@ -134,9 +134,9 @@ func TestSelfTestPassedSharesColorResult(t *testing.T) {
 func TestSelfTestSummaryIgnoresNeutralRuns(t *testing.T) {
 	r := &smart.Report{Device: smart.Device{Protocol: "ATA"}}
 	tbl := []smart.ATASelfTestEntry{
-		{Status: smart.StringValue{String: "Self-test routine in progress"}},
-		{Status: smart.StringValue{String: "Aborted by host"}},
-		{Status: smart.StringValue{String: "Completed without error"}},
+		{Status: smart.SelfTestResult{String: "Self-test routine in progress"}},
+		{Status: smart.SelfTestResult{String: "Aborted by host"}},
+		{Status: smart.SelfTestResult{String: "Completed without error"}},
 	}
 	var b strings.Builder
 	writeSelfTestSummary(&b, r, tbl)

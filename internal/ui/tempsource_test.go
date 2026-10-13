@@ -34,7 +34,7 @@ func TestTempChartReadsTheCurrentTemperature(t *testing.T) {
 		{"failing", 70, smart.SeverityFailing},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := loadReport(t, "smart-sda.json")
+			r := fixtureReport(t, "smart-sda.json")
 			r.Temperature.Current = &tc.current
 
 			c, ok := buildTempSparkline(r, nil).(*rangeChart)

@@ -165,7 +165,7 @@ func TestFleetMarksStandbyDrives(t *testing.T) {
 		parked: {rep: healthyReport(parked)},
 	})
 	a.applyResults(map[string]pollResult{parked: {standby: true}})
-	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep)
+	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep, a.unreadable)
 
 	var marked, plain int
 	for r := range a.fleet.table.GetRowCount() {
@@ -194,13 +194,13 @@ func TestFleetLegendExplainsTheGlyph(t *testing.T) {
 	a.devices = []smart.Device{{Name: dev, Type: "sat"}}
 
 	a.applyResults(map[string]pollResult{dev: {rep: healthyReport(dev)}})
-	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep)
+	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep, a.unreadable)
 	if got := a.fleet.legend.GetText(true); strings.Contains(got, standbyGlyph) {
 		t.Errorf("legend explains standby with no drive asleep: %q", got)
 	}
 
 	a.applyResults(map[string]pollResult{dev: {standby: true}})
-	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep)
+	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep, a.unreadable)
 	if got := a.fleet.legend.GetText(true); !strings.Contains(got, standbyGlyph) {
 		t.Errorf("legend %q does not explain the standby glyph", got)
 	}
