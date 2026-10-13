@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"slices"
 	"testing"
-	"time"
 )
 
 // TestSelfTestEstimates pins that only the polling times a drive reports are
@@ -17,10 +16,10 @@ func TestSelfTestEstimates(t *testing.T) {
 		want    []SelfTestEstimate
 	}{
 		{"smart-sda.json", []SelfTestEstimate{
-			{"short", 1 * time.Minute}, {"extended", 1804 * time.Minute}, {"conveyance", 2 * time.Minute},
+			{"short", 1}, {"extended", 1804}, {"conveyance", 2},
 		}},
 		{"smart-sdb.json", []SelfTestEstimate{
-			{"short", 2 * time.Minute}, {"extended", 265 * time.Minute},
+			{"short", 2}, {"extended", 265},
 		}},
 		{"smart-nvme.json", nil},
 	}
@@ -35,15 +34,19 @@ func TestSelfTestEstimates(t *testing.T) {
 // is what marks a polling time as reported; the countdown still rejects zero.
 func TestSelfTestEstimatesKeepReportedZero(t *testing.T) {
 	var r Report
-	doc := `{"device":{"protocol":"ATA"},"ata_smart_data":{"self_test":{"polling_minutes":{"short":0,"conveyance":5}}}}`
+	doc := `{"device":{"protocol":"ATA"},"ata_smart_data":{"self_test":{"polling_minutes":{"short":0,"extended":-1,"conveyance":5}}}}`
 	if err := json.Unmarshal([]byte(doc), &r); err != nil {
 		t.Fatal(err)
 	}
-	want := []SelfTestEstimate{{"short", 0}, {"conveyance", 5 * time.Minute}}
+	// A negative time is a firmware "unknown", not a runtime.
+	want := []SelfTestEstimate{{"short", 0}, {"conveyance", 5}}
 	if got := r.SelfTestEstimates(); !slices.Equal(got, want) {
 		t.Errorf("estimates = %v, want %v", got, want)
 	}
 	if d, ok := r.SelfTestDuration(SelfTestShort); ok {
 		t.Errorf("zero short duration offered for the countdown: %v", d)
+	}
+	if d, ok := r.SelfTestDuration(SelfTestLong); ok {
+		t.Errorf("negative extended duration offered for the countdown: %v", d)
 	}
 }

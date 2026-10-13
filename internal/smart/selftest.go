@@ -58,24 +58,24 @@ func (r *Report) SelfTestProgress() (label string, percent int, running bool) {
 // SelfTestEstimate is one self-test runtime the drive advertises, under
 // smartctl's name for it.
 type SelfTestEstimate struct {
-	Name     string
-	Duration time.Duration
+	Name    string
+	Minutes int
 }
 
 // SelfTestEstimates lists the self-test runtimes the drive reports, a reported
-// zero included, omitting any it does not; ATA only, NVMe returns nil.
+// zero included, omitting any it does not or reports negative; ATA only, NVMe returns nil.
 func (r *Report) SelfTestEstimates() []SelfTestEstimate {
-	if r.ATASmartData == nil || r.ATASmartData.SelfTest == nil || r.ATASmartData.SelfTest.PollingMinutes == nil {
+	p := r.selfTestPolling()
+	if p == nil {
 		return nil
 	}
-	p := r.ATASmartData.SelfTest.PollingMinutes
 	var out []SelfTestEstimate
 	for _, e := range []struct {
 		name    string
 		minutes *int
 	}{{"short", p.Short}, {"extended", p.Extended}, {"conveyance", p.Conveyance}} {
-		if e.minutes != nil {
-			out = append(out, SelfTestEstimate{e.name, time.Duration(*e.minutes) * time.Minute})
+		if e.minutes != nil && *e.minutes >= 0 {
+			out = append(out, SelfTestEstimate{e.name, *e.minutes})
 		}
 	}
 	return out
@@ -84,19 +84,27 @@ func (r *Report) SelfTestEstimates() []SelfTestEstimate {
 // SelfTestDuration returns the advertised runtime for a self-test type, or
 // false when it is absent or not positive; ATA only, NVMe returns false.
 func (r *Report) SelfTestDuration(testType SelfTestType) (time.Duration, bool) {
-	var name string
-	switch testType {
-	case SelfTestShort:
-		name = "short"
-	case SelfTestLong:
-		name = "extended"
-	default:
+	p := r.selfTestPolling()
+	if p == nil {
 		return 0, false
 	}
-	for _, e := range r.SelfTestEstimates() {
-		if e.Name == name && e.Duration > 0 {
-			return e.Duration, true
-		}
+	var minutes *int
+	switch testType {
+	case SelfTestShort:
+		minutes = p.Short
+	case SelfTestLong:
+		minutes = p.Extended
 	}
-	return 0, false
+	if minutes == nil || *minutes <= 0 {
+		return 0, false
+	}
+	return time.Duration(*minutes) * time.Minute, true
+}
+
+// selfTestPolling is the drive's advertised self-test runtimes, nil when absent.
+func (r *Report) selfTestPolling() *SelfTestPolling {
+	if r.ATASmartData == nil || r.ATASmartData.SelfTest == nil {
+		return nil
+	}
+	return r.ATASmartData.SelfTest.PollingMinutes
 }

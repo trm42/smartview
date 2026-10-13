@@ -80,7 +80,7 @@ func ercTimerString(t *smart.ERCTimer) string {
 func selfTestDurations(r *smart.Report) string {
 	var parts []string
 	for _, e := range r.SelfTestEstimates() {
-		parts = append(parts, e.Name+" "+humanMinutes(int(e.Duration.Minutes())))
+		parts = append(parts, e.Name+" "+humanMinutes(e.Minutes))
 	}
 	return strings.Join(parts, " · ")
 }
