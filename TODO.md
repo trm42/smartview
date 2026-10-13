@@ -100,4 +100,11 @@ for drive health via smartmontools.
       all, which is what every real pre-7.0 smartctl does — and `main` matches
       both to add the platform's install/upgrade hint. Fixture mode bypasses it,
       as before.
-- [ ] `--json` / headless mode for scripting and CI health checks.
+- [ ] `--json` / headless mode for scripting and CI health checks. Planned as
+      the `--serve` protocol the GUI's privileged helper also speaks, see
+      `docs/gui-design.md`.
+- [ ] **Native desktop GUI** (macOS + Linux). Designed and phased in
+      `docs/gui-design.md`: Qt 6 Widgets via the miqt bindings, a shared
+      toolkit-neutral `internal/view` layer extracted from `internal/ui`, a
+      second `smartview-gui` binary, and a privileged helper for smartctl.
+      Phase 0 is a build/look spike on both platforms before any UI work.
