@@ -11,7 +11,8 @@ import (
 
 // hasLogs reports whether the drive exposes any log/link diagnostics.
 func hasLogs(r *smart.Report) bool {
-	return r.ATASelfTestLog != nil || r.ATAErrorLog != nil ||
+	_, ataTests := r.ATASelfTests()
+	return ataTests || r.ATAErrors() != nil ||
 		r.NVMeSelfTestLog != nil || r.NVMeErrorLog != nil ||
 		selfTestDurations(r) != "" || r.SATAPhyEvents != nil ||
 		r.ATAPendingDefects != nil || r.ATASCTErc != nil

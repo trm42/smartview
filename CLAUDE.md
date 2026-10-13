@@ -396,7 +396,7 @@ goroutine (`setNarrow` in app.go is the pattern).
   enumerated/formatted values don't need it.
 - **Health/severity** lives in `smart/health.go`. ATA pre-fail vs old-age comes
   from the authoritative `flags.prefailure` bit, not attribute-name heuristics.
-  `Overall()` also reads the drive's own error logs (`logSeverity`): an
+  `Overall()` also reads the drive's own error logs and newest finished self-test (`logSeverity`): an
   uncorrectable read is logged without necessarily moving any normalized value,
   so a drive could otherwise present every attribute in range and still have a
   populated error log. NVMe `num_err_log_entries` is deliberately excluded — it

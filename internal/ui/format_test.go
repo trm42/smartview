@@ -127,6 +127,24 @@ func TestDriveKind(t *testing.T) {
 			}
 		})
 	}
+	// Captured envelopes, through the fleet's short label too; unread ones name no kind.
+	fixtures := []struct{ fixture, short, long string }{
+		{"smart-sde-nodata.json", dash, dash},
+		{"smart-sdd-standby.json", dash, dash},
+		{"smart-sdb.json", "SSD", "SATA SSD"},
+		{"smart-sda.json", "HDD", "HDD @ 7200 rpm"},
+		{"smart-nvme.json", "NVMe", "NVMe SSD"},
+		{"smart-apple-nvme.json", "NVMe", "NVMe SSD"},
+	}
+	for _, c := range fixtures {
+		r := fixtureReport(t, c.fixture)
+		if got := shortKind(r); got != c.short {
+			t.Errorf("%s: shortKind = %q, want %q", c.fixture, got, c.short)
+		}
+		if got := driveKind(r); got != c.long {
+			t.Errorf("%s: driveKind = %q, want %q", c.fixture, got, c.long)
+		}
+	}
 }
 
 // TestAttrTextColor pins "colour marks exceptions" for attribute rows: a
