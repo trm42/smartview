@@ -458,11 +458,11 @@ func nvmeRows(h *smart.NVMeHealth) []attrKV {
 	// Graded through the accessors and graders the Overview gauges use.
 	r := &smart.Report{NVMeHealth: h}
 	if h.PercentageUsed != nil {
-		pct, _ := r.LifeUsedPercent()
+		pct, _, _ := r.LifeUsedPercent()
 		add("Percentage used", fmt.Sprintf("%d%%", pct), lifeUsedSeverity(pct))
 	}
 	if h.AvailableSpare != nil {
-		pct, thr, _ := r.SparePercent()
+		pct, thr, _, _ := r.SparePercent()
 		// SparePercent reports an absent threshold as 0, which is not one to grade against.
 		sev := smart.SeverityOK
 		if h.AvailableSpareThreshold != nil {

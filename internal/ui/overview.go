@@ -304,10 +304,10 @@ func identitySections(r *smart.Report) []identitySection {
 		add(&wear, "Power cycles", fmt.Sprintf("%d", n))
 	}
 	// A reading the gauges draw needs no row.
-	if pct, ok := r.LifeUsedPercent(); ok && !gaugesLife(r) {
+	if pct, src, ok := r.LifeUsedPercent(); ok && src != smart.WearHealthLog {
 		add(&wear, "Life used", pctMarkup(pct, lifeUsedSeverity(pct)))
 	}
-	if pct, thr, ok := r.SparePercent(); ok && !gaugesSpare(r) {
+	if pct, thr, src, ok := r.SparePercent(); ok && src != smart.WearHealthLog {
 		add(&wear, "Spare avail", pctMarkup(pct, spareSeverityPct(pct, thr)))
 	}
 	if h := r.NVMeHealth; h != nil {
@@ -365,18 +365,7 @@ func pctMarkup(pct int, sev smart.Severity) string {
 	return sevText(sev, s)
 }
 
-// gaugesLife reports whether the endurance gauge is drawn: only the NVMe
-// health log's own field gets one, a fallback source gets a row.
-func gaugesLife(r *smart.Report) bool {
-	return r.NVMeHealth != nil && r.NVMeHealth.PercentageUsed != nil
-}
-
-// gaugesSpare is gaugesLife for the spare gauge.
-func gaugesSpare(r *smart.Report) bool {
-	return r.NVMeHealth != nil && r.NVMeHealth.AvailableSpare != nil
-}
-
-// buildGauges returns NVMe wear gauges, nil without a percentage indicator.
+// buildGauges returns the NVMe health log's wear gauges, nil without one; a fallback source gets a row.
 func buildGauges(r *smart.Report) tview.Primitive {
 	col := tview.NewFlex().SetDirection(tview.FlexRow)
 	// shown and graded differ: "90% left" is coloured by the 10% consumed.
@@ -390,13 +379,11 @@ func buildGauges(r *smart.Report) tview.Primitive {
 		col.AddItem(g, 3, 0, false)
 	}
 
-	if gaugesLife(r) {
+	if used, src, ok := r.LifeUsedPercent(); ok && src == smart.WearHealthLog {
 		// Remaining endurance, so it fills toward healthy like the fleet bar.
-		used, _ := r.LifeUsedPercent()
 		addGauge(" Life left ", 100-clampPct(used), lifeUsedSeverity(used))
 	}
-	if gaugesSpare(r) {
-		pct, thr, _ := r.SparePercent()
+	if pct, thr, src, ok := r.SparePercent(); ok && src == smart.WearHealthLog {
 		addGauge(" Spare avail ", pct, spareSeverityPct(pct, thr))
 	}
 	if col.GetItemCount() == 0 {

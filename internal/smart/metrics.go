@@ -167,35 +167,45 @@ func (r *Report) PowerCycles() (int, bool) {
 	return 0, false
 }
 
-// LifeUsedPercent returns the percentage of rated write endurance consumed;
-// spinning disks report absent.
-func (r *Report) LifeUsedPercent() (int, bool) {
+// WearSource is where a wear reading came from; only the NVMe health log's own fields feed a gauge.
+type WearSource int
+
+const (
+	// WearHealthLog is the NVMe health log's percentage_used or available_spare.
+	WearHealthLog WearSource = iota + 1
+	// WearFallback is a top-level or Device Statistics reading.
+	WearFallback
+)
+
+// LifeUsedPercent returns the percentage of rated write endurance consumed and
+// its source; spinning disks report absent.
+func (r *Report) LifeUsedPercent() (int, WearSource, bool) {
 	if r.NVMeHealth != nil && r.NVMeHealth.PercentageUsed != nil {
-		return *r.NVMeHealth.PercentageUsed, true
+		return *r.NVMeHealth.PercentageUsed, WearHealthLog, true
 	}
 	if r.EnduranceUsed != nil {
-		return r.EnduranceUsed.CurrentPercent, true
+		return r.EnduranceUsed.CurrentPercent, WearFallback, true
 	}
 	if v, ok := r.deviceStat("Percentage Used Endurance Indicator"); ok {
-		return int(v), true
+		return int(v), WearFallback, true
 	}
-	return 0, false
+	return 0, 0, false
 }
 
-// SparePercent returns the available spare percentage and its depletion
-// threshold.
-func (r *Report) SparePercent() (pct, threshold int, ok bool) {
+// SparePercent returns the available spare percentage, its depletion
+// threshold (0 when unreported) and its source.
+func (r *Report) SparePercent() (pct, threshold int, src WearSource, ok bool) {
 	if r.NVMeHealth != nil && r.NVMeHealth.AvailableSpare != nil {
 		thr := 0
 		if r.NVMeHealth.AvailableSpareThreshold != nil {
 			thr = *r.NVMeHealth.AvailableSpareThreshold
 		}
-		return *r.NVMeHealth.AvailableSpare, thr, true
+		return *r.NVMeHealth.AvailableSpare, thr, WearHealthLog, true
 	}
 	if r.SpareAvailable != nil {
-		return r.SpareAvailable.CurrentPercent, r.SpareAvailable.ThresholdPercent, true
+		return r.SpareAvailable.CurrentPercent, r.SpareAvailable.ThresholdPercent, WearFallback, true
 	}
-	return 0, 0, false
+	return 0, 0, 0, false
 }
 
 // TempRange returns the recorded temperature extremes in Celsius, preferring

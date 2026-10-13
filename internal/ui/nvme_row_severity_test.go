@@ -42,13 +42,13 @@ func TestNVMeRowsGradeLikeTheGauges(t *testing.T) {
 			t.Errorf("%s: Available spare row = %v, want %v", c.name, got, c.wantSpare)
 		}
 		if c.thr != nil {
-			pct, thr, _ := r.SparePercent()
+			pct, thr, _, _ := r.SparePercent()
 			if gauge := spareSeverityPct(pct, thr); gauge != c.wantSpare {
 				t.Errorf("%s: spare gauge grade = %v, row = %v", c.name, gauge, c.wantSpare)
 			}
 		}
 
-		used, _ := r.LifeUsedPercent()
+		used, _, _ := r.LifeUsedPercent()
 		gauge := lifeUsedSeverity(used)
 		if gauge != c.wantUsed {
 			t.Fatalf("%s: life gauge grade = %v, want %v", c.name, gauge, c.wantUsed)

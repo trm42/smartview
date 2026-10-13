@@ -156,8 +156,8 @@ func TestOverviewDrawsEveryResolvedWearReading(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, lifeOK := tc.rep.LifeUsedPercent()
-			_, _, spareOK := tc.rep.SparePercent()
+			_, _, lifeOK := tc.rep.LifeUsedPercent()
+			_, _, _, spareOK := tc.rep.SparePercent()
 			if lifeOK != tc.wantLife || spareOK != tc.wantSpare {
 				t.Fatalf("accessors report life=%v spare=%v, want %v %v: the case no longer covers its source",
 					lifeOK, spareOK, tc.wantLife, tc.wantSpare)
