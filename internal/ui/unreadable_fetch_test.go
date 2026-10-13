@@ -63,6 +63,23 @@ func TestFailedFetchBeforeAnyReadingStaysScanning(t *testing.T) {
 	}
 }
 
+// TestFailedFetchKeepsAnUnreadSleeper: with no reading to mark stale, a failed fetch leaves the drive asleep.
+func TestFailedFetchKeepsAnUnreadSleeper(t *testing.T) {
+	a, _ := newSimApp(t, 120, 40)
+	d := smart.Device{Name: "/dev/sdb", Type: "sat"}
+	a.devices = []smart.Device{d}
+	a.populateList()
+	a.applyPoll(map[string]pollResult{d.Name: {standby: true}})
+	a.applyPoll(map[string]pollResult{d.Name: outcome(nil)})
+
+	if !a.asleep[d.Name] || a.unreadable[d.Name] {
+		t.Errorf("asleep = %v, unreadable = %v; want still asleep and unmarked", a.asleep[d.Name], a.unreadable[d.Name])
+	}
+	if _, sec := a.listRow(d); !strings.Contains(sec, "R to read") {
+		t.Errorf("row %q lost its asleep hint", sec)
+	}
+}
+
 // TestFailedFetchReplacesTheStandbyMark: a drive that stopped answering is no longer known to be asleep.
 func TestFailedFetchReplacesTheStandbyMark(t *testing.T) {
 	a, d := goneUnreadable(t, 120, pollResult{standby: true})

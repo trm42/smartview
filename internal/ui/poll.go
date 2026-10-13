@@ -120,16 +120,23 @@ func (a *App) applyPoll(results map[string]pollResult) {
 func (a *App) applyResults(results map[string]pollResult) {
 	now := time.Now()
 	for name, res := range results {
+		prev := a.reports[name]
+		hadReading := prev != nil && prev.HasHealth()
+		if res.failed {
+			// A cached reading becomes the stale one; without one, the asleep mark is all the row has.
+			if hadReading {
+				a.asleep[name], a.unreadable[name] = false, true
+			}
+			continue
+		}
 		a.asleep[name] = res.standby
 		a.unreadable[name] = false
 		if res.standby {
 			continue // reports[name] and lastRead[name] stand
 		}
 		// A failed open still prints an envelope; it must not replace a real reading.
-		prev := a.reports[name]
-		hadReading := prev != nil && prev.HasHealth()
-		if res.failed || (!res.rep.HasHealth() && hadReading) {
-			a.unreadable[name] = hadReading
+		if !res.rep.HasHealth() && hadReading {
+			a.unreadable[name] = true
 			continue
 		}
 		a.reports[name] = res.rep
