@@ -3,8 +3,6 @@
 package ui
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/trm42/smartview/internal/smart"
@@ -52,11 +50,7 @@ func TestLogsTabAvailabilityPerFixture(t *testing.T) {
 		"smart-seagate-farm-log.json": false,
 	}
 	for name, w := range want {
-		data, err := os.ReadFile(filepath.Join("..", "smart", "testdata", name))
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		if got := hasLogs(decodeReport(t, string(data))); got != w {
+		if got := hasLogs(fixtureReport(t, name)); got != w {
 			t.Errorf("%s: hasLogs = %v, want %v", name, got, w)
 		}
 	}

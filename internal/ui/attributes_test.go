@@ -187,7 +187,7 @@ func TestAttributesRefreshKeepsSelection(t *testing.T) {
 func TestNVMeRefreshKeepsSelection(t *testing.T) {
 	used := 5
 	h := &smart.NVMeHealth{PercentageUsed: &used, MediaErrors: 0, PowerOnHours: 100}
-	v := newNVMeAttributesView(h)
+	v := newNVMeAttributesView(&smart.Report{NVMeHealth: h})
 	v.table.Select(3, 0)
 	row, _ := v.table.GetSelection()
 	if row != 3 {
@@ -212,7 +212,7 @@ func rowIDs(attrs []smart.ATAAttribute) []int {
 // when the composite temperature sits comfortably in range.
 func TestNVMeSensorsCarrySeverity(t *testing.T) {
 	h := &smart.NVMeHealth{TemperatureSensors: []int{67, 43}}
-	rows := nvmeRows(h)
+	rows := nvmeRows(&smart.Report{NVMeHealth: h})
 	i := slices.IndexFunc(rows, func(r attrKV) bool { return r.k == "Sensors" })
 	if i < 0 {
 		t.Fatal("no Sensors row")
@@ -246,7 +246,7 @@ func TestNVMeKeyColumnIsNeutral(t *testing.T) {
 	for name, th := range themes {
 		setTheme(th)
 		used := 5
-		v := newNVMeAttributesView(&smart.NVMeHealth{PercentageUsed: &used})
+		v := newNVMeAttributesView(&smart.Report{NVMeHealth: &smart.NVMeHealth{PercentageUsed: &used}})
 		cell := v.table.GetCell(1, 0)
 		if cell == nil {
 			t.Fatalf("%s: no key cell", name)
