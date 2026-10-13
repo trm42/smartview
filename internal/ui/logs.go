@@ -14,7 +14,7 @@ func hasLogs(r *smart.Report) bool {
 	_, ataTests := r.ATASelfTests()
 	return ataTests || r.ATAErrors() != nil ||
 		r.NVMeSelfTestLog != nil || r.NVMeErrorLog != nil ||
-		r.ATASmartData != nil || r.SATAPhyEvents != nil ||
+		hasSelfTestTiming(r) || r.SATAPhyEvents != nil ||
 		r.ATAPendingDefects != nil || r.ATASCTErc != nil
 }
 
@@ -78,12 +78,17 @@ func ercTimerString(t *smart.ERCTimer) string {
 
 // selfTestDurations renders the polling time for each self-test type, or "".
 func selfTestDurations(r *smart.Report) string {
-	if r.ATASmartData == nil || r.ATASmartData.SelfTest == nil || r.ATASmartData.SelfTest.PollingMinutes == nil {
+	if !hasSelfTestTiming(r) {
 		return ""
 	}
 	p := r.ATASmartData.SelfTest.PollingMinutes
 	return fmt.Sprintf("short %s · extended %s · conveyance %s",
 		humanMinutes(p.Short), humanMinutes(p.Extended), humanMinutes(p.Conveyance))
+}
+
+// hasSelfTestTiming reports whether the drive states its self-test durations.
+func hasSelfTestTiming(r *smart.Report) bool {
+	return r.ATASmartData != nil && r.ATASmartData.SelfTest != nil && r.ATASmartData.SelfTest.PollingMinutes != nil
 }
 
 // writePhyCounters summarises the SATA PHY event counters.

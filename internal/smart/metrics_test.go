@@ -79,7 +79,7 @@ func TestLifeUsedPercent(t *testing.T) {
 		{"smart-sda.json", 0, false}, // spinning disk: no endurance indicator
 		{"smart-sdb.json", 0, false}, // SATA SSD without the Device Statistics log
 	} {
-		pct, ok := parseFixture(t, c.fixture).LifeUsedPercent()
+		pct, _, ok := parseFixture(t, c.fixture).LifeUsedPercent()
 		if ok != c.ok || pct != c.pct {
 			t.Errorf("%s: LifeUsedPercent = (%d,%v), want (%d,%v)", c.fixture, pct, ok, c.pct, c.ok)
 		}
@@ -92,17 +92,32 @@ func TestSparePercent(t *testing.T) {
 	for _, c := range []struct {
 		fixture  string
 		pct, thr int
+		src      WearSource
 		ok       bool
 	}{
-		{"smart-nvme.json", 100, 10, true},
-		{"smart-apple-nvme.json", 100, 99, true},
-		{"smart-sda.json", 0, 0, false},
+		{"smart-nvme.json", 100, 10, WearHealthLog, true},
+		{"smart-apple-nvme.json", 100, 99, WearHealthLog, true},
+		{"smart-sda.json", 0, 0, 0, false},
 	} {
-		pct, thr, ok := parseFixture(t, c.fixture).SparePercent()
-		if ok != c.ok || pct != c.pct || thr != c.thr {
-			t.Errorf("%s: SparePercent = (%d,%d,%v), want (%d,%d,%v)",
-				c.fixture, pct, thr, ok, c.pct, c.thr, c.ok)
+		pct, thr, src, ok := parseFixture(t, c.fixture).SparePercent()
+		if ok != c.ok || pct != c.pct || thr != c.thr || src != c.src {
+			t.Errorf("%s: SparePercent = (%d,%d,%d,%v), want (%d,%d,%d,%v)",
+				c.fixture, pct, thr, src, ok, c.pct, c.thr, c.src, c.ok)
 		}
+	}
+}
+
+// TestWearFallbackSource: a reading outside the NVMe health log says so, since only that log feeds a gauge.
+func TestWearFallbackSource(t *testing.T) {
+	r := &Report{
+		EnduranceUsed:  &PercentValue{CurrentPercent: 3},
+		SpareAvailable: &SpareAvailable{CurrentPercent: 80, ThresholdPercent: 10},
+	}
+	if _, src, ok := r.LifeUsedPercent(); !ok || src != WearFallback {
+		t.Errorf("LifeUsedPercent source = %d,%v, want WearFallback", src, ok)
+	}
+	if _, _, src, ok := r.SparePercent(); !ok || src != WearFallback {
+		t.Errorf("SparePercent source = %d,%v, want WearFallback", src, ok)
 	}
 }
 
@@ -190,10 +205,10 @@ func TestMetricsOnSparseReport(t *testing.T) {
 	if _, ok := r.PowerCycles(); ok {
 		t.Error("PowerCycles should be absent")
 	}
-	if _, ok := r.LifeUsedPercent(); ok {
+	if _, _, ok := r.LifeUsedPercent(); ok {
 		t.Error("LifeUsedPercent should be absent")
 	}
-	if _, _, ok := r.SparePercent(); ok {
+	if _, _, _, ok := r.SparePercent(); ok {
 		t.Error("SparePercent should be absent")
 	}
 	if _, _, ok := r.TempRange(); ok {

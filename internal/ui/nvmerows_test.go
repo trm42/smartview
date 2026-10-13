@@ -20,7 +20,7 @@ func nvmeRowMap(t *testing.T, data []byte) map[string]string {
 		t.Fatal("no NVMe health log")
 	}
 	rows := map[string]string{}
-	for _, kv := range nvmeRows(r.NVMeHealth) {
+	for _, kv := range nvmeRows(&r) {
 		rows[kv.k] = kv.v
 	}
 	return rows
@@ -89,7 +89,7 @@ func TestWDNVMeKeepsReportedZeroTimers(t *testing.T) {
 // TestNVMeThermalTimersAreUngraded: lifetime counters agree with Overall, which ignores them.
 func TestNVMeThermalTimersAreUngraded(t *testing.T) {
 	h := &smart.NVMeHealth{WarningTempTime: new(30), CriticalCompTime: new(30)}
-	for _, kv := range nvmeRows(h) {
+	for _, kv := range nvmeRows(&smart.Report{NVMeHealth: h}) {
 		if (kv.k == "Warn temp time" || kv.k == "Crit temp time") && kv.sev != smart.SeverityOK {
 			t.Errorf("%s graded %v, want OK", kv.k, kv.sev)
 		}

@@ -13,7 +13,8 @@ func TestPctUsedSeverity(t *testing.T) {
 	}
 }
 
-func TestNvmeSeverity(t *testing.T) {
+// TestNVMeWearOverall grades the health log's wear through the same rules the gauges use.
+func TestNVMeWearOverall(t *testing.T) {
 	cases := []struct {
 		name string
 		h    NVMeHealth
@@ -21,18 +22,40 @@ func TestNvmeSeverity(t *testing.T) {
 	}{
 		{"healthy", NVMeHealth{}, SeverityOK},
 		{"media errors", NVMeHealth{MediaErrors: 1}, SeverityCaution},
-		{"spare above thresh", NVMeHealth{AvailableSpare: new(20), AvailableSpareThreshold: new(10)}, SeverityOK},
+		{"spare above band", NVMeHealth{AvailableSpare: new(21), AvailableSpareThreshold: new(10)}, SeverityOK},
+		{"spare near thresh", NVMeHealth{AvailableSpare: new(20), AvailableSpareThreshold: new(10)}, SeverityCaution},
 		{"spare at thresh", NVMeHealth{AvailableSpare: new(10), AvailableSpareThreshold: new(10)}, SeverityFailing},
 		{"spare below thresh", NVMeHealth{AvailableSpare: new(5), AvailableSpareThreshold: new(10)}, SeverityFailing},
+		{"spare exhausted, no thresh", NVMeHealth{AvailableSpare: new(0)}, SeverityFailing},
 		{"pct used 100", NVMeHealth{PercentageUsed: new(100)}, SeverityCaution},
 		{"spare failing wins over media", NVMeHealth{MediaErrors: 3, AvailableSpare: new(1), AvailableSpareThreshold: new(10)}, SeverityFailing},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := nvmeSeverity(&c.h); got != c.want {
-				t.Errorf("nvmeSeverity = %v, want %v", got, c.want)
+			r := Report{Device: Device{Protocol: "NVMe"}, SmartStatus: &SmartStatus{Passed: true}, NVMeHealth: &c.h}
+			if got := r.Overall(); got != c.want {
+				t.Errorf("Overall = %v, want %v", got, c.want)
 			}
 		})
+	}
+}
+
+// TestFallbackWearOverall: a wear reading outside the NVMe health log grades the verdict too.
+func TestFallbackWearOverall(t *testing.T) {
+	worn := Report{Device: Device{Protocol: "ATA"}, SmartStatus: &SmartStatus{Passed: true},
+		EnduranceUsed: &PercentValue{CurrentPercent: 95}}
+	if got := worn.Overall(); got != SeverityCaution {
+		t.Errorf("worn ATA SSD Overall = %v, want CAUTION", got)
+	}
+	spent := Report{Device: Device{Protocol: "NVMe"}, SmartStatus: &SmartStatus{Passed: true},
+		SpareAvailable: &SpareAvailable{CurrentPercent: 5, ThresholdPercent: 10}}
+	if got := spent.Overall(); got != SeverityFailing {
+		t.Errorf("Apple spare below threshold Overall = %v, want FAILING", got)
+	}
+	full := Report{Device: Device{Protocol: "NVMe"}, SmartStatus: &SmartStatus{Passed: true},
+		SpareAvailable: &SpareAvailable{CurrentPercent: 100, ThresholdPercent: 99}}
+	if got := full.Overall(); got != SeverityOK {
+		t.Errorf("full Apple spare over a 99 threshold Overall = %v, want OK", got)
 	}
 }
 

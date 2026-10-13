@@ -143,11 +143,12 @@ func (v *attributesView) reorder(step func()) {
 
 // refresh re-applies the latest data, keeping selection (by ID) and sort/filter.
 func (v *attributesView) refresh(r *smart.Report, _ []float64) {
-	if r.ATAAttributes == nil {
-		return
+	attrs := ataAttributes(r)
+	if len(attrs) == 0 {
+		return // hasAttributes now fails, so the tab is swapped for its placeholder
 	}
 	sel := v.selectedID()
-	v.attrs = r.ATAAttributes.Table
+	v.attrs = attrs
 	v.renderRows()
 	v.selectByID(sel)
 }
@@ -193,7 +194,7 @@ func (v *attributesView) renderRows() {
 
 	v.shown = v.visibleRows()
 	if len(v.shown) == 0 {
-		v.table.SetCell(1, 0, tview.NewTableCell(" No attributes match — all healthy ").
+		v.table.SetCell(1, 0, tview.NewTableCell(" "+emptyAttrNote(v.filter)+" ").
 			SetTextColor(activeTheme.Neutral).SetSelectable(false))
 		v.footer.SetText("")
 		return
@@ -202,6 +203,15 @@ func (v *attributesView) renderRows() {
 	for i, a := range v.shown {
 		v.setAttrRow(i+1, a)
 	}
+}
+
+// emptyAttrNote explains a filtered-empty table; only the concerning filter is an all-clear,
+// since a drive with no attributes never gets this view (hasAttributes).
+func emptyAttrNote(filter filterMode) string {
+	if filter == filterConcerning {
+		return "No attributes match — all healthy"
+	}
+	return "No attributes match this filter"
 }
 
 // setAttrRow fills table row (1-based) for attribute a.
@@ -381,12 +391,12 @@ type nvmeAttributesView struct {
 	rows []attrKV
 }
 
-func newNVMeAttributesView(h *smart.NVMeHealth) *nvmeAttributesView {
+func newNVMeAttributesView(r *smart.Report) *nvmeAttributesView {
 	v := &nvmeAttributesView{}
 	v.attrScaffold = newAttrScaffold(func(row int) { v.setFooter(row) })
 	titledBox(v.table.Box, " NVMe health log ")
 
-	v.setRows(h)
+	v.setRows(r)
 	v.table.Select(1, 0)
 	v.setFooter(1)
 	return v
@@ -398,7 +408,7 @@ func (v *nvmeAttributesView) refresh(r *smart.Report, _ []float64) {
 		return
 	}
 	row, _ := v.table.GetSelection()
-	v.setRows(r.NVMeHealth)
+	v.setRows(r)
 	row = min(max(row, 1), len(v.rows))
 	if len(v.rows) > 0 {
 		v.table.Select(row, 0)
@@ -407,8 +417,8 @@ func (v *nvmeAttributesView) refresh(r *smart.Report, _ []float64) {
 }
 
 // setRows rebuilds the table body from the health log.
-func (v *nvmeAttributesView) setRows(h *smart.NVMeHealth) {
-	v.rows = nvmeRows(h)
+func (v *nvmeAttributesView) setRows(r *smart.Report) {
+	v.rows = nvmeRows(r)
 	v.table.Clear()
 	v.table.SetCell(0, 0, headerCell("Field"))
 	v.table.SetCell(0, 1, headerCell("Value"))
@@ -431,8 +441,9 @@ func (v *nvmeAttributesView) setFooter(row int) {
 	v.footer.SetText(fmt.Sprintf("%s\n%s%s: %s[-]", desc, mutedTag(), v.rows[i].k, v.rows[i].v))
 }
 
-// nvmeRows builds the NVMe health key/value rows with per-row severity.
-func nvmeRows(h *smart.NVMeHealth) []attrKV {
+// nvmeRows builds the NVMe health key/value rows with per-row severity; r.NVMeHealth must be set.
+func nvmeRows(r *smart.Report) []attrKV {
+	h := r.NVMeHealth
 	var rows []attrKV
 	add := func(k, v string, sev smart.Severity) { rows = append(rows, attrKV{k, v, sev}) }
 	sevIf := func(set bool, s smart.Severity) smart.Severity {
@@ -443,15 +454,12 @@ func nvmeRows(h *smart.NVMeHealth) []attrKV {
 	}
 
 	add("Critical warning", fmt.Sprintf("0x%02x", h.CriticalWarning), sevIf(h.CriticalWarning != 0, smart.SeverityFailing))
-	if h.PercentageUsed != nil {
-		add("Percentage used", fmt.Sprintf("%d%%", *h.PercentageUsed), smart.PctUsedSeverity(*h.PercentageUsed))
+	// Graded through the accessors and graders the gauges and Overall use.
+	if pct, src, ok := r.LifeUsedPercent(); ok && src == smart.WearHealthLog {
+		add("Percentage used", fmt.Sprintf("%d%%", pct), smart.PctUsedSeverity(pct))
 	}
-	if h.AvailableSpare != nil {
-		sev := smart.SeverityOK
-		if h.AvailableSpareThreshold != nil && *h.AvailableSpare <= *h.AvailableSpareThreshold {
-			sev = smart.SeverityFailing
-		}
-		add("Available spare", fmt.Sprintf("%d%%", *h.AvailableSpare), sev)
+	if pct, thr, src, ok := r.SparePercent(); ok && src == smart.WearHealthLog {
+		add("Available spare", fmt.Sprintf("%d%%", pct), smart.SpareSeverity(pct, thr))
 	}
 	if h.AvailableSpareThreshold != nil {
 		add("Spare threshold", fmt.Sprintf("%d%%", *h.AvailableSpareThreshold), smart.SeverityOK)

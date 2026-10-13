@@ -37,8 +37,11 @@ func (r *Report) Overall() Severity {
 		if r.NVMeHealth.CriticalWarning != 0 {
 			return SeverityFailing
 		}
-		worst = max(worst, nvmeSeverity(r.NVMeHealth))
+		if r.NVMeHealth.MediaErrors > 0 {
+			worst = SeverityCaution
+		}
 	}
+	worst = max(worst, r.wearSeverity())
 	if r.ATAAttributes != nil {
 		for i := range r.ATAAttributes.Table {
 			worst = max(worst, r.ATAAttributes.Table[i].Severity())
@@ -92,7 +95,8 @@ func (a *ATAAttribute) Severity() Severity {
 	return SeverityOK
 }
 
-// PctUsedSeverity grades NVMe endurance consumption: Caution at >= 90%.
+// PctUsedSeverity grades endurance consumption: Caution at >= 90%, since a
+// drive past its rated writes is worn, not failing.
 func PctUsedSeverity(percent int) Severity {
 	if percent >= 90 {
 		return SeverityCaution
@@ -100,19 +104,27 @@ func PctUsedSeverity(percent int) Severity {
 	return SeverityOK
 }
 
-// nvmeSeverity grades NVMe wear/spare/media indicators below the
-// critical-warning threshold.
-func nvmeSeverity(h *NVMeHealth) Severity {
+// SpareSeverity grades available spare against its depletion threshold:
+// Failing at or below it, Caution within 10 points short of a full spare.
+func SpareSeverity(pct, threshold int) Severity {
+	switch {
+	case pct <= threshold:
+		return SeverityFailing
+	case pct <= threshold+10 && pct < 100:
+		return SeverityCaution
+	default:
+		return SeverityOK
+	}
+}
+
+// wearSeverity grades the wear accessors' readings, the ones every gauge, row and bar shows.
+func (r *Report) wearSeverity() Severity {
 	sev := SeverityOK
-	if h.MediaErrors > 0 {
-		sev = SeverityCaution
+	if pct, _, ok := r.LifeUsedPercent(); ok {
+		sev = max(sev, PctUsedSeverity(pct))
 	}
-	if h.AvailableSpare != nil && h.AvailableSpareThreshold != nil &&
-		*h.AvailableSpare <= *h.AvailableSpareThreshold {
-		sev = max(sev, SeverityFailing)
-	}
-	if h.PercentageUsed != nil && *h.PercentageUsed >= 100 {
-		sev = max(sev, SeverityCaution)
+	if pct, thr, _, ok := r.SparePercent(); ok {
+		sev = max(sev, SpareSeverity(pct, thr))
 	}
 	return sev
 }

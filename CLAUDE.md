@@ -294,11 +294,14 @@ goroutine (`setNarrow` in app.go is the pattern).
   and the UI marks it `~` with a legend caveat. Put new shared readings here —
   they get fixture-backed tests against real captured drive JSON, which
   rendering code only reaches indirectly. Rendering code must then consume
-  what the accessor resolved rather than re-resolving it: `spareSeverityPct`
+  what the accessor resolved rather than re-resolving it: `smart.SpareSeverity`
   takes the `(pct, threshold)` pair `SparePercent` returns, because
   `SparePercent` also answers from `Report.SpareAvailable` and a grader that
   re-reads `NVMeHealth` both drifts from the value beside it and dereferences
-  nil.
+  nil. The wear accessors also return their `WearSource`, which is what picks
+  a gauge (the NVMe health log) over a row (any fallback). `PctUsedSeverity`
+  and `SpareSeverity` are the only wear graders: `Overall` grades the same
+  readings through them, so no gauge, row or bar can disagree with the verdict.
 - **Capability-driven tabs** (detail.go). `allTabs` is the registry: one entry
   per tab pairing its id and title with the predicate that decides whether this
   drive has data for it, so adding a view is one entry plus a `buildTabView`

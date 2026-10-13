@@ -214,18 +214,17 @@ func writeVerdict(b *strings.Builder, r *smart.Report) {
 // verdictEvidence summarises what the verdict was derived from.
 func verdictEvidence(r *smart.Report) string {
 	var parts []string
-	if r.ATAAttributes != nil {
+	if attrs := ataAttributes(r); len(attrs) > 0 {
 		bad := 0
-		for i := range r.ATAAttributes.Table {
-			if r.ATAAttributes.Table[i].Severity() != smart.SeverityOK {
+		for i := range attrs {
+			if attrs[i].Severity() != smart.SeverityOK {
 				bad++
 			}
 		}
 		if bad == 0 {
-			parts = append(parts, fmt.Sprintf("%d attributes in range", len(r.ATAAttributes.Table)))
+			parts = append(parts, fmt.Sprintf("%d attributes in range", len(attrs)))
 		} else {
-			parts = append(parts, fmt.Sprintf("%d of %d attributes need attention",
-				bad, len(r.ATAAttributes.Table)))
+			parts = append(parts, fmt.Sprintf("%d of %d attributes need attention", bad, len(attrs)))
 		}
 	}
 	if e := r.ErrorCounts(); e.ErrorLogEntries != nil {
@@ -304,18 +303,14 @@ func identitySections(r *smart.Report) []identitySection {
 	if n, ok := r.PowerCycles(); ok {
 		add(&wear, "Power cycles", fmt.Sprintf("%d", n))
 	}
+	// A reading the gauges draw needs no row.
+	if pct, src, ok := r.LifeUsedPercent(); ok && src != smart.WearHealthLog {
+		add(&wear, "Life used", pctMarkup(pct, smart.PctUsedSeverity(pct)))
+	}
+	if pct, thr, src, ok := r.SparePercent(); ok && src != smart.WearHealthLog {
+		add(&wear, "Spare avail", pctMarkup(pct, smart.SpareSeverity(pct, thr)))
+	}
 	if h := r.NVMeHealth; h != nil {
-		// The gauges show the standard fields; only fallback sources need a row.
-		if h.PercentageUsed == nil {
-			if pct, ok := r.LifeUsedPercent(); ok {
-				add(&wear, "Life used", fmt.Sprintf("%d%%", pct))
-			}
-		}
-		if h.AvailableSpare == nil {
-			if pct, _, ok := r.SparePercent(); ok {
-				add(&wear, "Spare avail", fmt.Sprintf("%d%%", pct))
-			}
-		}
 		add(&wear, "Media errors", fmt.Sprintf("%d", h.MediaErrors))
 		add(&wear, "Unsafe shutdn", fmt.Sprintf("%d", h.UnsafeShutdowns))
 	}
@@ -361,12 +356,17 @@ func yesNo(b bool) string {
 	return "no"
 }
 
-// buildGauges returns NVMe wear gauges, nil without a percentage indicator.
-func buildGauges(r *smart.Report) tview.Primitive {
-	if r.NVMeHealth == nil {
-		return nil
+// pctMarkup renders a percentage, marked by glyph and tint only once it leaves its band.
+func pctMarkup(pct int, sev smart.Severity) string {
+	s := fmt.Sprintf("%d%%", pct)
+	if sev == smart.SeverityOK {
+		return s
 	}
-	h := r.NVMeHealth
+	return sevBold(sev, severityGlyph(sev)+" "+s)
+}
+
+// buildGauges returns the NVMe health log's wear gauges, nil without one; a fallback source gets a row.
+func buildGauges(r *smart.Report) tview.Primitive {
 	col := tview.NewFlex().SetDirection(tview.FlexRow)
 	// shown and graded differ: "90% left" is coloured by the 10% consumed.
 	addGauge := func(title string, shown int, graded smart.Severity) {
@@ -379,40 +379,17 @@ func buildGauges(r *smart.Report) tview.Primitive {
 		col.AddItem(g, 3, 0, false)
 	}
 
-	if h.PercentageUsed != nil {
+	if used, src, ok := r.LifeUsedPercent(); ok && src == smart.WearHealthLog {
 		// Remaining endurance, so it fills toward healthy like the fleet bar.
-		addGauge(" Life left ", 100-clampPct(*h.PercentageUsed), lifeUsedSeverity(*h.PercentageUsed))
+		addGauge(" Life left ", 100-clampPct(used), smart.PctUsedSeverity(used))
 	}
-	if h.AvailableSpare != nil {
-		pct, thr, _ := r.SparePercent()
-		addGauge(" Spare avail ", pct, spareSeverityPct(pct, thr))
+	if pct, thr, src, ok := r.SparePercent(); ok && src == smart.WearHealthLog {
+		addGauge(" Spare avail ", pct, smart.SpareSeverity(pct, thr))
 	}
 	if col.GetItemCount() == 0 {
 		return nil
 	}
 	return col
-}
-
-// lifeUsedSeverity grades the "Life used" gauge; the data layer's
-// PctUsedSeverity never returns failing, so the >=100 red is added here.
-func lifeUsedSeverity(pct int) smart.Severity {
-	if pct >= 100 {
-		return smart.SeverityFailing
-	}
-	return smart.PctUsedSeverity(pct)
-}
-
-// spareSeverityPct grades spare against the drive's depletion threshold; it
-// takes the pair SparePercent resolved, since NVMeHealth may be nil when spare is reported.
-func spareSeverityPct(pct, threshold int) smart.Severity {
-	switch {
-	case pct <= threshold:
-		return smart.SeverityFailing
-	case pct <= threshold+10:
-		return smart.SeverityCaution
-	default:
-		return smart.SeverityOK
-	}
 }
 
 // buildTempSparkline returns a temperature trend widget: ATA seeds from the
