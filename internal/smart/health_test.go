@@ -67,16 +67,31 @@ func TestOverall(t *testing.T) {
 		// The attribute table can stay in range while the error log is populated.
 		{"ata logged error", Report{
 			Device: Device{Protocol: "ATA"}, SmartStatus: &SmartStatus{Passed: true},
-			ATAErrorLog: &ATAErrorLog{Extended: &ATAErrorLogExtended{Count: 2}},
+			ATAErrorLog: &ATAErrorLog{Extended: &ATAErrorTable{Count: 2}},
 		}, SeverityCaution},
 		{"ata empty error log", Report{
 			Device: Device{Protocol: "ATA"}, SmartStatus: &SmartStatus{Passed: true},
-			ATAErrorLog: &ATAErrorLog{Extended: &ATAErrorLogExtended{Count: 0}},
+			ATAErrorLog: &ATAErrorLog{Extended: &ATAErrorTable{Count: 0}},
 		}, SeverityOK},
 		{"ata pending defects", Report{
 			Device: Device{Protocol: "ATA"}, SmartStatus: &SmartStatus{Passed: true},
 			ATAPendingDefects: &ATAPendingDefects{Count: 1},
 		}, SeverityCaution},
+		// A legacy-only drive's failed self-test grades it even with a clean error log.
+		{"ata newest self-test failed", Report{
+			Device: Device{Protocol: "ATA"}, SmartStatus: &SmartStatus{Passed: true},
+			ATASelfTestLog: &ATASelfTestLog{Standard: &ATASelfTestTable{Table: []ATASelfTestEntry{
+				{Status: SelfTestResult{String: "Self-test routine in progress"}},
+				{Status: SelfTestResult{String: "Completed: read failure", Passed: new(false)}},
+			}}},
+		}, SeverityCaution},
+		{"ata failure superseded by a pass", Report{
+			Device: Device{Protocol: "ATA"}, SmartStatus: &SmartStatus{Passed: true},
+			ATASelfTestLog: &ATASelfTestLog{Extended: &ATASelfTestTable{Table: []ATASelfTestEntry{
+				{Status: SelfTestResult{String: "Completed without error", Passed: new(true)}},
+				{Status: SelfTestResult{String: "Completed: read failure", Passed: new(false)}},
+			}}},
+		}, SeverityOK},
 		// NVMe error-log entries accumulate benignly and must not grade the drive.
 		{"nvme error log entries do not alarm", Report{
 			Device: Device{Protocol: "NVMe"}, SmartStatus: &SmartStatus{Passed: true},

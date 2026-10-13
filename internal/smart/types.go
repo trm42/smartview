@@ -13,7 +13,7 @@ type Report struct {
 	SerialNumber    string       `json:"serial_number"`
 	FirmwareVersion string       `json:"firmware_version"`
 	UserCapacity    *Capacity    `json:"user_capacity"`
-	RotationRate    *int         `json:"rotation_rate"` // absent/0 => SSD
+	RotationRate    *int         `json:"rotation_rate"` // 0 => SSD, absent => not reported
 	WWN             *WWN         `json:"wwn"`           // ATA World Wide Name
 	SmartStatus     *SmartStatus `json:"smart_status"`  // absent when the device could not be read
 	Temperature     *Temperature `json:"temperature"`

@@ -47,16 +47,30 @@ func (r *Report) Overall() Severity {
 	return max(worst, r.logSeverity())
 }
 
-// logSeverity grades the drive's own error logs, which can record an uncorrectable read
+// logSeverity grades the drive's own logs, which can record an uncorrectable read
 // no attribute reflects. NVMe num_err_log_entries is excluded: it grows for benign reasons.
 func (r *Report) logSeverity() Severity {
-	if r.ATAErrorLog != nil && r.ATAErrorLog.Extended != nil && r.ATAErrorLog.Extended.Count > 0 {
+	if l := r.ATAErrors(); l != nil && l.Count > 0 {
+		return SeverityCaution
+	}
+	if r.lastSelfTestFailed() {
 		return SeverityCaution
 	}
 	if r.ATAPendingDefects != nil && r.ATAPendingDefects.Count > 0 {
 		return SeverityCaution
 	}
 	return SeverityOK
+}
+
+// lastSelfTestFailed reports whether the newest finished ATA self-test failed; a later pass clears it.
+func (r *Report) lastSelfTestFailed() bool {
+	tbl, _ := r.ATASelfTests()
+	for _, e := range tbl {
+		if e.Status.Passed != nil {
+			return !*e.Status.Passed
+		}
+	}
+	return false
 }
 
 // Severity classifies one ATA attribute; pre-fail vs old-age comes from the

@@ -11,7 +11,8 @@ import (
 
 // hasLogs reports whether the drive exposes any log/link diagnostics.
 func hasLogs(r *smart.Report) bool {
-	return r.ATASelfTestLog != nil || r.ATAErrorLog != nil ||
+	_, ataTests := r.ATASelfTests()
+	return ataTests || r.ATAErrors() != nil ||
 		r.NVMeSelfTestLog != nil || r.NVMeErrorLog != nil ||
 		r.ATASmartData != nil || r.SATAPhyEvents != nil ||
 		r.ATAPendingDefects != nil || r.ATASCTErc != nil
@@ -122,13 +123,14 @@ func phyCounterConcerning(name string) bool {
 // recent decoded entries.
 func writeErrorLog(b *strings.Builder, r *smart.Report) {
 	sectionHeader(b, "Error log")
+	ata := r.ATAErrors()
 	switch {
 	case r.NVMeErrorLog != nil:
 		writeNVMeErrorCount(b, r.NVMeErrorLog)
 		writeNVMeErrorEntries(b, r.NVMeErrorLog.Table)
-	case r.ATAErrorLog != nil && r.ATAErrorLog.Extended != nil:
-		b.WriteString(errorCountLine(r.ATAErrorLog.Extended.Count) + "\n")
-		writeATAErrorEntries(b, r, r.ATAErrorLog.Extended.Table)
+	case ata != nil:
+		b.WriteString(errorCountLine(ata.Count) + "\n")
+		writeATAErrorEntries(b, r, ata.Table)
 	default:
 		fmt.Fprintln(b, nestIndent+dash)
 	}
@@ -262,6 +264,7 @@ func writeSelfTestSummary(b *strings.Builder, r *smart.Report, tbl []smart.ATASe
 // writeSelfTestLog renders the self-test history for either protocol.
 func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 	sectionHeader(b, "Self-test history")
+	tbl, hasATA := r.ATASelfTests()
 	switch {
 	case r.NVMeSelfTestLog != nil:
 		if op := r.NVMeSelfTestLog.CurrentSelfTestOperation; op != nil && op.String != "" {
@@ -275,8 +278,7 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 			fmt.Fprintf(b, nestIndent+"%-10s %-28s @ %s\n",
 				esc(e.SelfTestCode.String), colorResult(e.SelfTestResult.String), humanDuration(e.PowerOnHours))
 		}
-	case r.ATASelfTestLog != nil && r.ATASelfTestLog.Extended != nil:
-		tbl := r.ATASelfTestLog.Extended.Table
+	case hasATA:
 		if len(tbl) == 0 {
 			fmt.Fprintln(b, nestIndent+"no self-tests recorded")
 			return

@@ -116,7 +116,7 @@ func TestDriveKind(t *testing.T) {
 	}{
 		{"nvme", smart.Report{Device: smart.Device{Protocol: "NVMe"}}, "NVMe SSD"},
 		{"hdd", smart.Report{Device: smart.Device{Protocol: "ATA"}, RotationRate: &rpm}, "HDD @ 7200 rpm"},
-		{"ssd nil rpm", smart.Report{Device: smart.Device{Protocol: "ATA"}}, "SATA SSD"},
+		{"ata nil rpm", smart.Report{Device: smart.Device{Protocol: "ATA"}}, dash},
 		{"ssd zero rpm", smart.Report{Device: smart.Device{Protocol: "ATA"}, RotationRate: &zero}, "SATA SSD"},
 		{"other", smart.Report{Device: smart.Device{Protocol: "SCSI"}}, "SCSI"},
 	}
@@ -126,6 +126,24 @@ func TestDriveKind(t *testing.T) {
 				t.Errorf("driveKind = %q, want %q", got, c.want)
 			}
 		})
+	}
+	// Captured envelopes, through the fleet's short label too; unread ones name no kind.
+	fixtures := []struct{ fixture, short, long string }{
+		{"smart-sde-nodata.json", dash, dash},
+		{"smart-sdd-standby.json", dash, dash},
+		{"smart-sdb.json", "SSD", "SATA SSD"},
+		{"smart-sda.json", "HDD", "HDD @ 7200 rpm"},
+		{"smart-nvme.json", "NVMe", "NVMe SSD"},
+		{"smart-apple-nvme.json", "NVMe", "NVMe SSD"},
+	}
+	for _, c := range fixtures {
+		r := fixtureReport(t, c.fixture)
+		if got := shortKind(r); got != c.short {
+			t.Errorf("%s: shortKind = %q, want %q", c.fixture, got, c.short)
+		}
+		if got := driveKind(r); got != c.long {
+			t.Errorf("%s: driveKind = %q, want %q", c.fixture, got, c.long)
+		}
 	}
 }
 

@@ -52,6 +52,63 @@ func (r *Report) deviceStat(name string) (int64, bool) {
 	return 0, false
 }
 
+// DriveKind is what a drive physically is.
+type DriveKind int
+
+const (
+	KindNVMe DriveKind = iota + 1
+	KindHDD
+	KindSSD
+)
+
+// Kind classifies the drive, with the spindle speed for an HDD; an ATA drive
+// with no rotation rate is an SSD only if it reports flash wear, else unknown.
+func (r *Report) Kind() (kind DriveKind, rpm int, ok bool) {
+	switch {
+	case r.IsNVMe():
+		return KindNVMe, 0, true
+	case !r.IsATA():
+		return 0, 0, false
+	case r.RotationRate == nil:
+		if r.reportsSSDWear() {
+			return KindSSD, 0, true
+		}
+		return 0, 0, false
+	case *r.RotationRate > 0:
+		return KindHDD, *r.RotationRate, true
+	default:
+		return KindSSD, 0, true
+	}
+}
+
+// ssdWearAttrs are smartctl drive-database names that only flash wear reports.
+var ssdWearAttrs = map[string]bool{
+	"Wear_Leveling_Count": true, "SSD_Life_Left": true, "Media_Wearout_Indicator": true,
+	"Percent_Lifetime_Remain": true, "Remaining_Lifetime_Perc": true, "Percent_Lifetime_Used": true,
+}
+
+// reportsSSDWear reports whether the drive logs flash wear, which no spinning disk does.
+func (r *Report) reportsSSDWear() bool {
+	if r.EnduranceUsed != nil {
+		return true
+	}
+	if r.ATADeviceStatistics != nil {
+		for _, p := range r.ATADeviceStatistics.Pages {
+			if p.Name == "Solid State Device Statistics" {
+				return true
+			}
+		}
+	}
+	if r.ATAAttributes != nil {
+		for _, a := range r.ATAAttributes.Table {
+			if ssdWearAttrs[a.Name] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // SectorBytes is the logical block size (default 512 B), the unit of the
 // "Logical Sectors *" counters.
 func (r *Report) SectorBytes() int64 {
@@ -236,8 +293,8 @@ func (r *Report) ErrorCounts() ErrorCounts {
 		e.MediaErrors = new(int64(h.MediaErrors))
 		e.ErrorLogEntries = new(int64(h.NumErrLogEntries))
 		e.UnsafeShutdowns = new(int64(h.UnsafeShutdowns))
-	} else if r.ATAErrorLog != nil && r.ATAErrorLog.Extended != nil {
-		e.ErrorLogEntries = new(int64(r.ATAErrorLog.Extended.Count))
+	} else if l := r.ATAErrors(); l != nil {
+		e.ErrorLogEntries = new(int64(l.Count))
 	}
 	return e
 }
