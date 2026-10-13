@@ -102,7 +102,7 @@ func TestFleetListsDrivesThatHaveNoReport(t *testing.T) {
 		t.Errorf("fleet with every drive parked marks %d rows asleep, want %d:\n%s", got, len(devs), parked)
 	}
 	for _, d := range devs {
-		if !strings.Contains(parked, standbyGlyph+" "+d.Name) {
+		if !strings.Contains(parked, staleMarkup(true, false)+d.Name) {
 			t.Errorf("parked fleet has no standby-marked row for %s:\n%s", d.Name, parked)
 		}
 	}

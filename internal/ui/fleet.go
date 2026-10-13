@@ -133,17 +133,6 @@ func (v *fleetView) refresh(devices []smart.Device, reports map[string]*smart.Re
 // noDrivesText is the empty-scan message the detail pane and the fleet share.
 const noDrivesText = "No drives found. Try running with sudo."
 
-// stalePrefix marks a spun-down or unreadable drive in the fleet's identity cell.
-func stalePrefix(row fleetRow) string {
-	switch {
-	case row.asleep:
-		return standbyGlyph + " "
-	case row.unreadable:
-		return cautionTag() + unreadableGlyph + "[-] "
-	}
-	return ""
-}
-
 // staleLegend explains the stale marks in use; no form may outgrow the standby-only one.
 func staleLegend(rows []fleetRow) string {
 	asleep := slices.ContainsFunc(rows, func(r fleetRow) bool { return r.asleep })
@@ -344,7 +333,7 @@ func (v *fleetView) setRow(rowIdx int, row fleetRow, secCells []fleetCell, n int
 			waiting = "asleep"
 		}
 		cells = []fleetCell{
-			{text: mutedTag() + "●[-] " + stalePrefix(row) + esc(fleetDevice(row.dev)),
+			{text: mutedTag() + "●[-] " + staleMarkup(row.asleep, row.unreadable) + esc(fleetDevice(row.dev)),
 				color: activeTheme.Muted},
 			{text: waiting, color: activeTheme.Muted},
 			{text: dash, color: activeTheme.Muted},
@@ -361,7 +350,7 @@ func (v *fleetView) setRow(rowIdx int, row fleetRow, secCells []fleetCell, n int
 			secCells = secCells[:n]
 		}
 		identity := []fleetCell{
-			{text: reportGlyph(row.rep) + " " + stalePrefix(row) + esc(fleetDevice(row.dev)),
+			{text: reportGlyph(row.rep) + " " + staleMarkup(row.asleep, row.unreadable) + esc(fleetDevice(row.dev)),
 				color: activeTheme.Neutral},
 			{text: esc(model), color: activeTheme.Neutral},
 			{text: orDash(esc(truncateRunes(row.rep.SerialNumber, fleetSerialWidth))),

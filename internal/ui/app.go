@@ -533,10 +533,15 @@ const unreadableGlyph = "⊘"
 
 // staleMark returns the prefix for a drive whose values are not current, or "" when they are.
 func (a *App) staleMark(name string) string {
+	return staleMarkup(a.asleep[name], a.unreadable[name])
+}
+
+// staleMarkup is the stale prefix the drive list, rail and fleet share; asleep wins.
+func staleMarkup(asleep, unreadable bool) string {
 	switch {
-	case a.asleep[name]:
+	case asleep:
 		return mutedTag() + standbyGlyph + "[-] "
-	case a.unreadable[name]:
+	case unreadable:
 		return cautionTag() + unreadableGlyph + "[-] "
 	}
 	return ""
