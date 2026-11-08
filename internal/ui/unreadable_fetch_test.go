@@ -14,13 +14,13 @@ import (
 
 // TestOutcomeClassifiesAFetch: nothing back is a failed read, a parked drive is asleep, and neither is the other.
 func TestOutcomeClassifiesAFetch(t *testing.T) {
-	if got := outcome(nil); !got.failed || got.standby || got.rep != nil {
+	if got := outcome(nil); !got.failed() || got.standby || got.rep != nil {
 		t.Errorf("outcome(nil) = %+v, want only failed set", got)
 	}
-	if got := outcome(fixtureReport(t, "smart-sdd-standby.json")); !got.standby || got.failed || got.rep != nil {
+	if got := outcome(fixtureReport(t, "smart-sdd-standby.json")); !got.standby || got.failed() || got.rep != nil {
 		t.Errorf("outcome(standby envelope) = %+v, want only standby set", got)
 	}
-	if got := outcome(healthyReport("/dev/sdb")); got.failed || got.standby || got.rep == nil {
+	if got := outcome(healthyReport("/dev/sdb")); got.failed() || got.standby || got.rep == nil {
 		t.Errorf("outcome(good report) = %+v, want only the report", got)
 	}
 }
@@ -107,7 +107,7 @@ func TestFetchAllReportsEveryDrive(t *testing.T) {
 		},
 	})
 
-	if res, ok := got[gone]; !ok || !res.failed {
+	if res, ok := got[gone]; !ok || !res.failed() {
 		t.Errorf("result for the silent drive = %+v (present %v), want a failed result", res, ok)
 	}
 	if res := got[seagate]; res.rep == nil || res.rep.FARM == nil {
