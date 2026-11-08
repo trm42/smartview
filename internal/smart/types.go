@@ -159,8 +159,8 @@ type SpareAvailable struct {
 // IsNVMe reports whether the report describes an NVMe drive.
 func (r *Report) IsNVMe() bool { return r.Device.Protocol == "NVMe" }
 
-// HasNVMeHealth reports whether the report is an NVMe drive carrying its health log.
-func (r *Report) HasNVMeHealth() bool { return r.IsNVMe() && r.NVMeHealth != nil }
+// HasNVMeHealth reports whether the report carries an NVMe health log; the verdict and every reading gate on it.
+func (r *Report) HasNVMeHealth() bool { return r.NVMeHealth != nil }
 
 // IsATA reports whether the report describes an ATA/SATA drive.
 func (r *Report) IsATA() bool { return r.Device.Protocol == "ATA" }

@@ -139,7 +139,7 @@ func (r *Report) CurrentTemp() (int, bool) {
 	if r.Temperature != nil && r.Temperature.Current != nil {
 		return *r.Temperature.Current, true
 	}
-	if r.NVMeHealth != nil && r.NVMeHealth.Temperature != nil {
+	if r.HasNVMeHealth() && r.NVMeHealth.Temperature != nil {
 		return *r.NVMeHealth.Temperature, true
 	}
 	return 0, false
@@ -150,7 +150,7 @@ func (r *Report) PowerOnHours() (int, bool) {
 	if r.PowerOnTime != nil {
 		return r.PowerOnTime.Hours, true
 	}
-	if r.NVMeHealth != nil {
+	if r.HasNVMeHealth() {
 		return r.NVMeHealth.PowerOnHours, true
 	}
 	return 0, false
@@ -161,7 +161,7 @@ func (r *Report) PowerCycles() (int, bool) {
 	if r.PowerCycleCount != nil {
 		return *r.PowerCycleCount, true
 	}
-	if r.NVMeHealth != nil {
+	if r.HasNVMeHealth() {
 		return r.NVMeHealth.PowerCycles, true
 	}
 	return 0, false
@@ -180,7 +180,7 @@ const (
 // LifeUsedPercent returns the percentage of rated write endurance consumed and
 // its source; spinning disks report absent.
 func (r *Report) LifeUsedPercent() (int, WearSource, bool) {
-	if r.NVMeHealth != nil && r.NVMeHealth.PercentageUsed != nil {
+	if r.HasNVMeHealth() && r.NVMeHealth.PercentageUsed != nil {
 		return *r.NVMeHealth.PercentageUsed, WearHealthLog, true
 	}
 	if r.EnduranceUsed != nil {
@@ -195,7 +195,7 @@ func (r *Report) LifeUsedPercent() (int, WearSource, bool) {
 // SparePercent returns the available spare percentage, its depletion
 // threshold (0 when unreported) and its source.
 func (r *Report) SparePercent() (pct, threshold int, src WearSource, ok bool) {
-	if r.NVMeHealth != nil && r.NVMeHealth.AvailableSpare != nil {
+	if r.HasNVMeHealth() && r.NVMeHealth.AvailableSpare != nil {
 		thr := 0
 		if r.NVMeHealth.AvailableSpareThreshold != nil {
 			thr = *r.NVMeHealth.AvailableSpareThreshold
@@ -249,7 +249,7 @@ func (w WriteTotal) Approximate() bool { return w.Source == WriteSourceAttribute
 // DataWritten returns the lifetime host writes, preferring exact sources;
 // attribute 241 is the last resort and flagged approximate.
 func (r *Report) DataWritten() (WriteTotal, bool) {
-	if r.NVMeHealth != nil {
+	if r.HasNVMeHealth() {
 		return WriteTotal{Bytes: DataUnitBytes(r.NVMeHealth.DataUnitsWritten), Source: WriteSourceNVMe}, true
 	}
 	if v, ok := r.deviceStat(StatSectorsWritten); ok {

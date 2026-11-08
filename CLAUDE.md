@@ -524,9 +524,10 @@ goroutine (`setNarrow` in app.go is the pattern).
   stale) — a
   list derived from the walk would assert nothing — so extend it when one is
   added; the banner-class miss again. (3) Direct `screen.SetContent` calls
-  carry a ground themselves: `scroll.go`'s viewport clear and its scroll
-  arrows both take it from the widget they paint into (never from
-  `activeTheme`, or the arrow disagrees with its own panel), and the
+  carry a ground themselves: `scroll.go`'s scroll arrows take it from the
+  widget they paint into (never from `activeTheme`, or the arrow disagrees
+  with its own panel) — the viewport needs no clear of its own, since
+  `Box.DrawForSubclass` already fills it — and the
   before-draw hook fills the screen so a non-fullscreen modal root has no
   unpainted margin. `ColorDefault` is legal here and means "inherit the
   terminal" — that is `mono`'s whole contract, and it is the only palette

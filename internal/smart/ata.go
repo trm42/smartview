@@ -203,8 +203,8 @@ func (r *Report) validStats() iter.Seq[ATAStatEntry] {
 			return
 		}
 		for _, p := range r.ATADeviceStatistics.Pages {
-			for _, e := range p.ValidEntries() {
-				if !yield(e) {
+			for _, e := range p.Table {
+				if e.Flags.Valid && !yield(e) {
 					return
 				}
 			}

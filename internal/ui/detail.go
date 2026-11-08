@@ -89,12 +89,17 @@ func (b *tabBar) Draw(screen tcell.Screen) {
 	b.TextView.Draw(screen)
 }
 
-// pillMarkup wraps a pill's text in the active or inactive tab style, with its separators.
-func pillMarkup(pill string, active bool) string {
+// pillStyle returns the opening tag and reset for an active or inactive pill.
+func pillStyle(active bool) (tag, reset string) {
 	if active {
-		return " " + activeTabTag() + pill + "[-:-:-] "
+		return activeTabTag(), "[-:-:-]"
 	}
-	return " " + accentTag() + pill + "[-] "
+	return accentTag(), "[-]"
+}
+
+// pillMarkup wraps a pill's text in a style, with the separators the click spans count.
+func pillMarkup(pill, tag, reset string) string {
+	return " " + tag + pill + reset + " "
 }
 
 // layout emits the pills and the spans together.
@@ -104,11 +109,11 @@ func (b *tabBar) layout() {
 	spans := make([]tabSpan, 0, len(pills))
 	col := 0
 	for i, pill := range pills {
+		tag, reset := pillStyle(i == b.active)
 		if i != b.active && !b.tabs[i].available {
-			fmt.Fprintf(&s, " %s%s[-:-:-] ", unavailableTabTag(), pill)
-		} else {
-			s.WriteString(pillMarkup(pill, i == b.active))
+			tag, reset = unavailableTabTag(), "[-:-:-]"
 		}
+		s.WriteString(pillMarkup(pill, tag, reset))
 		// Spans include separators so no column is dead.
 		w := 2 + tview.TaggedStringWidth(pill)
 		spans = append(spans, tabSpan{col, col + w})

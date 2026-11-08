@@ -388,7 +388,8 @@ func (v *fleetView) renderBar() {
 	active := v.activeIndex()
 	var s strings.Builder
 	for i, sec := range v.shown {
-		s.WriteString(pillMarkup(fmt.Sprintf(" %d %s ", i+1, sec.title), i == active))
+		tag, reset := pillStyle(i == active)
+		s.WriteString(pillMarkup(fmt.Sprintf(" %d %s ", i+1, sec.title), tag, reset))
 	}
 	v.bar.SetText(s.String())
 }
