@@ -42,6 +42,8 @@ The list is sorted by fixture filename, so the order is fixed:
 | 4 | `/dev/sda` | `smart-sda.json` |
 | 5 | `/dev/sdb` | `smart-sdb.json` |
 | 6 | `/dev/sdc` | `smart-sdc-failing.json` |
+| 7 | `/dev/sdd` | `smart-sdd-standby.json` |
+| 8 | `/dev/sde` | `smart-sde-nodata.json` |
 
 | Image | Drive | Key | Why that drive |
 |---|---|---|---|
@@ -50,7 +52,7 @@ The list is sorted by fixture filename, so the order is fixed:
 | statistics | `/dev/sda` | `3` | Device Statistics pages |
 | farm | `/dev/sda` | `4` | the Seagate family is the only one with a FARM log |
 | tests | `/dev/sda` | `5` | supports self-tests |
-| logs | `/dev/sdf` | `6` | the only fixture with decoded error-log entries |
+| logs | `/dev/sdf` | `6` | decoded ATA error-log entries on a healthy drive (`/dev/sdc` has them too, but is failing) |
 | fleet | any | `c` `2` | Health & errors shows Failing/Caution/Healthy and the `—` vs `0` distinction |
 
 ## Changing the look
@@ -59,9 +61,10 @@ Geometry lives in `tapes/_common.tape`, sourced by all seven so they cannot
 drift apart. Edit it and re-render **all** of them; never change one tape's
 geometry alone.
 
-`FontSize 13` is the largest that fits the widest status bar — the Attributes
-tab adds `s sort` / `f filter`, and at 14 the trailing `refresh every 30s` is
-clipped off the right edge.
+`FontSize` is the largest size at which the widest status bar fits: the
+Attributes tab adds `s sort` / `f filter`, and the bar ends in
+`<theme> · <interval>`. When changing it, check that trailing summary is not
+clipped off the right edge of `attributes.png`.
 
 ## Gotchas
 

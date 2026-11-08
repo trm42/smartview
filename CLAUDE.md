@@ -65,11 +65,11 @@ wake it.
 `internal/smart/testdata/` fixtures cover ATA, NVMe, sparse Apple NVMe, and a
 Seagate FARM log. Fixture mode **bypasses the smartctl preflight** entirely, so
 smartmontools need not be installed. Drive the resulting TUI with `expect` under
-a pty (`sleep`, `send` keys, `send "q"` to quit), exactly as above. Two
-fixtures (`smart-sda-errors.json`, `smart-nvme-errors.json`) are hand-crafted
-copies with populated error-log tables and unique device names — the only ones
-that exercise the Logs tab's decoded-error-entry renderer, since every captured
-fixture has an empty error log.
+a pty (`sleep`, `send` keys, `send "q"` to quit), exactly as above. Every
+captured fixture has an empty error log, so only the hand-crafted ones exercise
+the Logs tab's decoded-error-entry renderer: `smart-sda-errors.json` and
+`smart-nvme-errors.json` (healthy copies with unique device names) and
+`smart-sdc-failing.json`.
 
 `--fixtures` is only honored by a `-tags dev` build: a release build (plain
 `go build`) still accepts the flag but rejects it at startup with a rebuild
@@ -137,8 +137,8 @@ overridable with `--config PATH`. Five settings: `theme`, `refresh_interval`,
   first tick. This is a guard, not a style choice.
 - **Which themes exist is main's knowledge**, so `Validate` returns
   `config.ErrUnknownTheme` and `main` attaches the list — the same split as
-  `smart.ErrNoSmartctl`. Attaching it unconditionally put a twelve-theme list on
-  the end of an out-of-range interval error.
+  `smart.ErrNoSmartctl`. Attach it only to that error: an unrelated failure such
+  as an out-of-range interval must not end in the theme list.
 - **`Save` renders a commented template, not `toml.Encoder`**, which emits no
   comments and would strip the header off a hand-written file on the first save
   from the modal. Every interpolated value is a bool or validated against a
@@ -193,10 +193,8 @@ overridable with `--config PATH`. Five settings: `theme`, `refresh_interval`,
 - **The hint bar's right-hand summary names the settings that have keys.** It
   reads `<theme> · <interval>`, not `... · refresh every <interval>`: spelling
   it out restated what `+/- rate` already teaches and cost 14 columns on a bar
-  that is *already* wider than the 100-column breakpoint it appears at (125
-  cells before this change). Dropping it is what paid for `S settings`, and the
-  bar came out narrower than it started. The pre-existing overflow is untouched
-  — a width-aware bar is still owed.
+  that is already wider than the 100-column breakpoint it appears at. That
+  overflow is unsolved — a width-aware bar is still owed.
 
 ### Data flow
 
@@ -349,9 +347,9 @@ goroutine (`setNarrow` in app.go is the pattern).
   its height grows per binding, so the list had already outgrown 24 rows.
 - **A modal is a PAGE over the app, not a new root** (`pushModal`/`popModal` in
   modals.go). `a.rootPages` holds the main layout on `pageMain` and the modal on
-  `pageModal`; `SetRoot(modal, false)` used to replace the tree, so the drive
-  list and detail vanished — worst on the Settings modal, whose own footer says
-  `t`/`T` cycle the theme live. Two consequences to keep in mind when adding one:
+  `pageModal`; `SetRoot(modal, false)` would replace the tree and hide the drive
+  list and detail — worst on the Settings modal, whose own footer says `t`/`T`
+  cycle the theme live. Two consequences to keep in mind when adding one:
   tview's `Flex` sets `dontClear`, so a modal built on a plain Flex lets the app
   show through its interior — use `newOpaqueFlex` (`tview.Modal` clears itself);
   and `Pages` passes an **unconsumed** click down to the page underneath, which
@@ -500,7 +498,7 @@ goroutine (`setNarrow` in app.go is the pattern).
   failing) and `healthGlyph` tints it; `sevVerdict` draws a *failing* verdict as
   an Inverse-on-`Failing` chip (reverse video under `mono`) rather than tinted
   text. This is not decoration: red is darker than yellow on any dark ground, so
-  `Caution` out-contrasts `Failing` in 8 of the 11 coloured palettes and no hue
+  `Caution` out-contrasts `Failing` in most coloured palettes and no hue
   assignment fixes it — area and shape do, and they are the only encodings that
   survive `phosphor`, `amber` and `mono`. A new severity sink uses these rather
   than reaching for `severityColor` alone.
@@ -560,12 +558,10 @@ goroutine (`setNarrow` in app.go is the pattern).
   being a solid block. `downsample` reduces by bucket *maximum* so a spike is
   never averaged away, and the axis line always prints its baseline — once:
   `Draw` blanks a last-row label that rounds to the baseline, since the axis
-  prints it anyway. **The plot fills its box.** It used to cap `plotRows` at the
-  integer span of the data and bottom-anchor the result, on the grounds that
-  "finer rows could never be landed in" — which is not how the fill works, since
-  `fillEighths` resolves eight sub-levels per row: extra rows do not invent
-  precision, they space the same values further apart. The cap left a 35–40 °C
-  history drawing six rows in a twenty-two-row panel. The pad
+  prints it anyway. **The plot fills its box.** Do not cap `plotRows` at the
+  integer span of the data: `fillEighths` resolves eight sub-levels per row, so
+  extra rows do not invent precision, they space the same values further apart,
+  and a cap draws a 35–40 °C history as six rows in a twenty-two-row panel. The pad
   for a flat range lives in `fillEighths` alone, so a series with no spread
   cannot divide by zero into an all-NaN chart whatever calls it. The scaling is pure and unit tested; the NVMe
   percentage gauges still use `tvxwidgets`, where 0–100 is real. The fill is
