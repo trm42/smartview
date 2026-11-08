@@ -3,7 +3,7 @@
 # tape's geometry.
 #
 # FontSize must keep the widest status bar (the Attributes tab adds
-# "s sort / f filter") unclipped; check the trailing "<theme> · <interval>"
+# "s sort   f filter") unclipped; check the trailing "<theme> · <interval>"
 # is visible in attributes.png when changing it.
 # Framerate 5 only thins the throwaway GIF — Screenshot quality is unaffected.
 Set FontSize 13
