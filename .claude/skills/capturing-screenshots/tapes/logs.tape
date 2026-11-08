@@ -1,4 +1,4 @@
-# Logs tab on /dev/sdf (smart-sda-errors.json) - the only fixture with decoded error entries.
+# Logs tab on /dev/sdf (smart-sda-errors.json) - decoded ATA error entries on a healthy drive.
 Output "/tmp/smartview-capture.gif"   # throwaway; the PNG is what we want
 Source ".claude/skills/capturing-screenshots/tapes/_common.tape"
 
