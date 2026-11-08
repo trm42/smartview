@@ -90,7 +90,8 @@ func (v *testsView) showRunning(r *smart.Report, label string, pct int) {
 	if label != "" && !strings.Contains(strings.ToLower(label), "remaining") {
 		heading = esc(label)
 	}
-	fmt.Fprintf(&b, "[::b]%s[-:-:-]\n\n", heading)
+	sectionHeader(&b, heading)
+	b.WriteByte('\n')
 	b.WriteString(progressBar(pct))
 	if left, ok := remainingTime(r, pct, v.startedType()); ok {
 		fmt.Fprintf(&b, "%s   about %s left[-]", mutedTag(), formatTestDuration(left))

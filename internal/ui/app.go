@@ -234,17 +234,21 @@ func (a *App) alertCount() int {
 
 // driveListTitle is the wide list's title, carrying the rail's attention, unreadable and standby counts.
 func (a *App) driveListTitle() string {
-	title := " Drives "
-	if n := a.alertCount(); n > 0 {
-		title += fmt.Sprintf("%s▲ %d[-] ", cautionTag(), n)
+	return " Drives " + a.stateCounts("", " ")
+}
+
+// stateCounts renders the attention, unreadable and standby counts, each wrapped in before/after.
+func (a *App) stateCounts(before, after string) string {
+	var b strings.Builder
+	chip := func(tag, glyph string, n int) {
+		if n > 0 {
+			fmt.Fprintf(&b, "%s%s%s %d[-]%s", before, tag, glyph, n, after)
+		}
 	}
-	if n := a.unreadableCount(); n > 0 {
-		title += fmt.Sprintf("%s%s %d[-] ", cautionTag(), unreadableGlyph, n)
-	}
-	if n := a.asleepCount(); n > 0 {
-		title += fmt.Sprintf("%s%s %d[-] ", mutedTag(), standbyGlyph, n)
-	}
-	return title
+	chip(cautionTag(), "▲", a.alertCount())
+	chip(cautionTag(), unreadableGlyph, a.unreadableCount())
+	chip(mutedTag(), standbyGlyph, a.asleepCount())
+	return b.String()
 }
 
 // asleepCount is how many of the current drives are spun down.
@@ -290,16 +294,8 @@ func (a *App) renderRail(cur int) {
 		}
 		fmt.Fprintf(&b, "  %s %s", glyph, label)
 	}
-	if n := a.alertCount(); n > 0 {
-		fmt.Fprintf(&b, "  %s▲ %d[-]", cautionTag(), n)
-	}
-	// No room for a per-drive stale mark, so count them.
-	if n := a.unreadableCount(); n > 0 {
-		fmt.Fprintf(&b, "  %s%s %d[-]", cautionTag(), unreadableGlyph, n)
-	}
-	if n := a.asleepCount(); n > 0 {
-		fmt.Fprintf(&b, "  %s%s %d[-]", mutedTag(), standbyGlyph, n)
-	}
+	// No room for per-drive stale or standby marks, so count them.
+	b.WriteString(a.stateCounts("  ", ""))
 	a.rail.SetText(b.String())
 }
 
@@ -419,9 +415,19 @@ func (a *App) refreshBanner() {
 
 // cycleTheme steps delta themes along the cycle and repaints.
 func (a *App) cycleTheme(delta int) {
-	a.themeName = stepThemeName(a.themeName, delta)
-	setTheme(themes[a.themeName])
+	a.applyTheme(stepThemeName(a.themeName, delta))
+}
+
+// applyTheme makes name the session theme and repaints.
+func (a *App) applyTheme(name string) {
+	a.themeName = name
+	setTheme(themes[name])
 	a.repaintAll()
+}
+
+// refreshFleet re-renders the fleet table from the current per-drive state.
+func (a *App) refreshFleet() {
+	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep, a.unreadable)
 }
 
 // repaintAll re-applies the theme everywhere colour was baked in; the detail
@@ -436,7 +442,7 @@ func (a *App) repaintAll() {
 	applyTextColor(a.status, a.rail, a.banner)
 	a.list.SetTitleColor(activeTheme.Neutral)
 	// The fleet table bakes a colour into every cell.
-	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep, a.unreadable)
+	a.refreshFleet()
 	a.refreshChrome()
 	a.refreshBanner()
 }

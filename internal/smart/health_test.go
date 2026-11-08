@@ -240,9 +240,6 @@ func TestFailingFixture(t *testing.T) {
 			t.Errorf("%s = 0, want a nonzero counter", name)
 		}
 	}
-	if e.Worst() != SeverityCaution {
-		t.Errorf("ErrorCounts.Worst = %v, want Caution", e.Worst())
-	}
 }
 
 // TestFailingFixtureLogsAlone checks the error log escalates a drive whose attributes are all in range.

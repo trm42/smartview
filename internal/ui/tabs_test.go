@@ -190,3 +190,13 @@ func TestOpenTabOnAnUnavailablePillLeavesFocus(t *testing.T) {
 		t.Errorf("active = %q, want overview", a.detail.activeID())
 	}
 }
+
+// selectTabID activates the tab with the given id, reporting whether it was found.
+func (d *detail) selectTabID(id string) bool {
+	for i, t := range d.tabs {
+		if t.id == id {
+			return d.selectTab(i)
+		}
+	}
+	return false
+}

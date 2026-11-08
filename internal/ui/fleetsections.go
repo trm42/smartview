@@ -69,7 +69,7 @@ func temperatureSection() fleetSection {
 		rank: rankBy((*smart.Report).CurrentTemp),
 		cells: func(row fleetRow) []fleetCell {
 			r := row.rep
-			now := fleetCell{text: dash, color: activeTheme.Neutral, align: tview.AlignRight}
+			now := numCell(dash)
 			sev := smart.SeverityOK
 			if t, ok := r.CurrentTemp(); ok {
 				sev = tempSeverity(t)
@@ -87,7 +87,7 @@ func temperatureSection() fleetSection {
 				maxCell = numCell(fmt.Sprintf("%d", hi))
 			}
 
-			trend := fleetCell{text: dash, color: activeTheme.Neutral}
+			trend := cell(dash)
 			if s := sparkString(row.series, sparkWidth); s != "" {
 				trend = fleetCell{text: s, color: severityColor(sev)}
 			}
@@ -129,7 +129,7 @@ func healthSection() fleetSection {
 			if sev := r.Overall(); sev == smart.SeverityOK && r.HasHealth() {
 				word = mutedTag() + verdictWord(sev) + "[-]"
 			}
-			verdict := fleetCell{text: word, color: activeTheme.Neutral}
+			verdict := cell(word)
 			e := r.ErrorCounts()
 			return []fleetCell{
 				verdict,
@@ -200,13 +200,13 @@ func enduranceSection() fleetSection {
 		}),
 		cells: func(row fleetRow) []fleetCell {
 			r := row.rep
-			life := fleetCell{text: dash, color: activeTheme.Neutral}
+			life := cell(dash)
 			if pct, _, ok := r.LifeUsedPercent(); ok {
-				life = fleetCell{text: pctBarUsed(pct, smart.PctUsedSeverity(pct)), color: activeTheme.Neutral}
+				life = cell(pctBarUsed(pct, smart.PctUsedSeverity(pct)))
 			}
-			spare := fleetCell{text: dash, color: activeTheme.Neutral}
+			spare := cell(dash)
 			if pct, thr, _, ok := r.SparePercent(); ok {
-				spare = fleetCell{text: pctBar(pct, smart.SpareSeverity(pct, thr)), color: activeTheme.Neutral}
+				spare = cell(pctBar(pct, smart.SpareSeverity(pct, thr)))
 			}
 
 			written, perDay := numCell(dash), numCell(dash)
@@ -238,11 +238,7 @@ func enduranceSection() fleetSection {
 // a caution-coloured tilde.
 func writeCell(text string, approximate bool) fleetCell {
 	if approximate {
-		return fleetCell{
-			text:  cautionTag() + "~" + text + "[-]",
-			color: activeTheme.Neutral,
-			align: tview.AlignRight,
-		}
+		return numCell(cautionTag() + "~" + text + "[-]")
 	}
 	return numCell(text)
 }

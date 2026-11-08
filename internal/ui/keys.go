@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"slices"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -21,26 +22,20 @@ var intervalPresets = []time.Duration{
 // nextInterval returns the adjacent preset, clamped at the ends. It walks by
 // value, not index, so an off-ladder --interval snaps to a neighbour.
 func nextInterval(cur time.Duration, faster bool) time.Duration {
-	// Past an end of the ladder, the only neighbour lies the wrong way.
-	if (faster && cur <= intervalPresets[0]) || (!faster && cur >= intervalPresets[len(intervalPresets)-1]) {
-		return cur
-	}
 	if faster {
-		next := intervalPresets[0]
-		for _, p := range intervalPresets {
+		for _, p := range slices.Backward(intervalPresets) {
 			if p < cur {
-				next = p
+				return p
 			}
 		}
-		return next
+		return cur
 	}
-	next := intervalPresets[len(intervalPresets)-1]
-	for i := len(intervalPresets) - 1; i >= 0; i-- {
-		if intervalPresets[i] > cur {
-			next = intervalPresets[i]
+	for _, p := range intervalPresets {
+		if p > cur {
+			return p
 		}
 	}
-	return next
+	return cur
 }
 
 // onKey is the global key handler.
@@ -152,7 +147,7 @@ func (a *App) toggleFleet() {
 		return
 	}
 	a.fleetMode = true
-	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep, a.unreadable)
+	a.refreshFleet()
 	a.bodyPages.SwitchToPage(pageFleet)
 	a.app.SetFocus(a.fleet.table)
 	a.refreshChrome()

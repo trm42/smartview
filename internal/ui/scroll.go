@@ -56,14 +56,6 @@ func (s *scrollView) Draw(screen tcell.Screen) {
 	}
 	s.clamp(h)
 
-	// The inner Flex's spacer doesn't repaint on scroll, so clear the viewport.
-	ground := tcell.StyleDefault.Background(s.GetBackgroundColor())
-	for cy := y; cy < y+h; cy++ {
-		for cx := x; cx < x+w; cx++ {
-			screen.SetContent(cx, cy, ' ', nil, ground)
-		}
-	}
-
 	if s.inner != nil {
 		s.inner.SetRect(x, y-s.offset, w, s.contentHeight)
 		s.inner.Draw(clipScreen{Screen: screen, top: y, bottom: y + h})

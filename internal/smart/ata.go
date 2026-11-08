@@ -150,6 +150,30 @@ type ATAStatPage struct {
 	Table  []ATAStatEntry `json:"table"`
 }
 
+// ValidEntries drops the page's placeholder rows (valid=false).
+func (p ATAStatPage) ValidEntries() []ATAStatEntry {
+	out := make([]ATAStatEntry, 0, len(p.Table))
+	for _, e := range p.Table {
+		if e.Flags.Valid {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// Device Statistics counter names, as smartctl spells them.
+const (
+	StatPercentageUsed    = "Percentage Used Endurance Indicator"
+	StatSectorsWritten    = "Logical Sectors Written"
+	StatSectorsRead       = "Logical Sectors Read"
+	StatReallocated       = "Number of Reallocated Logical Sectors"
+	StatReallocatedLegacy = "Number of Reallocated Sectors"
+	StatReallocCandidates = "Number of Realloc. Candidate Logical Sectors"
+	StatUncorrectable     = "Number of Reported Uncorrectable Errors"
+	StatInterfaceCRC      = "Number of Interface CRC Errors"
+	StatMechStartFailures = "Number of Mechanical Start Failures"
+)
+
 // ATAStatEntry is one statistic; Value is only meaningful when Flags.Valid.
 type ATAStatEntry struct {
 	Offset int          `json:"offset"`
