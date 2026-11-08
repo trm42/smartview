@@ -370,7 +370,7 @@ func TestTemperatureSeriesSkipsEmptySlots(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &r); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := temperatureSeries(&r, nil); !slices.Equal(got, []float64{35, 36, 37}) {
-		t.Errorf("temperatureSeries() = %v, want [35 36 37]", got)
+	if got, _ := r.TempHistory(nil); !slices.Equal(got, []float64{35, 36, 37}) {
+		t.Errorf("TempHistory() = %v, want [35 36 37]", got)
 	}
 }

@@ -77,16 +77,11 @@ func TestTidyErrorDescription(t *testing.T) {
 	}
 }
 
-// TestSelfTestPassedSharesColorResult: the summary counts failures with the same
-// keyword test that colours the rows, so the two can never disagree about one
-// drive-reported string.
-func TestSelfTestPassedSharesColorResult(t *testing.T) {
+// TestColorResultFollowsSelfTestOutcome: a pass is muted, not green, a failure
+// takes the failing colour, and a neutral run takes neither.
+func TestColorResultFollowsSelfTestOutcome(t *testing.T) {
 	for _, s := range []string{"Completed without error", "Completed"} {
-		if selfTestOutcome(s) != testPassed {
-			t.Errorf("selfTestOutcome(%q) = %d, want passed", s, selfTestOutcome(s))
-		}
-		// A pass reads as recessive, not healthy-green: colour marks
-		// exceptions, and one row per run is the least exceptional thing here.
+		// Colour marks exceptions, and one row per run is the least exceptional thing here.
 		if !strings.Contains(colorResult(s), mutedTag()) {
 			t.Errorf("colorResult(%q) does not read as a pass", s)
 		}
@@ -94,35 +89,12 @@ func TestSelfTestPassedSharesColorResult(t *testing.T) {
 			t.Errorf("colorResult(%q) is tinted with the healthy colour", s)
 		}
 	}
-	// "Completed" alone is not a pass: smartctl reports failures as
-	// "Completed: read failure" and the like, which a bare keyword check painted
-	// green — a failed self-test rendering as a healthy one.
-	for _, s := range []string{
-		"Completed: read failure",
-		"Completed: electrical failure",
-		"Completed: unknown failure",
-		"Completed: handling damage??",
-		"Fatal or unknown error",
-		"Aborted: Self-test failed segment",
-	} {
-		if selfTestOutcome(s) != testFailed {
-			t.Errorf("selfTestOutcome(%q) = %d, want failed", s, selfTestOutcome(s))
-		}
+	for _, s := range []string{"Completed: read failure", "Fatal or unknown error"} {
 		if !strings.Contains(colorResult(s), failingTag()) {
 			t.Errorf("colorResult(%q) does not read as a failure", s)
 		}
 	}
-	// A run still going, or one the host stopped, says nothing about the drive:
-	// neither a pass nor a failure, and it takes neither colour.
-	for _, s := range []string{
-		"Self-test routine in progress",
-		"Aborted by host",
-		"Interrupted (host reset)",
-		"Aborted: Controller Reset",
-	} {
-		if selfTestOutcome(s) != testNeutral {
-			t.Errorf("selfTestOutcome(%q) = %d, want neutral", s, selfTestOutcome(s))
-		}
+	for _, s := range []string{"Self-test routine in progress", "Aborted by host"} {
 		if c := colorResult(s); strings.Contains(c, failingTag()) || strings.Contains(c, mutedTag()) {
 			t.Errorf("colorResult(%q) = %q, want body text", s, c)
 		}

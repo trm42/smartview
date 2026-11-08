@@ -396,7 +396,7 @@ func buildGauges(r *smart.Report) tview.Primitive {
 // buildTempSparkline returns a temperature trend widget: ATA seeds from the
 // SCT history, NVMe from the runtime series.
 func buildTempSparkline(r *smart.Report, runtime []float64) tview.Primitive {
-	data, _ := temperatureSeries(r, runtime)
+	data, _ := r.TempHistory(runtime)
 	if len(data) < 2 {
 		return nil
 	}
@@ -415,35 +415,4 @@ func buildTempSparkline(r *smart.Report, runtime []float64) tview.Primitive {
 	c.SetBorder(true)
 	c.SetTitle(fmt.Sprintf(" Temperature — now %d°C · range %.0f–%.0f°C ", now, lo, hi))
 	return c
-}
-
-// temperatureSeries picks the best temperature history, newest last, and reports whether it
-// is the drive's own log; that log lags by its logging interval, so the live reading closes it.
-func temperatureSeries(r *smart.Report, runtime []float64) ([]float64, bool) {
-	sct, ok := sctSeries(r)
-	if !ok {
-		return runtime, false
-	}
-	if now, ok := r.CurrentTemp(); ok && plausibleTemp(now) {
-		sct = append(sct, float64(now))
-	}
-	return sct, true
-}
-
-// plausibleTemp rejects a reading no drive survives, which is a sensor glitch or an absent-sensor marker.
-func plausibleTemp(c int) bool { return c > -40 && c < 200 }
-
-// sctSeries returns the drive's own SCT temperature log, ok only when it holds a trend.
-func sctSeries(r *smart.Report) ([]float64, bool) {
-	if r.ATATemperatureHistory == nil {
-		return nil, false
-	}
-	out := make([]float64, 0, len(r.ATATemperatureHistory.Table))
-	for _, v := range r.ATATemperatureHistory.Table {
-		// An empty slot is null; skip it and any implausible value.
-		if v != nil && plausibleTemp(*v) {
-			out = append(out, float64(*v))
-		}
-	}
-	return out, len(out) > 1
 }

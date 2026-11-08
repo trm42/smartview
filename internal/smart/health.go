@@ -2,6 +2,8 @@
 
 package smart
 
+import "strings"
+
 // Severity is a tri-state health classification used for colouring and sorting.
 type Severity int
 
@@ -132,4 +134,37 @@ func (r *Report) wearSeverity() Severity {
 		sev = max(sev, SpareSeverity(pct, thr))
 	}
 	return sev
+}
+
+// TestOutcome classifies a drive-reported self-test result string.
+type TestOutcome int
+
+const (
+	// TestNeutral is a run that says nothing about the drive: in progress, or stopped by the host.
+	TestNeutral TestOutcome = iota
+	TestPassed
+	TestFailed
+)
+
+// SelfTestOutcome classifies a self-test result string by keyword; "without error"
+// is checked before "error", and "Completed" alone is not a pass.
+func SelfTestOutcome(s string) TestOutcome {
+	low := strings.ToLower(s)
+	if strings.Contains(low, "without error") {
+		return TestPassed
+	}
+	for _, kw := range []string{"fail", "error", "fatal", "damage"} {
+		if strings.Contains(low, kw) {
+			return TestFailed
+		}
+	}
+	for _, kw := range []string{"in progress", "aborted", "interrupted"} {
+		if strings.Contains(low, kw) {
+			return TestNeutral
+		}
+	}
+	if strings.Contains(low, "completed") {
+		return TestPassed
+	}
+	return TestNeutral
 }
