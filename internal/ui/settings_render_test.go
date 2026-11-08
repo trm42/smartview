@@ -4,7 +4,6 @@ package ui
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"testing"
 
@@ -59,7 +58,7 @@ func TestSettingsModalFitsTheSmallestTerminal(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 
 	// Every setting, and the buttons: too short a box silently drops them.
-	for _, want := range append(slices.Clone(settingsRows), "Save", "Cancel") {
+	for _, want := range append(settingsLabels(), "Save", "Cancel") {
 		if !strings.Contains(joined, want) {
 			t.Errorf("%q is not on screen:\n%s", want, joined)
 		}
@@ -147,7 +146,7 @@ func TestSettingsModalShrinksBelowItsOwnWidth(t *testing.T) {
 	a.app.Draw()
 
 	joined := strings.Join(screenText(screen), "\n")
-	for _, want := range settingsRows {
+	for _, want := range settingsLabels() {
 		if !strings.Contains(joined, want) {
 			t.Errorf("label %q is clipped off the left edge:\n%s", want, joined)
 		}
@@ -158,7 +157,7 @@ func TestSettingsModalShrinksBelowItsOwnWidth(t *testing.T) {
 func TestSettingsHelpLinesFit(t *testing.T) {
 	// Border on both sides, then the help line's own padding.
 	const width = settingsWidth - 2 - (uiGutter + 1) - uiGutter
-	lines := append([]string{settingsThemeApproxHelp, settingsButtonHelp, settingsKeys}, settingsHelp...)
+	lines := append([]string{settingsThemeApproxHelp, settingsButtonHelp, settingsKeys}, settingsHelps()...)
 	for _, l := range lines {
 		if got := tview.TaggedStringWidth(l); got > width {
 			t.Errorf("help line %q is %d cells, want <= %d", l, got, width)
@@ -167,11 +166,29 @@ func TestSettingsHelpLinesFit(t *testing.T) {
 	if got := settingsHelpLine(0, false); got != settingsThemeApproxHelp {
 		t.Errorf("theme help on a 256-colour terminal is %q, want the caveat", got)
 	}
-	if got := settingsHelpLine(0, true); got != settingsHelp[0] {
+	if got := settingsHelpLine(0, true); got != settingsRows[0].help {
 		t.Errorf("theme help on a truecolor terminal is %q, want the plain line", got)
 	}
 	if !strings.Contains(settingsThemeApproxHelp, "COLORTERM") {
 		t.Errorf("the approximation caveat %q does not name the variable that fixes it",
 			settingsThemeApproxHelp)
 	}
+}
+
+// settingsLabels lists the rows' labels in order.
+func settingsLabels() []string {
+	out := make([]string, len(settingsRows))
+	for i, r := range settingsRows {
+		out[i] = r.label
+	}
+	return out
+}
+
+// settingsHelps lists the rows' help lines in order.
+func settingsHelps() []string {
+	out := make([]string, len(settingsRows))
+	for i, r := range settingsRows {
+		out[i] = r.help
+	}
+	return out
 }

@@ -21,15 +21,6 @@ const (
 	rowGutter    = "  "
 )
 
-// settingsHelp is the focus-following help line per row.
-var settingsHelp = []string{
-	"Colour palette. t/T cycle it live.",
-	"How often every drive is re-read.",
-	"Leave parked drives asleep. ATA only.",
-	"Draw all six tabs, muting empty ones.",
-	"Which screen to open on. Next run.",
-}
-
 // settingsThemeApproxHelp replaces the theme help without truecolor, where the palette is approximated.
 const settingsThemeApproxHelp = "Palette. Approximated — set COLORTERM=truecolor"
 
@@ -38,7 +29,7 @@ func settingsHelpLine(row int, truecolor bool) string {
 	if row == 0 && !truecolor {
 		return settingsThemeApproxHelp
 	}
-	return settingsHelp[row]
+	return settingsRows[row].help
 }
 
 // settingsButtonHelp fills the help line while a button has focus.
@@ -56,10 +47,67 @@ const (
 	uncheckedGlyph = "[ ]"
 )
 
-// settingsRows names the form rows in order; its length sizes the modal.
-var settingsRows = []string{
-	"Theme", "Refresh", "Skip spun-down drives",
-	"Show unavailable tabs", "Start view",
+// settingRow is one setting: its label, help line, dirty test and widget.
+type settingRow struct {
+	label, help string
+	changed     func(a, b config.Config) bool
+	// add appends the widget, editing *cfg and calling mark on every change.
+	add func(f *tview.Form, label string, cfg *config.Config, mark func())
+}
+
+// settingsRows is the modal's rows in order; its length sizes the modal.
+var settingsRows = []settingRow{
+	{
+		label:   "Theme",
+		help:    "Colour palette. t/T cycle it live.",
+		changed: func(a, b config.Config) bool { return a.Theme != b.Theme },
+		add: func(f *tview.Form, label string, cfg *config.Config, mark func()) {
+			f.AddDropDown(label, themeCycle, indexOr(themeCycle, cfg.Theme, 0),
+				func(opt string, _ int) { cfg.Theme = opt; mark() })
+		},
+	},
+	{
+		label:   "Refresh",
+		help:    "How often every drive is re-read.",
+		changed: func(a, b config.Config) bool { return a.RefreshInterval != b.RefreshInterval },
+		add: func(f *tview.Form, label string, cfg *config.Config, mark func()) {
+			intervals := intervalChoices(cfg.RefreshInterval.Duration())
+			f.AddDropDown(label, labelDurations(intervals),
+				indexOr(intervals, cfg.RefreshInterval.Duration(), 0),
+				func(_ string, i int) {
+					if i >= 0 && i < len(intervals) {
+						cfg.RefreshInterval = config.Duration(intervals[i])
+					}
+					mark()
+				})
+		},
+	},
+	{
+		label:   "Skip spun-down drives",
+		help:    "Leave parked drives asleep. ATA only.",
+		changed: func(a, b config.Config) bool { return a.StandbyAware != b.StandbyAware },
+		add: func(f *tview.Form, label string, cfg *config.Config, mark func()) {
+			f.AddCheckbox(label, cfg.StandbyAware, func(v bool) { cfg.StandbyAware = v; mark() })
+		},
+	},
+	{
+		label:   "Show unavailable tabs",
+		help:    "Draw all six tabs, muting empty ones.",
+		changed: func(a, b config.Config) bool { return a.ShowUnavailableTabs != b.ShowUnavailableTabs },
+		add: func(f *tview.Form, label string, cfg *config.Config, mark func()) {
+			f.AddCheckbox(label, cfg.ShowUnavailableTabs, func(v bool) { cfg.ShowUnavailableTabs = v; mark() })
+		},
+	},
+	{
+		label:   "Start view",
+		help:    "Which screen to open on. Next run.",
+		changed: func(a, b config.Config) bool { return a.StartView != b.StartView },
+		add: func(f *tview.Form, label string, cfg *config.Config, mark func()) {
+			views := []string{config.StartDrives, config.StartFleet}
+			f.AddDropDown(label, views, indexOr(views, cfg.StartView, 0),
+				func(opt string, _ int) { cfg.StartView = opt; mark() })
+		},
+	},
 }
 
 // currentConfig is derived from live state, never cached, so T and +/- cannot be reverted by Save.
@@ -84,25 +132,9 @@ func (a *App) settingsForm(cfg config.Config) *tview.Form {
 	form.SetItemPadding(0)
 	// NewForm defaults to padding 1, which pushes the buttons outside the form's clip.
 	form.SetBorderPadding(0, 0, 0, 0)
-	intervals := intervalChoices(cfg.RefreshInterval.Duration())
-	views := []string{config.StartDrives, config.StartFleet}
-
-	form.AddDropDown(rowGutter+settingsRows[0], themeCycle, indexOr(themeCycle, cfg.Theme, 0),
-		func(opt string, _ int) { cfg.Theme = opt; mark() })
-	form.AddDropDown(rowGutter+settingsRows[1], labelDurations(intervals),
-		indexOr(intervals, cfg.RefreshInterval.Duration(), 0),
-		func(_ string, i int) {
-			if i >= 0 && i < len(intervals) {
-				cfg.RefreshInterval = config.Duration(intervals[i])
-			}
-			mark()
-		})
-	form.AddCheckbox(rowGutter+settingsRows[2], cfg.StandbyAware,
-		func(v bool) { cfg.StandbyAware = v; mark() })
-	form.AddCheckbox(rowGutter+settingsRows[3], cfg.ShowUnavailableTabs,
-		func(v bool) { cfg.ShowUnavailableTabs = v; mark() })
-	form.AddDropDown(rowGutter+settingsRows[4], views, indexOr(views, cfg.StartView, 0),
-		func(opt string, _ int) { cfg.StartView = opt; mark() })
+	for _, row := range settingsRows {
+		row.add(form, rowGutter+row.label, &cfg, func() { mark() })
+	}
 
 	form.AddButton("Save", func() {
 		a.popModal()
@@ -135,19 +167,12 @@ func (a *App) settingsForm(cfg config.Config) *tview.Form {
 
 // markChangedRows puts a dot in each edited row's constant-width gutter.
 func markChangedRows(form *tview.Form, original, cur config.Config) {
-	changed := []bool{
-		cur.Theme != original.Theme,
-		cur.RefreshInterval != original.RefreshInterval,
-		cur.StandbyAware != original.StandbyAware,
-		cur.ShowUnavailableTabs != original.ShowUnavailableTabs,
-		cur.StartView != original.StartView,
-	}
-	for i, dirty := range changed {
+	for i, row := range settingsRows {
 		gutter := rowGutter
-		if dirty {
+		if row.changed(original, cur) {
 			gutter = changedGlyph + " "
 		}
-		setItemLabel(form.GetFormItem(i), gutter+settingsRows[i])
+		setItemLabel(form.GetFormItem(i), gutter+row.label)
 	}
 }
 
