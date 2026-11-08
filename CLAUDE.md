@@ -69,10 +69,8 @@ Seagate FARM log. Fixture mode **bypasses the smartctl preflight** entirely, so
 smartmontools need not be installed. Drive the resulting TUI with `expect` under
 a pty (`sleep`, `send` keys, `send "q"` to quit), exactly as above. Every
 captured fixture has an empty error log, so only the hand-crafted ones exercise
-the Logs tab's decoded-error-entry renderer: `smart-sda-errors.json` and
-`smart-nvme-errors.json` (copies of healthy drives with unique device names;
-the ATA one grades Caution, since its error log alone escalates it) and
-`smart-sdc-failing.json`.
+the Logs tab's decoded-error-entry renderer: `smart-{sda,nvme}-errors.json`
+and `smart-sdc-failing.json` (see Tests below).
 
 `--fixtures` is only honored by a `-tags dev` build: a release build (plain
 `go build`) still accepts the flag but rejects it at startup with a rebuild
@@ -664,8 +662,9 @@ goroutine (`setNarrow` in app.go is the pattern).
 
 `internal/smart/smart_test.go` parses real captured fixtures in
 `internal/smart/testdata/` (WD NVMe, Seagate HDD, Samsung SSD, sparse Apple
-NVMe) plus hand-crafted variants: `smart-{sda,nvme}-errors.json` populate
-the otherwise-empty error tables (the ATA one grades Caution from its error
+NVMe) plus hand-crafted variants: `smart-{sda,nvme}-errors.json`, copies of
+healthy drives under unique device names, populate the otherwise-empty error
+tables (the ATA one grades Caution from its error
 log alone, every attribute in range), and `smart-sdc-failing.json` is the only
 Failing drive in the set — a pre-fail attribute below threshold (Failing), a
 past threshold dip (Caution), nonzero error counters and a failed SMART
