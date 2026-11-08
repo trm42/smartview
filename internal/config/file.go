@@ -60,6 +60,10 @@ start_view = %q
 // Save writes c to path atomically (temp file plus rename), creating the
 // directory if needed.
 func Save(path string, c Config) error {
+	// Write through a symlink (a dotfiles checkout) rather than replace the link with a file.
+	if target, err := filepath.EvalSymlinks(path); err == nil {
+		path = target
+	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)

@@ -115,7 +115,9 @@ func fixtureScan() ([]Device, error) {
 // fixtureInfo stands in for `smartctl -j -x <name>`; an unknown name is an error.
 func fixtureInfo(name string) (*Report, error) {
 	if r, ok := fixtureByName[name]; ok {
-		return r, nil
+		// A copy: the poll goroutine attaches FARM to it while the UI reads the last one.
+		c := *r
+		return &c, nil
 	}
 	return nil, fmt.Errorf("no fixture report for device %q", name)
 }

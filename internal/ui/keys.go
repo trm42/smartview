@@ -21,6 +21,10 @@ var intervalPresets = []time.Duration{
 // nextInterval returns the adjacent preset, clamped at the ends. It walks by
 // value, not index, so an off-ladder --interval snaps to a neighbour.
 func nextInterval(cur time.Duration, faster bool) time.Duration {
+	// Past an end of the ladder, the only neighbour lies the wrong way.
+	if (faster && cur <= intervalPresets[0]) || (!faster && cur >= intervalPresets[len(intervalPresets)-1]) {
+		return cur
+	}
 	if faster {
 		next := intervalPresets[0]
 		for _, p := range intervalPresets {

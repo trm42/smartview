@@ -160,7 +160,7 @@ var identityWrap = hangingWrap{valueCol: identityValueCol, minValueW: 9}
 // a column takes a full row of its own after the paired ones.
 func writeFields(b *strings.Builder, fields []identityField, cols int) {
 	line := func(f identityField, width int) {
-		fmt.Fprintf(b, "[::b]%-*s[-:-:-] %-*s", identityValueCol-1, f.k, width, f.v)
+		fmt.Fprintf(b, "[::b]%-*s[-:-:-] %s", identityValueCol-1, f.k, padCells(f.v, width))
 	}
 	if cols < 2*identityColumnWidth {
 		for _, f := range fields {
