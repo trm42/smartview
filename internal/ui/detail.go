@@ -198,6 +198,10 @@ type detail struct {
 
 	device string             // current drive name, to detect device switches
 	views  map[string]tabView // live view per visible tab id
+	// stale marks views behind the latest poll; selectActive refreshes one on opening it.
+	stale         map[string]bool
+	latest        *smart.Report
+	latestHistory []float64
 	// placeholder is the last message shown, re-shown on repaint.
 	placeholder string
 
@@ -248,12 +252,14 @@ func (d *detail) showPlaceholder(msg string) {
 // update applies a fresh report, in place for the same drive and tab set, else by rebuilding.
 func (d *detail) update(r *smart.Report, tempHistory []float64) {
 	newTabs := visibleTabs(r, d.showAllTabs)
+	d.latest, d.latestHistory = r, tempHistory
 	if d.device == r.Device.Name && d.device != "" && sameTabs(newTabs, d.tabs) {
 		for _, t := range newTabs {
-			if v := d.views[t.id]; v != nil && t.available {
-				v.refresh(r, tempHistory)
+			if d.views[t.id] != nil && t.available {
+				d.stale[t.id] = true
 			}
 		}
+		d.refreshActive()
 		return
 	}
 
@@ -266,6 +272,7 @@ func (d *detail) update(r *smart.Report, tempHistory []float64) {
 	d.device = r.Device.Name
 	d.tabs = newTabs
 	d.views = make(map[string]tabView, len(newTabs))
+	d.stale = make(map[string]bool, len(newTabs))
 	for _, t := range d.tabs {
 		v := d.buildTabView(t, r, tempHistory)
 		d.views[t.id] = v
@@ -364,8 +371,21 @@ func (d *detail) selectActive() {
 	if len(d.tabs) == 0 {
 		return
 	}
+	d.refreshActive()
 	d.pages.SwitchToPage(d.tabs[d.active].id)
 	d.bar.render(d.tabs, d.active)
+}
+
+// refreshActive brings the active view up to the latest poll if it fell behind.
+func (d *detail) refreshActive() {
+	if len(d.tabs) == 0 {
+		return
+	}
+	id := d.tabs[d.active].id
+	if d.stale[id] {
+		delete(d.stale, id)
+		d.views[id].refresh(d.latest, d.latestHistory)
+	}
 }
 
 // stepTab moves to the next available tab in direction delta without wrapping, reporting whether it moved.
