@@ -374,3 +374,33 @@ func TestTemperatureSeriesSkipsEmptySlots(t *testing.T) {
 		t.Errorf("TempHistory() = %v, want [35 36 37]", got)
 	}
 }
+
+// TestChartLayoutFollowsDataAndSize: the cached layout is reused for an
+// unchanged chart, but new data or a new size must never draw the old one.
+func TestChartLayoutFollowsDataAndSize(t *testing.T) {
+	const w, h = 40, 10
+	c := newRangeChart().setSeries([]float64{30, 31, 32, 33}, "caption")
+	first := strings.Join(drawChart(t, c, w, h), "\n")
+	if again := strings.Join(drawChart(t, c, w, h), "\n"); again != first {
+		t.Errorf("an unchanged chart drew differently the second time:\n%s\n---\n%s", first, again)
+	}
+
+	c.setSeries([]float64{50, 60, 70, 80}, "caption")
+	if got := strings.Join(drawChart(t, c, w, h), "\n"); !strings.Contains(got, "80") || strings.Contains(got, "33") {
+		t.Errorf("new data drew the cached layout:\n%s", got)
+	}
+
+	// A resized chart must match one built fresh at that size.
+	const w2, h2 = 24, 7
+	data := make([]float64, 100)
+	for i := range data {
+		data[i] = float64(30 + i%17)
+	}
+	c.setSeries(data, "caption")
+	drawChart(t, c, w, h)
+	got := strings.Join(drawChart(t, c, w2, h2), "\n")
+	want := strings.Join(drawChart(t, newRangeChart().setSeries(data, "caption"), w2, h2), "\n")
+	if got != want {
+		t.Errorf("resize drew the cached layout:\n%s\n--- want\n%s", got, want)
+	}
+}
