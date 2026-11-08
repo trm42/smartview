@@ -52,7 +52,7 @@ The list is sorted by fixture filename, so the order is fixed:
 | statistics | `/dev/sda` | `3` | Device Statistics pages |
 | farm | `/dev/sda` | `4` | the Seagate family is the only one with a FARM log |
 | tests | `/dev/sda` | `5` | supports self-tests |
-| logs | `/dev/sdf` | `6` | decoded ATA error-log entries on a healthy drive (`/dev/sdc` has them too, but is failing) |
+| logs | `/dev/sdf` | `6` | decoded ATA error-log entries on a drive that only grades Caution (`/dev/sdc` has them too, but is failing) |
 | fleet | any | `c` `2` | Health & errors shows Failing/Caution/Healthy and the `—` vs `0` distinction |
 
 ## Changing the look

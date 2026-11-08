@@ -54,10 +54,11 @@ go build -tags dev -o smartview .                  # dev build with fixture supp
 ```
 
 This is the canonical way to verify UI changes without the drives attached. The
-captured fixtures are real `smartctl -j -x` output from the SATA hardware this
-project is developed against, so a fixture run exercises what those drives
-actually report; the hand-crafted ones named below each add one state the
-hardware does not produce on demand.
+captured fixtures are real `smartctl -j` output (`-x`, or `-l farm` for the
+FARM log) from real drives — the ATA ones from the SATA hardware this project
+is developed against — so a fixture run exercises what those drives actually
+report; the hand-crafted ones named below add the states that hardware does
+not produce on demand.
 `smart-sdd-standby.json` is the envelope a parked drive produces, so the
 standby UI is drivable here even though `-n` never runs in fixture mode; the
 limitation is that the drive is asleep regardless of the policy and `R` cannot
@@ -69,7 +70,8 @@ smartmontools need not be installed. Drive the resulting TUI with `expect` under
 a pty (`sleep`, `send` keys, `send "q"` to quit), exactly as above. Every
 captured fixture has an empty error log, so only the hand-crafted ones exercise
 the Logs tab's decoded-error-entry renderer: `smart-sda-errors.json` and
-`smart-nvme-errors.json` (healthy copies with unique device names) and
+`smart-nvme-errors.json` (copies of healthy drives with unique device names;
+the ATA one grades Caution, since its error log alone escalates it) and
 `smart-sdc-failing.json`.
 
 `--fixtures` is only honored by a `-tags dev` build: a release build (plain
@@ -417,8 +419,8 @@ goroutine (`setNarrow` in app.go is the pattern).
   `TestDarkThemePinned`. **Every painted palette is hex-only, and that is
   load-bearing** (`TestPaintedThemesAreHexOnly`): a named `tcell` colour goes
   to the terminal as a palette index, which the user's scheme remaps, so it
-  would not match the hex roles beside it — in `dark` a named colour makes the
-  list's secondary line invisible and paints the temperature fill green
+  would not match the hex roles beside it — in `dark` a named colour would make
+  the list's secondary line invisible and paint the temperature fill green
   instead of teal. Three roles depart from the pre-theming original:
   `ListSecondary`, which moved off green because it equalled `OK` and painted a
   failing drive's metadata line the healthy colour; `SelectionBg`, off
@@ -663,15 +665,16 @@ goroutine (`setNarrow` in app.go is the pattern).
 `internal/smart/smart_test.go` parses real captured fixtures in
 `internal/smart/testdata/` (WD NVMe, Seagate HDD, Samsung SSD, sparse Apple
 NVMe) plus hand-crafted variants: `smart-{sda,nvme}-errors.json` populate
-the otherwise-empty error tables, and `smart-sdc-failing.json` is the only
-unhealthy drive in the set — a pre-fail attribute below threshold (Failing), a
+the otherwise-empty error tables (the ATA one grades Caution from its error
+log alone, every attribute in range), and `smart-sdc-failing.json` is the only
+Failing drive in the set — a pre-fail attribute below threshold (Failing), a
 past threshold dip (Caution), nonzero error counters and a failed SMART
-self-assessment. Every other fixture with a verdict is healthy, so without it
-nothing exercises the severity path and the yellow/red rendering can only be
-eyeballed by editing data by hand. `smart-sde-nodata.json` is the permission-denied envelope (no
-`smart_status`), the one fixture that renders the `?` No-data state, and
-`smart-sdd-standby.json` is the parked-drive envelope.
-`metrics_test.go` covers the
+self-assessment. Every other fixture with a verdict is healthy, so without
+those two nothing exercises the severity path and the yellow/red rendering can
+only be eyeballed by editing data by hand. `smart-sde-nodata.json` is the
+permission-denied envelope (no `smart_status`), the one fixture that renders
+the `?` No-data state, and `smart-sdd-standby.json` is the parked-drive
+envelope. `metrics_test.go` covers the
 cross-protocol accessors against the same fixtures, pinning which source each
 drive falls through to (the Seagate reads writes from Device Statistics, the
 Samsung from attribute 241 and is therefore approximate) and that absent
