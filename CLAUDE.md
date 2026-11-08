@@ -54,9 +54,10 @@ go build -tags dev -o smartview .                  # dev build with fixture supp
 ```
 
 This is the canonical way to verify UI changes without the drives attached. The
-committed fixtures are real `smartctl -j -x` captures from the SATA hardware
-this project is developed against, so a fixture run exercises what those drives
-actually report — it is not a synthetic stand-in.
+captured fixtures are real `smartctl -j -x` output from the SATA hardware this
+project is developed against, so a fixture run exercises what those drives
+actually report; the hand-crafted ones named below each add one state the
+hardware does not produce on demand.
 `smart-sdd-standby.json` is the envelope a parked drive produces, so the
 standby UI is drivable here even though `-n` never runs in fixture mode; the
 limitation is that the drive is asleep regardless of the policy and `R` cannot
@@ -415,11 +416,9 @@ goroutine (`setNarrow` in app.go is the pattern).
   `dark` theme reproduces the original palette, in hex, pinned role by role by
   `TestDarkThemePinned`. **Every painted palette is hex-only, and that is
   load-bearing** (`TestPaintedThemesAreHexOnly`): a named `tcell` colour goes
-  to the terminal as a palette index, and `tag()` used to resolve it to RGB for
-  markup while every style path — `styleList`, cell colours, borders,
-  `tview.Print` — kept the index, so on a terminal whose scheme is not the
-  default the same role rendered two different colours. In `dark` that made the
-  list's secondary line invisible and painted the temperature fill green
+  to the terminal as a palette index, which the user's scheme remaps, so it
+  would not match the hex roles beside it — in `dark` a named colour makes the
+  list's secondary line invisible and paints the temperature fill green
   instead of teal. Three roles depart from the pre-theming original:
   `ListSecondary`, which moved off green because it equalled `OK` and painted a
   failing drive's metadata line the healthy colour; `SelectionBg`, off
@@ -475,9 +474,8 @@ goroutine (`setNarrow` in app.go is the pattern).
   selected-row foreground, clearing 4.5:1 (WCAG AA body text) on it; **each of
   `OK`/`Caution`/`Failing` clears 3:1 on `SelectionBg` too**, because the
   selected row keeps each cell's own foreground and repaints the ground, so
-  arrowing onto a failing drive is exactly what used to dim its red (this is
-  why four palettes moved their band, two of them *below* the ground rather
-  than above it); and a
+  arrowing onto a failing drive must not dim its red (which is why some
+  palettes put the band *below* the ground rather than above it); and a
   `Background` is plainly ink (luminance ≤ 0.15) or plainly paper (≥ 0.5),
   never between, since the light floor is keyed off that split and a mid-tone
   ground would silently take the lower one. Foregrounds clear 3:1 on the
@@ -664,14 +662,15 @@ goroutine (`setNarrow` in app.go is the pattern).
 
 `internal/smart/smart_test.go` parses real captured fixtures in
 `internal/smart/testdata/` (WD NVMe, Seagate HDD, Samsung SSD, sparse Apple
-NVMe) plus three hand-crafted variants: `smart-{sda,nvme}-errors.json` populate
+NVMe) plus hand-crafted variants: `smart-{sda,nvme}-errors.json` populate
 the otherwise-empty error tables, and `smart-sdc-failing.json` is the only
 unhealthy drive in the set — a pre-fail attribute below threshold (Failing), a
 past threshold dip (Caution), nonzero error counters and a failed SMART
-self-assessment. Every other fixture is healthy, so without it nothing exercises
-the severity path and the yellow/red rendering can only be eyeballed by editing
-data by hand. `smart-sde-nodata.json` is the permission-denied envelope (no
-`smart_status`), the one fixture that renders the `?` No-data state.
+self-assessment. Every other fixture with a verdict is healthy, so without it
+nothing exercises the severity path and the yellow/red rendering can only be
+eyeballed by editing data by hand. `smart-sde-nodata.json` is the permission-denied envelope (no
+`smart_status`), the one fixture that renders the `?` No-data state, and
+`smart-sdd-standby.json` is the parked-drive envelope.
 `metrics_test.go` covers the
 cross-protocol accessors against the same fixtures, pinning which source each
 drive falls through to (the Seagate reads writes from Device Statistics, the
