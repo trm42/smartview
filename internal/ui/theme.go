@@ -5,6 +5,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 
@@ -742,10 +743,9 @@ func ThemeNames() string {
 
 // stepThemeName returns the theme delta places from cur in themeCycle, wrapping; an unknown cur starts over.
 func stepThemeName(cur string, delta int) string {
-	for i, n := range themeCycle {
-		if n == cur {
-			return themeCycle[(i+delta+len(themeCycle))%len(themeCycle)]
-		}
+	i := slices.Index(themeCycle, cur)
+	if i < 0 {
+		return themeCycle[0]
 	}
-	return themeCycle[0]
+	return themeCycle[(i+delta+len(themeCycle))%len(themeCycle)]
 }

@@ -171,9 +171,6 @@ func TestErrorCounts(t *testing.T) {
 	want(t, "sda ErrorLogEntries", ata.ErrorLogEntries, 0)
 	absent(t, "sda MediaErrors", ata.MediaErrors)
 	absent(t, "sda UnsafeShutdowns", ata.UnsafeShutdowns)
-	if sev := ata.Worst(); sev != SeverityOK {
-		t.Errorf("sda ErrorCounts.Worst = %v, want OK", sev)
-	}
 
 	// The Samsung reports neither a pending-sector attribute nor the pending defects log.
 	ssd := parseFixture(t, "smart-sdb.json").ErrorCounts()
@@ -217,7 +214,7 @@ func TestMetricsOnSparseReport(t *testing.T) {
 	if _, ok := r.DataWritten(); ok {
 		t.Error("DataWritten should be absent")
 	}
-	if e := r.ErrorCounts(); e.Reallocated != nil || e.MediaErrors != nil || e.Worst() != SeverityOK {
+	if e := r.ErrorCounts(); e.Reallocated != nil || e.MediaErrors != nil {
 		t.Error("ErrorCounts should be entirely absent")
 	}
 }

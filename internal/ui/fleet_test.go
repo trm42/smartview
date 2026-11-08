@@ -95,7 +95,7 @@ func TestFleetEmptySerialIsADash(t *testing.T) {
 	v := newFleetView(nil)
 	v.identityCols = 3
 	dev := smart.Device{Name: "/dev/sda", Protocol: "ATA"}
-	v.setRow(1, fleetRow{dev: dev, rep: &smart.Report{Device: dev, ModelName: "ACME"}}, nil, 0)
+	v.setRow(1, fleetRow{dev: dev, rep: &smart.Report{Device: dev, ModelName: "ACME"}}, nil)
 	if got := strings.TrimSpace(v.table.GetCell(1, 2).Text); got != dash {
 		t.Errorf("serial cell = %q, want the dash placeholder %q", got, dash)
 	}

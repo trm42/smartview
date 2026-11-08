@@ -147,10 +147,7 @@ func (v *attributesView) refresh(r *smart.Report, _ []float64) {
 	if len(attrs) == 0 {
 		return // hasAttributes now fails, so the tab is swapped for its placeholder
 	}
-	sel := v.selectedID()
-	v.attrs = attrs
-	v.renderRows()
-	v.selectByID(sel)
+	v.reorder(func() { v.attrs = attrs })
 }
 
 // selectedID is the ID of the currently selected attribute, or -1 if none.
@@ -245,7 +242,7 @@ func attrState(a smart.ATAAttribute) string {
 	case smart.SeverityFailing:
 		return "FAILING"
 	case smart.SeverityCaution:
-		if a.WhenFailed == "in_the_past" {
+		if a.FailedInPast() {
 			return "failed once"
 		}
 		return "watch"
@@ -257,7 +254,7 @@ func attrState(a smart.ATAAttribute) string {
 // attrLimits renders value/threshold for the footer; no threshold gets the
 // dash, not a fabricated 0.
 func attrLimits(a smart.ATAAttribute) string {
-	if a.Thresh <= 0 {
+	if !a.HasThreshold() {
 		return fmt.Sprintf("%d/%s", a.Value, dash)
 	}
 	return fmt.Sprintf("%d/%d", a.Value, a.Thresh)
@@ -324,7 +321,7 @@ func attrVerdict(a smart.ATAAttribute) string {
 		return "▲ Below the drive's own threshold on a pre-fail attribute. " +
 			"Back up now; replacement is the expected outcome."
 	case smart.SeverityCaution:
-		if a.WhenFailed == "in_the_past" {
+		if a.FailedInPast() {
 			return "▲ This attribute failed at some point in the drive's life and has since " +
 				"recovered. Worth watching for a repeat."
 		}
@@ -337,7 +334,7 @@ func attrVerdict(a smart.ATAAttribute) string {
 
 // attrMargin is the threshold headroom; attributes without a threshold sort last.
 func attrMargin(a smart.ATAAttribute) int {
-	if a.Thresh <= 0 {
+	if !a.HasThreshold() {
 		return 1 << 30
 	}
 	return a.Value - a.Thresh
@@ -346,7 +343,7 @@ func attrMargin(a smart.ATAAttribute) int {
 // marginCell renders the threshold headroom bar, or the dash when the drive
 // sets no threshold.
 func marginCell(a smart.ATAAttribute) string {
-	if a.Thresh <= 0 {
+	if !a.HasThreshold() {
 		return dash
 	}
 	return marginBar(a.Value, a.Worst, a.Thresh, a.Severity())

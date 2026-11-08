@@ -310,9 +310,9 @@ func identitySections(r *smart.Report) []identitySection {
 	if pct, thr, src, ok := r.SparePercent(); ok && src != smart.WearHealthLog {
 		add(&wear, "Spare avail", pctMarkup(pct, smart.SpareSeverity(pct, thr)))
 	}
-	if h := r.NVMeHealth; h != nil {
-		add(&wear, "Media errors", fmt.Sprintf("%d", h.MediaErrors))
-		add(&wear, "Unsafe shutdn", fmt.Sprintf("%d", h.UnsafeShutdowns))
+	if e := r.ErrorCounts(); e.MediaErrors != nil && e.UnsafeShutdowns != nil {
+		add(&wear, "Media errors", fmt.Sprintf("%d", *e.MediaErrors))
+		add(&wear, "Unsafe shutdn", fmt.Sprintf("%d", *e.UnsafeShutdowns))
 	}
 	return []identitySection{id, geom, wear}
 }

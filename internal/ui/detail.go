@@ -89,6 +89,14 @@ func (b *tabBar) Draw(screen tcell.Screen) {
 	b.TextView.Draw(screen)
 }
 
+// pillMarkup wraps a pill's text in the active or inactive tab style, with its separators.
+func pillMarkup(pill string, active bool) string {
+	if active {
+		return " " + activeTabTag() + pill + "[-:-:-] "
+	}
+	return " " + accentTag() + pill + "[-] "
+}
+
 // layout emits the pills and the spans together.
 func (b *tabBar) layout() {
 	var s strings.Builder
@@ -96,13 +104,10 @@ func (b *tabBar) layout() {
 	spans := make([]tabSpan, 0, len(pills))
 	col := 0
 	for i, pill := range pills {
-		switch {
-		case i == b.active:
-			fmt.Fprintf(&s, " %s%s[-:-:-] ", activeTabTag(), pill)
-		case !b.tabs[i].available:
+		if i != b.active && !b.tabs[i].available {
 			fmt.Fprintf(&s, " %s%s[-:-:-] ", unavailableTabTag(), pill)
-		default:
-			fmt.Fprintf(&s, " %s%s[-] ", accentTag(), pill)
+		} else {
+			s.WriteString(pillMarkup(pill, i == b.active))
 		}
 		// Spans include separators so no column is dead.
 		w := 2 + tview.TaggedStringWidth(pill)
@@ -291,7 +296,7 @@ var allTabs = []struct {
 
 // hasAttributes reports whether either protocol's attribute view has data.
 func hasAttributes(r *smart.Report) bool {
-	return (r.IsNVMe() && r.NVMeHealth != nil) || len(ataAttributes(r)) > 0
+	return r.HasNVMeHealth() || len(ataAttributes(r)) > 0
 }
 
 // ataAttributes returns the ATA attribute rows, nil when the section is absent or empty.
@@ -324,7 +329,7 @@ func (d *detail) buildTabView(t tab, r *smart.Report, tempHistory []float64) tab
 	case "overview":
 		return newOverviewView(r, tempHistory)
 	case "attributes":
-		if r.IsNVMe() && r.NVMeHealth != nil {
+		if r.HasNVMeHealth() {
 			return newNVMeAttributesView(r)
 		}
 		return newAttributesView(ataAttributes(r))
@@ -379,16 +384,6 @@ func (d *detail) selectTab(i int) bool {
 	d.active = i
 	d.selectActive()
 	return true
-}
-
-// selectTabID activates the tab with the given id, reporting whether it was found.
-func (d *detail) selectTabID(id string) bool {
-	for i, t := range d.tabs {
-		if t.id == id {
-			return d.selectTab(i)
-		}
-	}
-	return false
 }
 
 // activeView returns the active tab's live view, or nil under a placeholder.

@@ -33,7 +33,7 @@ func (r *Report) Overall() Severity {
 		return SeverityFailing
 	}
 	worst := SeverityOK
-	if r.IsNVMe() && r.NVMeHealth != nil {
+	if r.HasNVMeHealth() {
 		if r.NVMeHealth.CriticalWarning != 0 {
 			return SeverityFailing
 		}
@@ -76,17 +76,22 @@ func (r *Report) lastSelfTestFailed() bool {
 	return false
 }
 
+// HasThreshold reports whether the attribute carries a threshold; 0 means none.
+func (a *ATAAttribute) HasThreshold() bool { return a.Thresh > 0 }
+
+// FailedInPast reports whether the value once crossed its threshold but no longer does.
+func (a *ATAAttribute) FailedInPast() bool { return a.WhenFailed == "in_the_past" }
+
 // Severity classifies one ATA attribute; pre-fail vs old-age comes from the
 // authoritative Flags.Prefailure bit, not the attribute name.
 func (a *ATAAttribute) Severity() Severity {
-	switch a.WhenFailed {
-	case "FAILING_NOW":
+	switch {
+	case a.WhenFailed == "FAILING_NOW":
 		return SeverityFailing
-	case "in_the_past":
+	case a.FailedInPast():
 		return SeverityCaution
 	}
-	// Thresh 0 means no threshold.
-	if a.Thresh > 0 && a.Value <= a.Thresh {
+	if a.HasThreshold() && a.Value <= a.Thresh {
 		if a.Flags.Prefailure {
 			return SeverityFailing
 		}

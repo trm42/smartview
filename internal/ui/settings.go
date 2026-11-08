@@ -279,9 +279,7 @@ func (a *App) applySettings(cfg config.Config) {
 
 	switch {
 	case cfg.Theme != old.Theme:
-		a.themeName = cfg.Theme
-		setTheme(themes[cfg.Theme])
-		a.repaintAll()
+		a.applyTheme(cfg.Theme)
 	case cfg.ShowUnavailableTabs != old.ShowUnavailableTabs:
 		a.rebuildDetail()
 	}

@@ -186,7 +186,7 @@ func (r *Report) LifeUsedPercent() (int, WearSource, bool) {
 	if r.EnduranceUsed != nil {
 		return r.EnduranceUsed.CurrentPercent, WearFallback, true
 	}
-	if v, ok := r.deviceStat("Percentage Used Endurance Indicator"); ok {
+	if v, ok := r.deviceStat(StatPercentageUsed); ok {
 		return int(v), WearFallback, true
 	}
 	return 0, 0, false
@@ -252,7 +252,7 @@ func (r *Report) DataWritten() (WriteTotal, bool) {
 	if r.NVMeHealth != nil {
 		return WriteTotal{Bytes: DataUnitBytes(r.NVMeHealth.DataUnitsWritten), Source: WriteSourceNVMe}, true
 	}
-	if v, ok := r.deviceStat("Logical Sectors Written"); ok {
+	if v, ok := r.deviceStat(StatSectorsWritten); ok {
 		return WriteTotal{Bytes: v * r.SectorBytes(), Source: WriteSourceDeviceStats}, true
 	}
 	if v, ok := r.attrRaw(241); ok {
@@ -291,13 +291,13 @@ func (r *Report) ErrorCounts() ErrorCounts {
 		}
 	}
 
-	pick(&e.Reallocated, 5, "Number of Reallocated Logical Sectors", "Number of Reallocated Sectors")
-	pick(&e.Pending, 197, "Number of Realloc. Candidate Logical Sectors")
+	pick(&e.Reallocated, 5, StatReallocated, StatReallocatedLegacy)
+	pick(&e.Pending, 197, StatReallocCandidates)
 	if e.Pending == nil && r.ATAPendingDefects != nil {
 		e.Pending = new(int64(r.ATAPendingDefects.Count))
 	}
-	pick(&e.Uncorrectable, 198, "Number of Reported Uncorrectable Errors")
-	pick(&e.CRCErrors, 199, "Number of Interface CRC Errors")
+	pick(&e.Uncorrectable, 198, StatUncorrectable)
+	pick(&e.CRCErrors, 199, StatInterfaceCRC)
 
 	if h := r.NVMeHealth; h != nil {
 		e.MediaErrors = new(int64(h.MediaErrors))
@@ -307,15 +307,4 @@ func (r *Report) ErrorCounts() ErrorCounts {
 		e.ErrorLogEntries = new(int64(l.Count))
 	}
 	return e
-}
-
-// Worst grades the counters: any nonzero wear/damage signal is a Caution.
-// CRC errors (cabling) and unsafe shutdowns (host-side) don't grade the drive.
-func (e ErrorCounts) Worst() Severity {
-	for _, c := range []*int64{e.Reallocated, e.Pending, e.Uncorrectable, e.MediaErrors} {
-		if c != nil && *c > 0 {
-			return SeverityCaution
-		}
-	}
-	return SeverityOK
 }

@@ -322,12 +322,13 @@ func (v *fleetView) renderTable(sec fleetSection) {
 	}
 
 	for i, row := range v.ordered {
-		v.setRow(i+1, row, cells[i], v.shownCols)
+		v.setRow(i+1, row, cells[i])
 	}
 }
 
 // setRow fills one row: identity cells, then the section's; a drive still scanning gets a row too.
-func (v *fleetView) setRow(rowIdx int, row fleetRow, secCells []fleetCell, n int) {
+func (v *fleetView) setRow(rowIdx int, row fleetRow, secCells []fleetCell) {
+	n := v.shownCols
 	var cells []fleetCell
 	if row.rep == nil {
 		waiting := "scanning…"
@@ -385,35 +386,26 @@ func (v *fleetView) restoreSelection() {
 // renderBar draws the section strip in the detail tab bar's pill idiom.
 func (v *fleetView) renderBar() {
 	active := v.activeIndex()
-	s := ""
+	var s strings.Builder
 	for i, sec := range v.shown {
-		if i == active {
-			s += fmt.Sprintf(" %s %d %s [-:-:-] ", activeTabTag(), i+1, sec.title)
-		} else {
-			s += fmt.Sprintf(" %s %d %s [-] ", accentTag(), i+1, sec.title)
-		}
+		s.WriteString(pillMarkup(fmt.Sprintf(" %d %s ", i+1, sec.title), i == active))
 	}
-	v.bar.SetText(s)
+	v.bar.SetText(s.String())
 }
 
-// selectSection activates a section by zero-based index if it exists.
-func (v *fleetView) selectSection(i int) {
+// selectSection activates a section by zero-based index, reporting whether it exists.
+func (v *fleetView) selectSection(i int) bool {
 	if i < 0 || i >= len(v.shown) {
-		return
+		return false
 	}
 	v.activeID = v.shown[i].id
 	v.render()
+	return true
 }
 
 // stepSection moves the active section by delta without wrapping, reporting whether it moved.
 func (v *fleetView) stepSection(delta int) bool {
-	next := v.activeIndex() + delta
-	if next < 0 || next >= len(v.shown) {
-		return false
-	}
-	v.activeID = v.shown[next].id
-	v.render()
-	return true
+	return v.selectSection(v.activeIndex() + delta)
 }
 
 // sectionCount is the number of selectable sections, for the "1-N section" hint.

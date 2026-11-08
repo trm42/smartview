@@ -72,7 +72,7 @@ func (a *App) popModal() {
 	if len(a.pendingNotices) > 0 {
 		next := a.pendingNotices[0]
 		a.pendingNotices = a.pendingNotices[1:]
-		a.notice(next, "OK")
+		a.notice(next)
 	}
 }
 
@@ -252,7 +252,7 @@ func keysColumnView(text string) *tview.TextView {
 // keysModal lays the bindings out in two fixed-width columns; tview.Modal wraps at a third of the screen.
 func (a *App) keysModal() tview.Primitive {
 	left, right := keysColumns()
-	rows := max(strings.Count(left, "\n"), strings.Count(right, "\n")) + 1
+	rows := max(lineCount(left), lineCount(right))
 
 	body := tview.NewFlex().
 		AddItem(keysColumnView(left), keysColumnWidth+2*uiGutter, 0, false).
@@ -288,14 +288,14 @@ func (a *App) keysModal() tview.Primitive {
 }
 
 // notice shows a modal with one dismissing button, after any modal already open.
-func (a *App) notice(text, button string) {
+func (a *App) notice(text string) {
 	if a.inModal {
 		a.pendingNotices = append(a.pendingNotices, text)
 		return
 	}
 	a.pushModal(styleModal(tview.NewModal()).
 		SetText(text).
-		AddButtons([]string{button}).
+		AddButtons([]string{"OK"}).
 		SetDoneFunc(func(int, string) { a.popModal() }))
 }
 
@@ -308,5 +308,5 @@ func (a *App) showKeys() {
 
 // showError displays a failure in a dismissable modal; action names the operation.
 func (a *App) showError(action string, err error) {
-	a.notice(fmt.Sprintf("Could not %s:\n%s", action, err), "OK")
+	a.notice(fmt.Sprintf("Could not %s:\n%s", action, err))
 }

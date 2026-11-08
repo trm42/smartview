@@ -105,14 +105,8 @@ type FARMEnvironment struct {
 // FARMReliability is FARM page 5. smartctl flattens per-head arrays into
 // numbered keys, so a custom unmarshal gathers each family into a slice.
 type FARMReliability struct {
-	ErrorRateNormalized     int
-	SeekErrorRateNormalized int
-	HighPriorityUnloads     int
-
 	MRHeadResistance  []int // mr_head_resistance_from_head_K
 	ReallocatedByHead []int // number_of_reallocated_sectors_by_head_K
-	CandidateByHead   []int // number_of_reallocation_candidate_sectors_by_head_K
-	WriteWorkloadPOH  []int // write_workload_power_on_time_by_head_K
 }
 
 // UnmarshalJSON decodes page 5, collecting the flat per-head keys into slices.
@@ -121,20 +115,8 @@ func (p *FARMReliability) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return err
 	}
-	intOf := func(key string) int {
-		var v int
-		if raw, ok := m[key]; ok {
-			_ = json.Unmarshal(raw, &v) // absent/malformed scalar defaults to 0
-		}
-		return v
-	}
-	p.ErrorRateNormalized = intOf("error_rate_normalized")
-	p.SeekErrorRateNormalized = intOf("seek_error_rate_normalized")
-	p.HighPriorityUnloads = intOf("high_priority_unload_events")
 	p.MRHeadResistance = collectByHead(m, "mr_head_resistance_from_head_")
 	p.ReallocatedByHead = collectByHead(m, "number_of_reallocated_sectors_by_head_")
-	p.CandidateByHead = collectByHead(m, "number_of_reallocation_candidate_sectors_by_head_")
-	p.WriteWorkloadPOH = collectByHead(m, "write_workload_power_on_time_by_head_")
 	return nil
 }
 
