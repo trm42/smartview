@@ -146,6 +146,8 @@ func (a *App) applyResults(results map[string]pollResult) {
 		a.reports[name] = res.rep
 		a.lastRead[name] = now
 		a.recordTemp(name, res.rep)
+		// Every drive, not just the selected one, or a test that ends off-screen is never aged out.
+		a.observeSelfTest(name, res.rep)
 	}
 }
 

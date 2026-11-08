@@ -434,6 +434,7 @@ func (a *App) repaintAll() {
 	// rethemeTree reaches only mounted widgets; the list/rail and banner may be off-tree.
 	applyBackground(a.list, a.rail, a.banner)
 	applyTextColor(a.status, a.rail, a.banner)
+	a.list.SetTitleColor(activeTheme.Neutral)
 	// The fleet table bakes a colour into every cell.
 	a.fleet.refresh(a.devices, a.reports, a.history, a.asleep, a.unreadable)
 	a.refreshChrome()
@@ -460,7 +461,6 @@ func (a *App) showDevice(i int) {
 	dev := a.devices[i]
 	if rep, ok := a.reports[dev.Name]; ok {
 		a.detail.setNote(a.staleNote(dev.Name))
-		a.observeSelfTest(dev.Name, rep)
 		a.detail.update(rep, a.history[dev.Name])
 		return
 	}

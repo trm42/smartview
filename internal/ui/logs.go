@@ -203,6 +203,9 @@ func writeATAErrorEntries(b *strings.Builder, r *smart.Report, table []smart.ATA
 // elapsed figure is omitted, not guessed, when current hours are unreported.
 func driveAge(r *smart.Report, hours int) string {
 	now, ok := r.PowerOnHours()
+	if ok {
+		hours = unwrapLogHours(hours, now)
+	}
 	if !ok || now < hours {
 		return fmt.Sprintf("at %s", humanDuration(hours))
 	}
@@ -211,6 +214,17 @@ func driveAge(r *smart.Report, hours int) string {
 		return fmt.Sprintf("at %s · %d h ago", humanDuration(hours), ago)
 	}
 	return fmt.Sprintf("at %s · %s ago", humanDuration(hours), humanDuration(ago))
+}
+
+// logHoursWrap is the modulus of the 16-bit lifetime-hours stamp ATA logs carry.
+const logHoursWrap = 1 << 16
+
+// unwrapLogHours lifts a wrapped 16-bit log stamp to the latest hour at or before now.
+func unwrapLogHours(hours, now int) int {
+	if hours < 0 || hours >= logHoursWrap || now < logHoursWrap {
+		return hours
+	}
+	return hours + (now-hours)/logHoursWrap*logHoursWrap
 }
 
 // tidyErrorDescription drops smartctl's "Error: " prefix and keeps only the
@@ -279,8 +293,9 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 			return
 		}
 		for _, e := range r.NVMeSelfTestLog.Table {
-			fmt.Fprintf(b, nestIndent+"%-10s %-28s @ %s\n",
-				esc(e.SelfTestCode.String), colorResult(e.SelfTestResult.String), humanDuration(e.PowerOnHours))
+			fmt.Fprintf(b, nestIndent+"%s %s @ %s\n",
+				padCells(esc(e.SelfTestCode.String), 10), padCells(colorResult(e.SelfTestResult.String), 28),
+				humanDuration(e.PowerOnHours))
 		}
 	case hasATA:
 		if len(tbl) == 0 {
@@ -289,8 +304,8 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 		}
 		writeSelfTestSummary(b, r, tbl)
 		for _, e := range tbl {
-			fmt.Fprintf(b, nestIndent+"%-16s %-28s %s\n",
-				esc(e.Type.String), colorResult(e.Status.String),
+			fmt.Fprintf(b, nestIndent+"%s %s %s\n",
+				padCells(esc(e.Type.String), 16), padCells(colorResult(e.Status.String), 28),
 				mutedTag()+driveAge(r, e.LifetimeHours)+"[-]")
 		}
 	default:

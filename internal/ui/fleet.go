@@ -181,12 +181,14 @@ func (v *fleetView) render() {
 		legend = fmt.Sprintf("%s%s at a wider terminal[-] · %s",
 			cautionTag(), plural(v.dropped, "more column", "more columns"), legend)
 	}
-	v.setLegend(mutedTag() + legend + "[-]")
+	v.setLegend(legend)
 	v.restoreSelection()
 }
 
 // setLegend writes the legend and sizes its row to the wrapped text, so a long caveat list is never clipped.
 func (v *fleetView) setLegend(text string) {
+	// The default ink, not a wrapping tag: an embedded [-] (the dash) resets to it, and it must follow the theme.
+	v.legend.SetTextColor(activeTheme.Muted)
 	v.legend.SetText(text)
 	_, _, w, _ := v.GetInnerRect()
 	h := fleetLegendHeight

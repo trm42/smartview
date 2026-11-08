@@ -206,6 +206,11 @@ func plural(n int, one, many string) string {
 	return fmt.Sprintf("%d %s", n, many)
 }
 
+// padCells right-pads markup to w display cells; fmt's width would count the tags.
+func padCells(s string, w int) string {
+	return s + strings.Repeat(" ", max(w-tview.TaggedStringWidth(s), 0))
+}
+
 // orDash renders s, falling back to the dash placeholder when empty.
 func orDash(s string) string {
 	if s == "" {
