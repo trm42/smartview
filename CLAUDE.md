@@ -326,6 +326,10 @@ goroutine (`setNarrow` in app.go is the pattern).
   The App owns the smartctl calls, the confirm/error modals (`pushModal`/
   `popModal`, guarded by `inModal` in `onKey`), and the post-action refresh.
   Self-tests are short/long only — `smart.RunSelfTest` rejects other types.
+- **A poll refreshes only the visible tab** (`detail.update`). The others are
+  marked `stale` and catch up from `latest` in `selectActive`, the one path
+  every tab switch takes, so a hidden view's state lags the newest report:
+  read another tab's view only after selecting it, or from the report itself.
 - **Runtime poll-interval control.** The `+`/`-` keys (`onKey`) walk the
   `intervalPresets` ladder via `nextInterval` (by value, so an off-ladder
   `--interval` snaps to a neighbour on the first press). `setInterval` updates
@@ -647,7 +651,7 @@ goroutine (`setNarrow` in app.go is the pattern).
   `ata_sct_temperature_history`; NVMe has no such log, so it accumulates a
   runtime ring buffer (`App.history`, capped at `maxHistory`) across polls — it
   only appears after ≥2 samples. The SCT log lags by its logging interval, so
-  `temperatureSeries` always closes it with the live reading (when plausible);
+  `smart.Report.TempHistory` always closes it with the live reading (when plausible);
   the Overview chart and the fleet's Min/Max/Trend both read that one series.
 - **Padding/gutters (TUI UX).** Every text/table/list box gets a uniform
   horizontal gutter via `SetBorderPadding(0, 0, uiGutter, uiGutter)`

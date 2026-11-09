@@ -26,8 +26,8 @@ const settingsThemeApproxHelp = "Palette. Approximated — set COLORTERM=truecol
 
 // settingsHelpLine is the help for row; truecolor is a parameter because the terminal's answer is process-global.
 func settingsHelpLine(row int, truecolor bool) string {
-	if row == 0 && !truecolor {
-		return settingsThemeApproxHelp
+	if r := settingsRows[row]; r.approxHelp != "" && !truecolor {
+		return r.approxHelp
 	}
 	return settingsRows[row].help
 }
@@ -50,7 +50,9 @@ const (
 // settingRow is one setting: its label, help line, dirty test and widget.
 type settingRow struct {
 	label, help string
-	changed     func(a, b config.Config) bool
+	// approxHelp, when set, replaces help on a terminal without truecolor.
+	approxHelp string
+	changed    func(a, b config.Config) bool
 	// add appends the widget, editing *cfg and calling mark on every change.
 	add func(f *tview.Form, label string, cfg *config.Config, mark func())
 }
@@ -58,9 +60,10 @@ type settingRow struct {
 // settingsRows is the modal's rows in order; its length sizes the modal.
 var settingsRows = []settingRow{
 	{
-		label:   "Theme",
-		help:    "Colour palette. t/T cycle it live.",
-		changed: func(a, b config.Config) bool { return a.Theme != b.Theme },
+		label:      "Theme",
+		help:       "Colour palette. t/T cycle it live.",
+		approxHelp: settingsThemeApproxHelp,
+		changed:    func(a, b config.Config) bool { return a.Theme != b.Theme },
 		add: func(f *tview.Form, label string, cfg *config.Config, mark func()) {
 			f.AddDropDown(label, themeCycle, indexOr(themeCycle, cfg.Theme, 0),
 				func(opt string, _ int) { cfg.Theme = opt; mark() })

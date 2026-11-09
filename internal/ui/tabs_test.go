@@ -233,4 +233,10 @@ func TestPollRefreshesOnlyTheVisibleTab(t *testing.T) {
 	if len(rec.got) != 1 {
 		t.Errorf("an up-to-date tab refreshed again on reopening: %d calls", len(rec.got))
 	}
+	// The visible tab follows every poll.
+	third := fixtureReport(t, "smart-sda-errors.json")
+	d.update(third, nil)
+	if len(rec.got) != 2 || rec.got[1] != third {
+		t.Errorf("visible logs tab refreshed %d times after a poll, want a second call with the latest report", len(rec.got))
+	}
 }

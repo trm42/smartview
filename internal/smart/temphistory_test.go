@@ -35,3 +35,22 @@ func TestImplausibleLiveTempIsNotPlotted(t *testing.T) {
 		t.Errorf("series = %v, want the log without the implausible live reading", got)
 	}
 }
+
+// TestTempHistoryFromFixtures: a captured SCT log is the series, closed by the live reading; NVMe falls back to runtime.
+func TestTempHistoryFromFixtures(t *testing.T) {
+	for _, c := range []struct {
+		file string
+		live float64
+	}{{"smart-sda.json", 37}, {"smart-sdb.json", 29}} {
+		r := parseFixture(t, c.file)
+		got, own := r.TempHistory([]float64{1, 2})
+		if !own || len(got) != len(r.ATATemperatureHistory.Table)+1 || got[len(got)-1] != c.live {
+			t.Errorf("%s: own=%v len=%d last=%v, want the %d-slot log closed by %v",
+				c.file, own, len(got), got[len(got)-1], len(r.ATATemperatureHistory.Table), c.live)
+		}
+	}
+	runtime := []float64{40, 41}
+	if got, own := parseFixture(t, "smart-nvme.json").TempHistory(runtime); own || !slices.Equal(got, runtime) {
+		t.Errorf("nvme: own=%v series=%v, want the runtime buffer", own, got)
+	}
+}

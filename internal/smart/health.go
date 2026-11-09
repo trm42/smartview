@@ -136,35 +136,37 @@ func (r *Report) wearSeverity() Severity {
 	return sev
 }
 
-// TestOutcome classifies a drive-reported self-test result string.
-type TestOutcome int
+// SelfTestVerdict classifies a drive-reported self-test result string.
+type SelfTestVerdict int
 
 const (
-	// TestNeutral is a run that says nothing about the drive: in progress, or stopped by the host.
-	TestNeutral TestOutcome = iota
-	TestPassed
-	TestFailed
+	// SelfTestNeutral is a run that says nothing about the drive: in progress, or stopped by the host.
+	SelfTestNeutral SelfTestVerdict = iota
+	// SelfTestPassed is a run that completed without error.
+	SelfTestPassed
+	// SelfTestFailed is a run that reported a failure.
+	SelfTestFailed
 )
 
 // SelfTestOutcome classifies a self-test result string by keyword; "without error"
-// is checked before "error", and "Completed" alone is not a pass.
-func SelfTestOutcome(s string) TestOutcome {
+// is checked before "error", so a bare "Completed" passes only when nothing else matched.
+func SelfTestOutcome(s string) SelfTestVerdict {
 	low := strings.ToLower(s)
 	if strings.Contains(low, "without error") {
-		return TestPassed
+		return SelfTestPassed
 	}
 	for _, kw := range []string{"fail", "error", "fatal", "damage"} {
 		if strings.Contains(low, kw) {
-			return TestFailed
+			return SelfTestFailed
 		}
 	}
 	for _, kw := range []string{"in progress", "aborted", "interrupted"} {
 		if strings.Contains(low, kw) {
-			return TestNeutral
+			return SelfTestNeutral
 		}
 	}
 	if strings.Contains(low, "completed") {
-		return TestPassed
+		return SelfTestPassed
 	}
-	return TestNeutral
+	return SelfTestNeutral
 }

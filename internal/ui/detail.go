@@ -255,7 +255,7 @@ func (d *detail) update(r *smart.Report, tempHistory []float64) {
 	d.latest, d.latestHistory = r, tempHistory
 	if d.device == r.Device.Name && d.device != "" && sameTabs(newTabs, d.tabs) {
 		for _, t := range newTabs {
-			if d.views[t.id] != nil && t.available {
+			if t.available {
 				d.stale[t.id] = true
 			}
 		}

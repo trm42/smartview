@@ -248,9 +248,9 @@ func writeSelfTestSummary(b *strings.Builder, r *smart.Report, tbl []smart.ATASe
 	failed, passed := 0, 0
 	for _, e := range tbl {
 		switch smart.SelfTestOutcome(e.Status.String) {
-		case smart.TestFailed:
+		case smart.SelfTestFailed:
 			failed++
-		case smart.TestPassed:
+		case smart.SelfTestPassed:
 			passed++
 		}
 	}
@@ -303,9 +303,9 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 // colorResult tints a self-test outcome by keyword on the original string and escapes the rendered copy; a pass is muted, not green.
 func colorResult(s string) string {
 	switch smart.SelfTestOutcome(s) {
-	case smart.TestPassed:
+	case smart.SelfTestPassed:
 		return mutedTag() + esc(s) + "[-]"
-	case smart.TestFailed:
+	case smart.SelfTestFailed:
 		return failingTag() + esc(s) + "[-]"
 	default:
 		return esc(s)
