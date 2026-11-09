@@ -160,6 +160,20 @@ type rangeChart struct {
 	// axis builds a bar chart's caption at draw time, once pitch and grouping are known.
 	axis  func(pitch, group, count, width int) string
 	color tcell.Color
+	// cache is the last computed layout; setSeries and setBars clear it.
+	cache *chartLayout
+}
+
+// chartLayout is everything Draw prints for one inner size, so an unchanged chart costs only the printing.
+type chartLayout struct {
+	w, h     int
+	gutter   int
+	plotW    int
+	labels   []string // per plot row, padded to the gutter
+	rows     []string // plot rows, clipped to plotW
+	base     string   // the padded baseline label
+	axisLine string
+	caption  string
 }
 
 // newRangeChart returns an empty chart. Call setSeries or setBars before use.
@@ -169,14 +183,14 @@ func newRangeChart() *rangeChart {
 
 // setSeries plots data as a filled area, downsampled to the available width.
 func (c *rangeChart) setSeries(data []float64, caption string) *rangeChart {
-	c.data, c.bars, c.tick, c.caption = data, false, 1, caption
+	c.data, c.bars, c.tick, c.caption, c.cache = data, false, 1, caption, nil
 	return c
 }
 
 // setBars plots data as categorical bars. pitch is the widest bar cell plus
 // gap to use; Draw narrows it toward 1, then groups values into shared bars.
 func (c *rangeChart) setBars(data []float64, pitch int, axis func(pitch, group, count, width int) string) *rangeChart {
-	c.data, c.bars, c.tick, c.axis, c.caption = data, true, max(pitch, 1), axis, ""
+	c.data, c.bars, c.tick, c.axis, c.caption, c.cache = data, true, max(pitch, 1), axis, "", nil
 	return c
 }
 
@@ -212,13 +226,9 @@ func (c *rangeChart) setColor(col tcell.Color) *rangeChart { c.color = col; retu
 // chartMinHeight is one plot row, an axis line and a caption; below it nothing is drawn.
 const chartMinHeight = 3
 
-// Draw paints the axis, plot and caption; the y-axis gutter is sized to the widest label.
-func (c *rangeChart) Draw(screen tcell.Screen) {
-	c.DrawForSubclass(screen, c)
-	x, y, w, h := c.GetInnerRect()
-	if w <= 0 || h < chartMinHeight || len(c.data) == 0 {
-		return
-	}
+// layout computes the chart for an inner size of w×h; the y-axis gutter is sized to the widest label.
+func (c *rangeChart) layout(w, h int) *chartLayout {
+	l := &chartLayout{w: w, h: h}
 	lo, hi, _ := dataRange(c.data)
 
 	plotRows := h - 2 // one axis line, one caption line
@@ -229,43 +239,65 @@ func (c *rangeChart) Draw(screen tcell.Screen) {
 		labels[n-1] = ""
 	}
 	gutter := len(baseline)
-	for _, l := range labels {
-		gutter = max(gutter, len(l))
+	for _, lb := range labels {
+		gutter = max(gutter, len(lb))
 	}
 	gutter += 3 // a space either side of the label, then the axis glyph
-	plotW := w - gutter
-	if plotW <= 0 {
-		return
+	l.gutter, l.plotW = gutter, w-gutter
+	if l.plotW <= 0 {
+		return l
 	}
 
 	var rows []string
-	caption := c.caption
+	l.caption = c.caption
 	if c.bars {
-		pitch, group := c.barFit(plotW)
+		pitch, group := c.barFit(l.plotW)
 		// The scale stays the full range; the caption reports grouping.
 		rows = barRows(bucketMax(c.data, group), pitch, plotRows, lo, hi)
-		caption = c.barCaption(pitch, group, plotW)
+		l.caption = c.barCaption(pitch, group, l.plotW)
 	} else {
-		rows = seriesRows(c.data, plotW, plotRows, lo, hi)
+		rows = seriesRows(c.data, l.plotW, plotRows, lo, hi)
 	}
-
-	muted := activeTheme.Muted
 	for r, line := range rows {
-		lbl := fmt.Sprintf("%*s ", gutter-2, labels[r])
-		tview.Print(screen, lbl, x, y+r, gutter, tview.AlignLeft, muted)
-		tview.Print(screen, "┤", x+gutter-1, y+r, 1, tview.AlignLeft, activeTheme.Accent)
+		l.labels = append(l.labels, fmt.Sprintf("%*s ", gutter-2, labels[r]))
 		// Clip by runes: the block glyphs are three bytes each.
-		cells := []rune(line)
-		if len(cells) > plotW {
-			cells = cells[:plotW]
+		if cells := []rune(line); len(cells) > l.plotW {
+			line = string(cells[:l.plotW])
 		}
-		tview.Print(screen, string(cells), x+gutter, y+r, plotW, tview.AlignLeft, c.color)
+		l.rows = append(l.rows, line)
+	}
+	l.base = fmt.Sprintf("%*s ", gutter-2, baseline)
+	l.axisLine = "└" + strings.Repeat("─", l.plotW-1)
+	return l
+}
+
+// Draw paints the axis, plot and caption, recomputing the layout only when the size or data changed.
+func (c *rangeChart) Draw(screen tcell.Screen) {
+	c.DrawForSubclass(screen, c)
+	x, y, w, h := c.GetInnerRect()
+	if w <= 0 || h < chartMinHeight || len(c.data) == 0 {
+		return
+	}
+	l := c.cache
+	if l == nil || l.w != w || l.h != h {
+		l = c.layout(w, h)
+		c.cache = l
+	}
+	if l.plotW <= 0 {
+		return
 	}
 
-	base := fmt.Sprintf("%*s ", gutter-2, baseline)
-	tview.Print(screen, base, x, y+plotRows, gutter, tview.AlignLeft, muted)
-	tview.Print(screen, "└"+strings.Repeat("─", plotW-1), x+gutter-1, y+plotRows, plotW, tview.AlignLeft, muted)
-	if caption != "" {
-		tview.Print(screen, caption, x+gutter, y+plotRows+1, plotW, tview.AlignLeft, muted)
+	muted, gutter, plotW := activeTheme.Muted, l.gutter, l.plotW
+	for r, line := range l.rows {
+		tview.Print(screen, l.labels[r], x, y+r, gutter, tview.AlignLeft, muted)
+		tview.Print(screen, "┤", x+gutter-1, y+r, 1, tview.AlignLeft, activeTheme.Accent)
+		tview.Print(screen, line, x+gutter, y+r, plotW, tview.AlignLeft, c.color)
+	}
+
+	plotRows := h - 2
+	tview.Print(screen, l.base, x, y+plotRows, gutter, tview.AlignLeft, muted)
+	tview.Print(screen, l.axisLine, x+gutter-1, y+plotRows, plotW, tview.AlignLeft, muted)
+	if l.caption != "" {
+		tview.Print(screen, l.caption, x+gutter, y+plotRows+1, plotW, tview.AlignLeft, muted)
 	}
 }

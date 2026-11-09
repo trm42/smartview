@@ -252,3 +252,24 @@ type SATAPhyCounter struct {
 	Name  string `json:"name"`
 	Value int64  `json:"value"`
 }
+
+// logHoursWrap is the modulus of the 16-bit lifetime-hours stamp ATA logs carry.
+const logHoursWrap = 1 << 16
+
+// LogEventHours lifts a log's 16-bit lifetime-hours stamp to the drive's real
+// age at the event; without a power-on reading the stamp stands.
+func (r *Report) LogEventHours(stamp int) int {
+	now, ok := r.PowerOnHours()
+	if !ok {
+		return stamp
+	}
+	return unwrapLogHours(stamp, now)
+}
+
+// unwrapLogHours lifts a wrapped 16-bit log stamp to the latest hour at or before now.
+func unwrapLogHours(hours, now int) int {
+	if hours < 0 || hours >= logHoursWrap || now < logHoursWrap {
+		return hours
+	}
+	return hours + (now-hours)/logHoursWrap*logHoursWrap
+}

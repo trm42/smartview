@@ -200,3 +200,43 @@ func (d *detail) selectTabID(id string) bool {
 	}
 	return false
 }
+
+// refreshRecorder is a tab view that records the reports it is refreshed with.
+type refreshRecorder struct {
+	tabView
+	got []*smart.Report
+}
+
+func (v *refreshRecorder) refresh(r *smart.Report, _ []float64) { v.got = append(v.got, r) }
+
+// TestPollRefreshesOnlyTheVisibleTab: a background tab catches up when opened, not on every poll.
+func TestPollRefreshesOnlyTheVisibleTab(t *testing.T) {
+	d := newDetail()
+	d.update(fixtureReport(t, "smart-sda-errors.json"), nil)
+	rec := &refreshRecorder{tabView: d.views["logs"]}
+	d.views["logs"] = rec
+
+	second := fixtureReport(t, "smart-sda-errors.json")
+	d.update(second, nil)
+	if len(rec.got) != 0 {
+		t.Fatalf("hidden logs tab refreshed %d times by a poll, want 0", len(rec.got))
+	}
+	if !d.selectTabID("logs") {
+		t.Fatal("logs tab is not available on this fixture")
+	}
+	if len(rec.got) != 1 || rec.got[0] != second {
+		t.Fatalf("opening logs refreshed it %d times, want once with the latest report", len(rec.got))
+	}
+	// Re-selecting an up-to-date tab does not refresh it again.
+	d.selectTabID("overview")
+	d.selectTabID("logs")
+	if len(rec.got) != 1 {
+		t.Errorf("an up-to-date tab refreshed again on reopening: %d calls", len(rec.got))
+	}
+	// The visible tab follows every poll.
+	third := fixtureReport(t, "smart-sda-errors.json")
+	d.update(third, nil)
+	if len(rec.got) != 2 || rec.got[1] != third {
+		t.Errorf("visible logs tab refreshed %d times after a poll, want a second call with the latest report", len(rec.got))
+	}
+}

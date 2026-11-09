@@ -202,10 +202,8 @@ func writeATAErrorEntries(b *strings.Builder, r *smart.Report, table []smart.ATA
 // driveAge renders the drive's age at an event and how long ago it was; the
 // elapsed figure is omitted, not guessed, when current hours are unreported.
 func driveAge(r *smart.Report, hours int) string {
+	hours = r.LogEventHours(hours)
 	now, ok := r.PowerOnHours()
-	if ok {
-		hours = unwrapLogHours(hours, now)
-	}
 	if !ok || now < hours {
 		return fmt.Sprintf("at %s", humanDuration(hours))
 	}
@@ -214,17 +212,6 @@ func driveAge(r *smart.Report, hours int) string {
 		return fmt.Sprintf("at %s · %d h ago", humanDuration(hours), ago)
 	}
 	return fmt.Sprintf("at %s · %s ago", humanDuration(hours), humanDuration(ago))
-}
-
-// logHoursWrap is the modulus of the 16-bit lifetime-hours stamp ATA logs carry.
-const logHoursWrap = 1 << 16
-
-// unwrapLogHours lifts a wrapped 16-bit log stamp to the latest hour at or before now.
-func unwrapLogHours(hours, now int) int {
-	if hours < 0 || hours >= logHoursWrap || now < logHoursWrap {
-		return hours
-	}
-	return hours + (now-hours)/logHoursWrap*logHoursWrap
 }
 
 // tidyErrorDescription drops smartctl's "Error: " prefix and keeps only the
@@ -260,10 +247,10 @@ func writePendingDefects(b *strings.Builder, d *smart.ATAPendingDefects) {
 func writeSelfTestSummary(b *strings.Builder, r *smart.Report, tbl []smart.ATASelfTestEntry) {
 	failed, passed := 0, 0
 	for _, e := range tbl {
-		switch selfTestOutcome(e.Status.String) {
-		case testFailed:
+		switch smart.SelfTestOutcome(e.Status.String) {
+		case smart.SelfTestFailed:
 			failed++
-		case testPassed:
+		case smart.SelfTestPassed:
 			passed++
 		}
 	}
@@ -313,45 +300,12 @@ func writeSelfTestLog(b *strings.Builder, r *smart.Report) {
 	}
 }
 
-// testOutcome classifies a drive-reported self-test result string.
-type testOutcome int
-
-const (
-	// testNeutral is a run that says nothing about the drive: in progress, or stopped by the host.
-	testNeutral testOutcome = iota
-	testPassed
-	testFailed
-)
-
-// selfTestOutcome is the keyword test shared with colorResult; "without error"
-// is checked before "error", and "Completed" alone is not a pass.
-func selfTestOutcome(s string) testOutcome {
-	low := strings.ToLower(s)
-	if strings.Contains(low, "without error") {
-		return testPassed
-	}
-	for _, kw := range []string{"fail", "error", "fatal", "damage"} {
-		if strings.Contains(low, kw) {
-			return testFailed
-		}
-	}
-	for _, kw := range []string{"in progress", "aborted", "interrupted"} {
-		if strings.Contains(low, kw) {
-			return testNeutral
-		}
-	}
-	if strings.Contains(low, "completed") {
-		return testPassed
-	}
-	return testNeutral
-}
-
 // colorResult tints a self-test outcome by keyword on the original string and escapes the rendered copy; a pass is muted, not green.
 func colorResult(s string) string {
-	switch selfTestOutcome(s) {
-	case testPassed:
+	switch smart.SelfTestOutcome(s) {
+	case smart.SelfTestPassed:
 		return mutedTag() + esc(s) + "[-]"
-	case testFailed:
+	case smart.SelfTestFailed:
 		return failingTag() + esc(s) + "[-]"
 	default:
 		return esc(s)

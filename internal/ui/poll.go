@@ -38,14 +38,16 @@ func (a *App) pollLoop(ctx context.Context, interval time.Duration) {
 type pollResult struct {
 	rep     *smart.Report
 	standby bool
-	failed  bool
 }
+
+// failed reports a read that produced nothing, not even a standby envelope.
+func (p pollResult) failed() bool { return p.rep == nil && !p.standby }
 
 // outcome classifies one fetch; a nil report is a failed read.
 func outcome(rep *smart.Report) pollResult {
 	switch {
 	case rep == nil:
-		return pollResult{failed: true}
+		return pollResult{}
 	case rep.InStandby():
 		return pollResult{standby: true}
 	}
@@ -126,7 +128,7 @@ func (a *App) applyResults(results map[string]pollResult) {
 	for name, res := range results {
 		prev := a.reports[name]
 		hadReading := prev != nil && prev.HasHealth()
-		if res.failed {
+		if res.failed() {
 			// A cached reading becomes the stale one; without one, the asleep mark is all the row has.
 			if hadReading {
 				a.asleep[name], a.unreadable[name] = false, true
