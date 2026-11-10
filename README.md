@@ -265,11 +265,37 @@ sudo smartctl -j -x /dev/sda > smart-mydrive.json
 sudo smartctl -l farm -j /dev/sda > smart-mydrive-farm.json   # Seagate FARM
 ```
 
-**Redact before sharing.** A report carries the drive's `serial_number` and
-`wwn`, and the tracker is public; replace them the way the committed fixtures
-do (`EXAMPLE1`, `wwn.id` → `305419896`). If you send a FARM log too, redact its
-serial in `seagate_farm_log.page_1_drive_information.serial_number` to the
-*same* placeholder, or the two files won't pair up.
+**Redact before sharing.** The tracker is public, and a report carries
+identifiers unique to your physical drive — enough to tie dumps to one disk
+or look it up with the vendor. Replace each with the placeholder the committed
+fixtures use (a test fails on any fixture that doesn't):
+
+| Field | Found in | Placeholder |
+| --- | --- | --- |
+| `serial_number` | every report, and FARM's `page_1_drive_information` | `EXAMPLE1` — the *same* in both files, or they won't pair up |
+| `wwn.id` | ATA | `305419896` |
+| `nvme_namespaces[].eui64.ext_id` | NVMe | `305419896` |
+| `world_wide_name` | FARM's `page_1_drive_information` | `"0x5000c50012345678"` |
+| `nguid`, `logical_unit_id`, `sas_address`, `attached_sas_address` | some NVMe and SAS drives | `"0x0"` |
+
+This `jq` command applies all of them, whatever the drive type; pass a different
+`EXAMPLE` serial for each drive you send:
+
+```sh
+jq --arg s EXAMPLE1 'walk(if type == "object" then with_entries(
+    if   .key == "serial_number"   then .value = $s
+    elif .key == "world_wide_name" then .value = "0x5000c50012345678"
+    elif .key == "wwn"   and (.value | type) == "object" then .value.id = 305419896
+    elif .key == "eui64" and (.value | type) == "object" then .value.ext_id = 305419896
+    elif .key | IN("nguid", "logical_unit_id", "sas_address", "attached_sas_address")
+                                   then .value = "0x0"
+    else . end) else . end)' smart-mydrive.json > smart-mydrive-redacted.json
+```
+
+Then skim what's left with
+`grep -inE 'serial|wwn|world_wide|eui|guid|unit_id|sas_addr' smart-mydrive-redacted.json`.
+Two fields are optional to scrub: `local_time` (when you captured it, and your
+timezone) and `smartctl.platform_info` (your kernel version).
 
 Then open an issue with the JSON attached, or a PR dropping it into
 `internal/smart/testdata/` as `smart-<something>.json`, where it becomes a

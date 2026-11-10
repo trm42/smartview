@@ -683,7 +683,8 @@ cross-protocol accessors against the same fixtures, pinning which source each
 drive falls through to (the Seagate reads writes from Device Statistics, the
 Samsung from attribute 241 and is therefore approximate) and that absent
 readings stay absent. Capture new ones with
-`smartctl -j -x <dev> > internal/smart/testdata/<name>.json`.
+`smartctl -j -x <dev> > internal/smart/testdata/<name>.json`, then redact them as README's "Contributing drive data"
+says — `TestFixturesRedacted` fails on any drive identifier left in.
 
 `internal/ui` is tested too, in three patterns worth copying rather than
 inventing a fourth. `layout_test.go` runs the whole `App` headlessly on a

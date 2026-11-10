@@ -49,7 +49,7 @@
     },
     "page_1_drive_information": {
       "serial_number": "EXAMPLE1",
-      "world_wide_name": "0x5000c500e8e16db5",
+      "world_wide_name": "0x5000c50012345678",
       "device_interface": "SATA",
       "device_capacity_in_sectors": 42970644480,
       "physical_sector_size": 4096,
