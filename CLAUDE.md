@@ -64,8 +64,8 @@ standby UI is drivable here even though `-n` never runs in fixture mode; the
 limitation is that the drive is asleep regardless of the policy and `R` cannot
 wake it.
 `--fixtures DIR` loads every `*.json` in DIR as drive data — the committed
-`internal/smart/testdata/` fixtures cover ATA, NVMe, sparse Apple NVMe, and a
-Seagate FARM log. Fixture mode **bypasses the smartctl preflight** entirely, so
+`internal/smart/testdata/` fixtures cover ATA SSDs and HDDs, NVMe, sparse Apple
+NVMe, and two Seagate FARM logs. Fixture mode **bypasses the smartctl preflight** entirely, so
 smartmontools need not be installed. Drive the resulting TUI with `expect` under
 a pty (`sleep`, `send` keys, `send "q"` to quit), exactly as above. Every
 captured fixture has an empty error log, so only the hand-crafted ones exercise
@@ -78,13 +78,14 @@ hint (`rebuild with: go build -tags dev`).
 
 ## Architecture
 
-Three packages with a hard one-way boundary:
+Three app packages with a hard one-way boundary, plus fixture tooling:
 
 ```
 internal/config   <- imports nothing of ours (stdlib + BurntSushi/toml)
 internal/smart    <- no internal imports, no tview   (the data layer)
 internal/ui       -> internal/smart, internal/config (the presentation layer)
 main              -> all three
+internal/redact   <- stdlib only; used by cmd/redact-fixture (fixture tooling)
 ```
 
 **`internal/smart` never learns that a config file exists.** The one setting it
@@ -665,12 +666,14 @@ goroutine (`setNarrow` in app.go is the pattern).
 
 ## Tests
 
-`internal/smart/smart_test.go` parses real captured fixtures in
-`internal/smart/testdata/` (WD SN770, OEM SN730, Samsung 990 PRO and SK Hynix NVMe, Seagate and WD
-Ultrastar HDDs, Samsung 850 EVO and 860 QVO SSDs, sparse Apple NVMe, and two
-Seagate FARM logs — paired to their drive by serial, so `smart-sda` and
-`smart-st4000dm004` show a FARM tab and the hand-crafted Seagate copies do not)
-plus hand-crafted variants: `smart-{sda,nvme}-errors.json`, copies of
+`internal/smart/testdata/` holds real captured fixtures (WD SN770, OEM SN730,
+Samsung 990 PRO and SK Hynix NVMe; Seagate Exos, Seagate ST4000DM004 and WD
+Ultrastar HDDs; Samsung 850 EVO and 860 QVO SSDs; sparse Apple NVMe; and two
+Seagate FARM logs). `smart_test.go` parses the original set in detail;
+`metrics_test.go` and `logs_gate_test.go` cover every fixture, the latter
+failing on one it does not list. A FARM log pairs with its drive by serial in
+the dev loader, and a hand-crafted copy serialled `<serial>-TAG` shares its
+source's log (`TestFixtureFarmPairsBySerial`), plus hand-crafted variants: `smart-{sda,nvme}-errors.json`, copies of
 healthy drives under unique device names, populate the otherwise-empty error
 tables (the ATA one grades Caution from its error
 log alone, every attribute in range), and `smart-sdc-failing.json` is the only
@@ -683,11 +686,17 @@ permission-denied envelope (no `smart_status`), the one fixture that renders
 the `?` No-data state, and `smart-sdd-standby.json` is the parked-drive
 envelope. `metrics_test.go` covers the
 cross-protocol accessors against the same fixtures, pinning which source each
-drive falls through to (the Seagate reads writes from Device Statistics, the
-Samsung from attribute 241 and is therefore approximate) and that absent
+drive falls through to (every ATA drive with Device Statistics reads writes
+from there; the 850 EVO, `smart-sdb.json`, has none and reads attribute 241,
+so it is the approximate case) and that absent
 readings stay absent. Capture new ones with
-`smartctl -j -x <dev> > internal/smart/testdata/<name>.json`, then redact them as README's "Contributing drive data"
-says — `TestFixturesRedacted` fails on any drive identifier left in.
+`smartctl -j -x <dev> > internal/smart/testdata/<name>.json`, then
+`go run ./cmd/redact-fixture -serial EXAMPLE-<MODEL> <file>...`. `internal/redact`
+owns the one identifier table both the tool and `TestFixturesRedacted` use, and
+`TestRedactIsLossless` pins that re-redacting a committed fixture is a byte-for-byte
+no-op — so a fixture stays in smartctl's own two-space layout, and the tool
+never rounds a 64-bit raw value the way jq 1.6 does. `TestFixtureSerialsPair`
+requires a unique serial per drive and one report per FARM log.
 
 `internal/ui` is tested too, in three patterns worth copying rather than
 inventing a fourth. `layout_test.go` runs the whole `App` headlessly on a
