@@ -1,12 +1,23 @@
 {
-  "json_format_version": [1, 0],
+  "json_format_version": [
+    1,
+    0
+  ],
   "smartctl": {
-    "version": [7, 5],
+    "version": [
+      7,
+      5
+    ],
     "pre_release": false,
     "svn_revision": "5714",
     "platform_info": "x86_64-linux",
     "build_info": "(local build)",
-    "argv": ["smartctl", "-j", "-x", "/dev/sde"],
+    "argv": [
+      "smartctl",
+      "-j",
+      "-x",
+      "/dev/sde"
+    ],
     "messages": [
       {
         "string": "Smartctl open device: /dev/sde failed: Permission denied",

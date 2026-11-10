@@ -228,8 +228,8 @@ go build -tags dev -o smartview .
 ./smartview --fixtures internal/smart/testdata
 ```
 
-The committed fixtures cover ATA, NVMe, a sparse Apple NVMe and a Seagate FARM
-log. Fixture mode skips the `smartctl` preflight, so smartmontools needn't be
+The committed fixtures cover ATA SSDs and HDDs, NVMe, a sparse Apple NVMe and
+two Seagate FARM logs. Fixture mode skips the `smartctl` preflight, so smartmontools needn't be
 installed. A release build accepts `--fixtures` but refuses to run with it.
 
 ## How it works
@@ -258,44 +258,43 @@ unfamiliar vendor — beats a bug report describing it, because it can be
 replayed here without the hardware.
 
 Find the device name with `sudo smartctl --scan-open` (don't invent one), then
-capture the same report smartview reads on every poll:
+capture the same report smartview reads on every poll. Use the plain `/dev/sdX`
+or `/dev/nvmeN` name, not a `/dev/disk/by-id/` path, which spells out the serial:
 
 ```sh
 sudo smartctl -j -x /dev/sda > smart-mydrive.json
 sudo smartctl -l farm -j /dev/sda > smart-mydrive-farm.json   # Seagate FARM
+sudo chown "$USER" smart-mydrive*.json
 ```
 
 **Redact before sharing.** The tracker is public, and a report carries
 identifiers unique to your physical drive — enough to tie dumps to one disk
-or look it up with the vendor. Replace each with the placeholder the committed
-fixtures use (a test fails on any fixture that doesn't):
+or look it up with the vendor. From a clone of this repository, replace them
+with the placeholders the committed fixtures use:
+
+```sh
+go run ./cmd/redact-fixture -serial EXAMPLE-MYMODEL smart-mydrive.json smart-mydrive-farm.json
+```
+
+It rewrites the files in place and refuses to write one it could not clean.
+Pick a serial nobody else's fixture uses — `EXAMPLE-` plus your model number
+is a good choice — and give a drive and its FARM log the *same* one, since
+that is how they pair. What it replaces:
 
 | Field | Found in | Placeholder |
 | --- | --- | --- |
-| `serial_number` | every report, and FARM's `page_1_drive_information` | `EXAMPLE1` — the *same* in both files, or they won't pair up |
+| `serial_number` | every report, and FARM's `page_1_drive_information` | the `-serial` you pass |
 | `wwn.id` | ATA | `305419896` |
 | `nvme_namespaces[].eui64.ext_id` | NVMe | `305419896` |
 | `world_wide_name` | FARM's `page_1_drive_information` | `"0x5000c50012345678"` |
 | `nguid`, `logical_unit_id`, `sas_address`, `attached_sas_address` | some NVMe and SAS drives | `"0x0"` |
 
-This `jq` command applies all of them, whatever the drive type; pass a different
-`EXAMPLE` serial for each drive you send:
-
-```sh
-jq --arg s EXAMPLE1 'walk(if type == "object" then with_entries(
-    if   .key == "serial_number"   then .value = $s
-    elif .key == "world_wide_name" then .value = "0x5000c50012345678"
-    elif .key == "wwn"   and (.value | type) == "object" then .value.id = 305419896
-    elif .key == "eui64" and (.value | type) == "object" then .value.ext_id = 305419896
-    elif .key | IN("nguid", "logical_unit_id", "sas_address", "attached_sas_address")
-                                   then .value = "0x0"
-    else . end) else . end)' smart-mydrive.json > smart-mydrive-redacted.json
-```
-
-Then skim what's left with
-`grep -inE 'serial|wwn|world_wide|eui|guid|unit_id|sas_addr' smart-mydrive-redacted.json`.
-Two fields are optional to scrub: `local_time` (when you captured it, and your
-timezone) and `smartctl.platform_info` (your kernel version).
+Each original is also replaced wherever else it appears, such as a by-id path
+in `device.name` or `smartctl.argv`, and every other value is kept byte for
+byte. `TestFixturesRedacted` (`go test ./internal/redact/`) fails on any
+fixture that still carries one. Two fields are optional to scrub by hand:
+`local_time` (when you captured it, and your timezone) and
+`smartctl.platform_info` (your kernel version).
 
 Then open an issue with the JSON attached, or a PR dropping it into
 `internal/smart/testdata/` as `smart-<something>.json`, where it becomes a
