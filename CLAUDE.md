@@ -666,7 +666,7 @@ goroutine (`setNarrow` in app.go is the pattern).
 ## Tests
 
 `internal/smart/smart_test.go` parses real captured fixtures in
-`internal/smart/testdata/` (WD NVMe, Seagate HDD, Samsung SSD, sparse Apple
+`internal/smart/testdata/` (WD SN770 and OEM SN730 NVMe, Seagate HDD, Samsung SSD, sparse Apple
 NVMe) plus hand-crafted variants: `smart-{sda,nvme}-errors.json`, copies of
 healthy drives under unique device names, populate the otherwise-empty error
 tables (the ATA one grades Caution from its error
