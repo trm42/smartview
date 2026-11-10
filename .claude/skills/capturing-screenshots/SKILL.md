@@ -6,7 +6,7 @@ description: Use when smartview's docs/images PNGs are stale, a UI change needs 
 # Capturing smartview screenshots
 
 Renders `docs/images/*.png` from committed fixtures with [vhs](https://github.com/charmbracelet/vhs).
-No real drives, no `smartctl`, no `sudo`.
+No real drives, no `smartctl`, no `sudo`. Needs `vhs`, `ttyd` and ImageMagick.
 
 ## Run it
 
@@ -31,10 +31,11 @@ they are not stable across drives. Every tape therefore picks its drive first,
 by counting `Down` from the top of the list, then presses the number that is
 correct *for that drive*.
 
-The list is sorted by fixture filename, so **adding a fixture can shift every
-count below** — re-check this table and the `Down@300ms N` lines whenever
-`internal/smart/testdata/` gains a file that sorts before the one a tape
-targets. FARM-only files (`*-farm*.json`) are not drives and take no row.
+The list is sorted by fixture filename. The tapes therefore run on a **pinned
+set** (`PINNED` in `capture.sh`, copied to `/tmp/smartview-capture-fixtures`),
+so a contributed fixture never shifts them. Adding a file to `PINNED` can: re-check
+this table and every `Down@300ms N` line when you do. FARM-only files
+(`*-farm*.json`) are not drives and take no row.
 
 | ↓ | Device | Fixture |
 |---|---|---|

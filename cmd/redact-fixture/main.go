@@ -3,7 +3,7 @@
 // Command redact-fixture replaces the drive identifiers in smartctl JSON dumps,
 // in place, with the placeholders smartview's committed fixtures use.
 //
-//	go run ./cmd/redact-fixture -serial EXAMPLE-ST4000 smart-st4000.json smart-st4000-farm.json
+//	go run ./cmd/redact-fixture -serial EXAMPLE-ST4000 -device /dev/sdi smart-st4000.json smart-st4000-farm.json
 package main
 
 import (
@@ -16,8 +16,9 @@ import (
 
 func main() {
 	serial := flag.String("serial", "", "placeholder serial for this drive, e.g. EXAMPLE-ST4000 (required; pass the same one for its FARM log)")
+	device := flag.String("device", "", "optional new device.name, so the fixture does not collide with one already committed")
 	flag.Usage = func() {
-		_, _ = fmt.Fprintln(flag.CommandLine.Output(), "usage: redact-fixture -serial EXAMPLE-<MODEL> FILE.json...")
+		_, _ = fmt.Fprintln(flag.CommandLine.Output(), "usage: redact-fixture -serial EXAMPLE-<MODEL> [-device /dev/sdX] FILE.json...")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -27,7 +28,7 @@ func main() {
 	}
 	failed := false
 	for _, path := range flag.Args() {
-		if err := redactFile(path, *serial); err != nil {
+		if err := redactFile(path, *serial, *device); err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", path, err)
 			failed = true
 		}
@@ -37,7 +38,7 @@ func main() {
 	}
 }
 
-func redactFile(path, serial string) error {
+func redactFile(path, serial, device string) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		return err
@@ -49,6 +50,11 @@ func redactFile(path, serial string) error {
 	out, err := redact.Redact(data, serial)
 	if err != nil {
 		return err
+	}
+	if device != "" {
+		if out, err = redact.Rename(out, device); err != nil {
+			return err
+		}
 	}
 	findings, err := redact.Check(out)
 	if err != nil {
