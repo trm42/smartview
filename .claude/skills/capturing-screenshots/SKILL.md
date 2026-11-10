@@ -31,31 +31,49 @@ they are not stable across drives. Every tape therefore picks its drive first,
 by counting `Down` from the top of the list, then presses the number that is
 correct *for that drive*.
 
-The list is sorted by fixture filename, so the order is fixed:
+The list is sorted by fixture filename, so **adding a fixture can shift every
+count below** — re-check this table and the `Down@300ms N` lines whenever
+`internal/smart/testdata/` gains a file that sorts before the one a tape
+targets. FARM-only files (`*-farm*.json`) are not drives and take no row.
 
 | ↓ | Device | Fixture |
 |---|---|---|
-| 0 | Apple internal | `smart-apple-nvme.json` |
-| 1 | `/dev/nvme9` | `smart-nvme-errors.json` |
-| 2 | `/dev/nvme0` | `smart-nvme.json` |
-| 3 | `/dev/sdf` | `smart-sda-errors.json` |
-| 4 | `/dev/sda` | `smart-sda.json` |
-| 5 | `/dev/sdb` | `smart-sdb.json` |
-| 6 | `/dev/sdc` | `smart-sdc-failing.json` |
-| 7 | `/dev/sdd` | `smart-sdd-standby.json` |
-| 8 | `/dev/sde` | `smart-sde-nodata.json` |
+| 0 | `/dev/sdg` | `smart-860qvo.json` |
+| 1 | `/dev/nvme2` | `smart-990pro.json` |
+| 2 | Apple internal | `smart-apple-nvme.json` |
+| 3 | `/dev/nvme3` | `smart-hfs512.json` |
+| 4 | `/dev/nvme9` | `smart-nvme-errors.json` |
+| 5 | `/dev/nvme0` | `smart-nvme.json` |
+| 6 | `/dev/sdf` | `smart-sda-errors.json` |
+| 7 | `/dev/sda` | `smart-sda.json` |
+| 8 | `/dev/sdb` | `smart-sdb.json` |
+| 9 | `/dev/sdc` | `smart-sdc-failing.json` |
+| 10 | `/dev/sdd` | `smart-sdd-standby.json` |
+| 11 | `/dev/sde` | `smart-sde-nodata.json` |
+| 12 | `/dev/nvme1` | `smart-sn730.json` |
+| 13 | `/dev/sdi` | `smart-st4000dm004.json` |
+| 14 | `/dev/sdh` | `smart-wuh721414.json` |
+
+FARM logs pair with their drive by serial (`fixtureFarm`), and a hand-crafted
+copy serialled `<serial>-TAG` shares its source's log, so `/dev/sda`, `/dev/sdf`
+and `/dev/sdc` all carry a FARM tab — which is what keeps Logs at `6` on
+`/dev/sdf`. `TestFixtureFarmPairsBySerial` pins that pairing.
 
 | Image | Drive | Key | Why that drive |
 |---|---|---|---|
 | overview | `/dev/sda` | `1` | ATA seeds the temperature sparkline instantly; NVMe would show an empty panel |
 | attributes | `/dev/sda` | `2` | full 22-row ATA table |
 | statistics | `/dev/sda` | `3` | Device Statistics pages |
-| farm | `/dev/sda` | `4` | the Seagate family is the only one with a FARM log |
+| farm | `/dev/sda` | `4` | a Seagate whose FARM log pairs with it by serial |
 | tests | `/dev/sda` | `5` | supports self-tests |
 | logs | `/dev/sdf` | `6` | decoded ATA error-log entries on a drive that only grades Caution (`/dev/sdc` has them too, but is failing) |
 | fleet | any | `c` `2` | Health & errors shows Failing/Caution/Healthy and the `—` vs `0` distinction |
 
 ## Changing the look
+
+Every tape launches `./smartview --theme neon`: the README images are shot in
+the **neon** theme, always. Keep the flag on every tape's command line — the
+flag also beats whatever theme the capturing user's own `config.toml` sets.
 
 Geometry lives in `tapes/_common.tape`, sourced by all seven so they cannot
 drift apart. Edit it and re-render **all** of them; never change one tape's
