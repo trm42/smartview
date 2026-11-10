@@ -696,7 +696,12 @@ owns the one identifier table both the tool and `TestFixturesRedacted` use, and
 `TestRedactIsLossless` pins that re-redacting a committed fixture is a byte-for-byte
 no-op — so a fixture stays in smartctl's own two-space layout, and the tool
 never rounds a 64-bit raw value the way jq 1.6 does. `TestFixtureSerialsPair`
-requires a unique serial per drive and one report per FARM log.
+requires a unique serial and `device.name` per drive and one report per FARM
+log. README's copy-paste AI-agent prompt drives exactly these flags
+(`-serial`, `-device`) and the failure text of `TestLogsTabAvailabilityPerFixture`,
+so change them together. The screenshot tapes run on a pinned copy of the set
+(`PINNED` in the capturing-screenshots skill's `capture.sh`), so a contributed
+fixture does not shift their drive counts.
 
 `internal/ui` is tested too, in three patterns worth copying rather than
 inventing a fourth. `layout_test.go` runs the whole `App` headlessly on a

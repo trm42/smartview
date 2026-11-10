@@ -257,6 +257,75 @@ drive that renders wrong — a missing tab, a blank value, a wrong verdict, an
 unfamiliar vendor — beats a bug report describing it, because it can be
 replayed here without the hardware.
 
+### With an AI coding agent
+
+If you use an AI coding agent that can run commands on your machine (Claude
+Code, Codex CLI, Gemini CLI, Cursor, Aider…), paste this prompt into it. The agent
+captures, redacts and checks the dumps, shows you the result, and opens the PR
+only once you approve. Without GitHub CLI it leaves you files to attach to an
+issue instead. It only reads from your drives, and it asks you to type any
+`sudo` command it cannot run itself.
+
+```text
+Help me contribute my drives' SMART data to smartview
+(https://github.com/trm42/smartview) as test fixtures, following the README's
+"Contributing drive data" section. Rules for the whole task:
+
+- Only ever run these smartctl forms: `smartctl --scan-open`,
+  `smartctl -i <dev>`, `smartctl -j -x <dev>`, `smartctl -l farm -j <dev>`.
+  Never pass any other smartctl option (no -t, -s, -o, -S, -X): nothing may
+  change a drive's settings or start a self-test.
+- Never upload, push, paste or attach a file until it has been redacted and I
+  have approved it. Never commit to or push to trm42/smartview directly.
+- If a command needs sudo and you cannot enter a password, stop and give me the
+  exact command to run myself, then continue once I say it is done.
+- Do not install software. If something is missing, tell me what and how.
+
+Steps:
+
+1. Check that git, smartctl (smartmontools 7.0 or newer) and Go are present
+   (Go must be at least the version on the `go` line of go.mod). Check whether
+   `gh auth status` succeeds; that decides step 9.
+2. Get the repository. With gh: `gh repo fork trm42/smartview --clone`.
+   Otherwise: `git clone https://github.com/trm42/smartview`. cd into it and
+   create a branch named `fixtures/<short-description>`.
+3. Run `sudo smartctl --scan-open`, list each drive with its model (from
+   `sudo smartctl -i <dev>`), and ask me which to include.
+   Skip any whose output says SMART is unavailable.
+4. For each chosen drive, choose a short lowercase name from its model number
+   (for example `st4000dm004` or `990pro`) that no file in
+   internal/smart/testdata/ already starts with as `smart-<name>`. Capture with
+   the plain name from step 3, never a /dev/disk/by-id path:
+     sudo smartctl -j -x <dev> > internal/smart/testdata/smart-<name>.json
+   For a Seagate drive, also:
+     sudo smartctl -l farm -j <dev> > internal/smart/testdata/smart-<name>-farm.json
+   and delete that file if it has no "seagate_farm_log" key.
+5. Pick a device name that no existing fixture's `"name"` under `"device"`
+   uses (for example /dev/sdq, or /dev/nvme7 for NVMe), and redact each
+   drive's files in one call, using the same serial for a drive and its FARM log:
+     go run ./cmd/redact-fixture -serial EXAMPLE-<NAME IN UPPER CASE> \
+       -device <unused device name> internal/smart/testdata/smart-<name>*.json
+6. Run `go test ./...` and `go test -tags dev ./...`. A failing
+   TestLogsTabAvailabilityPerFixture names the line to add to the table in
+   internal/ui/logs_gate_test.go; add it. Fix any failure caused by the new
+   files. If a failure looks like a smartview bug, do not change smartview's
+   code: describe it to me.
+7. Run `go build -tags dev -o smartview .` and tell me to look at my drives
+   with `./smartview --fixtures internal/smart/testdata`. Ask me whether
+   anything looks wrong or missing, and note my answer for the PR.
+8. Show me, for every new file, its serial_number, wwn, eui64 and device
+   values, and `git status`. Wait for my explicit approval.
+9. With gh: commit as "test: add <model> fixture(s)", push the branch to my
+   fork, and open a PR against trm42/smartview main with
+   `gh pr create --repo trm42/smartview`. In the description, list each drive
+   (model, firmware, interface), my OS and smartctl version, and anything I said
+   in step 7. Without gh: tell me to open an issue at
+   https://github.com/trm42/smartview/issues/new with the new files attached,
+   and give me that same description to paste.
+```
+
+### By hand
+
 Find the device name with `sudo smartctl --scan-open` (don't invent one), then
 capture the same report smartview reads on every poll. Use the plain `/dev/sdX`
 or `/dev/nvmeN` name, not a `/dev/disk/by-id/` path, which spells out the serial:
@@ -264,7 +333,6 @@ or `/dev/nvmeN` name, not a `/dev/disk/by-id/` path, which spells out the serial
 ```sh
 sudo smartctl -j -x /dev/sda > smart-mydrive.json
 sudo smartctl -l farm -j /dev/sda > smart-mydrive-farm.json   # Seagate FARM
-sudo chown "$USER" smart-mydrive*.json
 ```
 
 **Redact before sharing.** The tracker is public, and a report carries
@@ -273,7 +341,8 @@ or look it up with the vendor. From a clone of this repository, replace them
 with the placeholders the committed fixtures use:
 
 ```sh
-go run ./cmd/redact-fixture -serial EXAMPLE-MYMODEL smart-mydrive.json smart-mydrive-farm.json
+go run ./cmd/redact-fixture -serial EXAMPLE-MYMODEL -device /dev/sdq \
+  smart-mydrive.json smart-mydrive-farm.json
 ```
 
 It rewrites the files in place and refuses to write one it could not clean.
@@ -299,7 +368,10 @@ fixture that still carries one. Two fields are optional to scrub by hand:
 Then open an issue with the JSON attached, or a PR dropping it into
 `internal/smart/testdata/` as `smart-<something>.json`, where it becomes a
 fixture everyone can develop against. Reports are keyed by `device.name`, so
-give yours a name no existing fixture uses, and check it renders:
+`-device` gives yours a name no existing fixture uses (`TestFixtureSerialsPair`
+fails on a clash). A new fixture also needs a line in the table in
+`internal/ui/logs_gate_test.go`; the failing test names it. Then check it
+renders:
 
 ```sh
 go build -tags dev -o smartview .

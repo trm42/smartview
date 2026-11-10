@@ -74,15 +74,24 @@ func TestRedactIsLossless(t *testing.T) {
 	}
 }
 
-// Each drive has its own placeholder serial, and each FARM log pairs with exactly
-// one report: the dev loader matches them by serial.
+// Each drive has its own placeholder serial and device name, and each FARM log
+// pairs with exactly one report: the dev loader matches them by serial and keys
+// reports by device name.
 func TestFixtureSerialsPair(t *testing.T) {
 	reports := map[string]string{}
+	devices := map[string]string{}
 	var farms []fixture
 	for _, f := range loadFixtures(t) {
+		farmOnly := f.farm && !strings.Contains(string(f.data), `"model_name"`)
+		if name, _ := DeviceName(f.data); !farmOnly && name != "" {
+			if prev := devices[name]; prev != "" {
+				t.Errorf("%s and %s share device.name %q; pass redact-fixture an unused -device", prev, f.name, name)
+			}
+			devices[name] = f.name
+		}
 		switch {
 		case f.serial == "":
-		case f.farm && !strings.Contains(string(f.data), `"model_name"`):
+		case farmOnly:
 			farms = append(farms, f)
 		case reports[f.serial] != "":
 			t.Errorf("%s and %s share serial %q; give each drive its own placeholder", reports[f.serial], f.name, f.serial)
@@ -155,5 +164,31 @@ func TestRedactScrubsCopiesAndKeepsNumbers(t *testing.T) {
 func TestRedactRejectsARealLookingSerial(t *testing.T) {
 	if _, err := Redact([]byte(`{}`), "ZFN0ABCD"); err == nil {
 		t.Error("a placeholder without the EXAMPLE prefix was accepted")
+	}
+}
+
+func TestRenameRewritesTheDeviceEverywhere(t *testing.T) {
+	in := `{
+  "smartctl": {
+    "argv": [
+      "-j",
+      "-x",
+      "/dev/sda"
+    ]
+  },
+  "device": {
+    "name": "/dev/sda",
+    "info_name": "/dev/sda [SAT]"
+  },
+  "note": "/dev/sdab"
+}
+`
+	got, err := Rename([]byte(in), "/dev/sdq")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.NewReplacer(`"/dev/sda"`, `"/dev/sdq"`, `"/dev/sda [SAT]"`, `"/dev/sdq [SAT]"`).Replace(in)
+	if string(got) != want {
+		t.Errorf("Rename =\n%s\nwant\n%s", got, want)
 	}
 }

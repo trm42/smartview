@@ -66,11 +66,12 @@ func TestLogsTabAvailabilityPerFixture(t *testing.T) {
 	for _, p := range paths {
 		name := filepath.Base(p)
 		w, listed := want[name]
+		got := hasLogs(fixtureReport(t, name))
 		if !listed {
-			t.Errorf("%s: not listed here; add it with whether it has a Logs tab", name)
+			t.Errorf("%s: not listed; add %q: %v to the table if it should have a Logs tab", name, name, got)
 			continue
 		}
-		if got := hasLogs(fixtureReport(t, name)); got != w {
+		if got != w {
 			t.Errorf("%s: hasLogs = %v, want %v", name, got, w)
 		}
 	}

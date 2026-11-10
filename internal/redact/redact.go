@@ -72,6 +72,65 @@ func Check(data []byte) ([]Finding, error) {
 	return out, nil
 }
 
+// Rename sets the top-level device.name to name and rewrites the old name where
+// it opens another string, such as device.info_name or an smartctl.argv entry.
+func Rename(data []byte, name string) ([]byte, error) {
+	v, err := parse(data)
+	if err != nil {
+		return nil, err
+	}
+	root, _ := v.(object)
+	dev, _ := root.get("device").(object)
+	old, _ := dev.get("name").(string)
+	if old == "" {
+		return nil, errors.New("no device.name to rename")
+	}
+	r := func(s string) string {
+		if s == old || strings.HasPrefix(s, old+" ") {
+			return name + s[len(old):]
+		}
+		return s
+	}
+	var visit func(v any)
+	visit = func(v any) {
+		switch v := v.(type) {
+		case []any:
+			for i, e := range v {
+				if s, ok := e.(string); ok {
+					v[i] = r(s)
+				} else {
+					visit(e)
+				}
+			}
+		case object:
+			for i := range v {
+				if s, ok := v[i].Val.(string); ok {
+					v[i].Val = r(s)
+				} else {
+					visit(v[i].Val)
+				}
+			}
+		}
+	}
+	visit(v)
+	var b bytes.Buffer
+	encode(&b, v, "")
+	b.WriteByte('\n')
+	return b.Bytes(), nil
+}
+
+// DeviceName returns the top-level device.name, or "" when absent.
+func DeviceName(data []byte) (string, error) {
+	v, err := parse(data)
+	if err != nil {
+		return "", err
+	}
+	root, _ := v.(object)
+	dev, _ := root.get("device").(object)
+	s, _ := dev.get("name").(string)
+	return s, nil
+}
+
 // Serials returns every serial_number in data, in document order.
 func Serials(data []byte) ([]string, error) {
 	v, err := parse(data)
