@@ -35,6 +35,12 @@ func TestPowerMetrics(t *testing.T) {
 		{"smart-sdb.json", 48893, 206},
 		{"smart-nvme.json", 9361, 14},
 		{"smart-apple-nvme.json", 787, 238},
+		{"smart-860qvo.json", 8936, 3285},
+		{"smart-990pro.json", 1508, 1009},
+		{"smart-hfs512.json", 32394, 298},
+		{"smart-sn730.json", 8574, 302},
+		{"smart-st4000dm004.json", 12353, 3022},
+		{"smart-wuh721414.json", 9343, 2119},
 	}
 	for _, c := range cases {
 		r := parseFixture(t, c.fixture)
@@ -121,8 +127,8 @@ func TestWearFallbackSource(t *testing.T) {
 	}
 }
 
-// TestDataWritten pins each drive's source: the Seagate must prefer Device Statistics over
-// attribute 241, and the Samsung (no log) is the approximate case.
+// TestDataWritten pins each drive's source: an ATA drive with Device Statistics must prefer
+// them over attribute 241, and the 850 EVO (no such log) is the approximate case.
 func TestDataWritten(t *testing.T) {
 	for _, c := range []struct {
 		fixture string
@@ -134,6 +140,12 @@ func TestDataWritten(t *testing.T) {
 		{"smart-sdb.json", 15656703192 * 512, WriteSourceAttribute, true},
 		{"smart-nvme.json", 14879302 * 512 * 1000, WriteSourceNVMe, false},
 		{"smart-apple-nvme.json", 120469636 * 512 * 1000, WriteSourceNVMe, false},
+		{"smart-860qvo.json", 63735047641 * 512, WriteSourceDeviceStats, false},
+		{"smart-st4000dm004.json", 10274970554 * 512, WriteSourceDeviceStats, false},
+		{"smart-wuh721414.json", 29720043120 * 512, WriteSourceDeviceStats, false},
+		{"smart-990pro.json", 24781049 * 512 * 1000, WriteSourceNVMe, false},
+		{"smart-hfs512.json", 47490453 * 512 * 1000, WriteSourceNVMe, false},
+		{"smart-sn730.json", 77612568 * 512 * 1000, WriteSourceNVMe, false},
 	} {
 		w, ok := parseFixture(t, c.fixture).DataWritten()
 		if !ok {

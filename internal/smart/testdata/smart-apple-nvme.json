@@ -37,7 +37,7 @@
     "protocol": "NVMe"
   },
   "model_name": "APPLE SSD AP1024Z",
-  "serial_number": "0123456789abcdef",
+  "serial_number": "EXAMPLE-APPLE",
   "firmware_version": "2973.120",
   "nvme_pci_vendor": {
     "id": 4203,

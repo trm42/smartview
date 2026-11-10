@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 )
 
 // Dev-only fixture source: captured smartctl JSON stands in for shelling out.
@@ -122,22 +123,18 @@ func fixtureInfo(name string) (*Report, error) {
 	return nil, fmt.Errorf("no fixture report for device %q", name)
 }
 
-// fixtureFarm mirrors FarmLog's (nil, nil)-on-unsupported contract; a lone FARM
-// fixture attaches to any FARM-capable device, several match by serial.
+// fixtureFarm mirrors FarmLog's (nil, nil)-on-unsupported contract, pairing by
+// serial; a hand-crafted copy serialled "<serial>-TAG" shares its source's log.
 func fixtureFarm(name string) (*FARM, error) {
 	rep, ok := fixtureByName[name]
 	if !ok {
 		return nil, fmt.Errorf("no fixture report for device %q", name)
 	}
-	if !rep.SupportsFARM() || len(fixtureFarms) == 0 {
+	if !rep.SupportsFARM() {
 		return nil, nil
 	}
-
-	if len(fixtureFarms) == 1 {
-		return supportedFarm(fixtureFarms[0].farm), nil
-	}
 	for _, fe := range fixtureFarms {
-		if fe.serial != "" && fe.serial == rep.SerialNumber {
+		if fe.serial != "" && (rep.SerialNumber == fe.serial || strings.HasPrefix(rep.SerialNumber, fe.serial+"-")) {
 			return supportedFarm(fe.farm), nil
 		}
 	}

@@ -58,3 +58,31 @@ func TestFixtureStandbyDriveRendersAsleep(t *testing.T) {
 		t.Errorf("only %d drives render awake; the standby check is over-matching", awake)
 	}
 }
+
+// TestFixtureFarmPairsBySerial pins which fixture drives get a FARM log, so the
+// screenshot tapes' tab numbers stay put as fixtures are added.
+func TestFixtureFarmPairsBySerial(t *testing.T) {
+	if err := smart.UseFixtures("../smart/testdata"); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{ // device -> its FARM log's page-1 serial
+		"/dev/sda": "EXAMPLE1", "/dev/sdf": "EXAMPLE1", "/dev/sdc": "EXAMPLE1", "/dev/sdi": "EXAMPLE-ST4000",
+	}
+	devices, err := smart.Scan(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range devices {
+		farm, err := smart.FarmLog(t.Context(), d, smart.WakeDrive)
+		if err != nil {
+			t.Fatalf("%s: %v", d.Name, err)
+		}
+		var got string
+		if farm != nil {
+			got = farm.DriveInfo.Serial
+		}
+		if got != want[d.Name] {
+			t.Errorf("%s: FARM log serial %q, want %q", d.Name, got, want[d.Name])
+		}
+	}
+}

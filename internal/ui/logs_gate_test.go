@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/trm42/smartview/internal/smart"
@@ -37,10 +38,13 @@ func TestLogsTabGatedOnRenderedSmartData(t *testing.T) {
 	}
 }
 
-// Every committed fixture keeps the Logs tab it has content for.
+// Every committed fixture keeps the Logs tab it has content for; a new fixture must be listed.
 func TestLogsTabAvailabilityPerFixture(t *testing.T) {
 	want := map[string]bool{
+		"smart-860qvo.json":           true,
+		"smart-990pro.json":           true,
 		"smart-apple-nvme.json":       false,
+		"smart-hfs512.json":           true,
 		"smart-nvme-errors.json":      true,
 		"smart-nvme.json":             true,
 		"smart-sda-errors.json":       true,
@@ -50,8 +54,22 @@ func TestLogsTabAvailabilityPerFixture(t *testing.T) {
 		"smart-sdd-standby.json":      false,
 		"smart-sde-nodata.json":       false,
 		"smart-seagate-farm-log.json": false,
+		"smart-sn730.json":            true,
+		"smart-st4000dm004-farm.json": false,
+		"smart-st4000dm004.json":      true,
+		"smart-wuh721414.json":        true,
 	}
-	for name, w := range want {
+	paths, err := filepath.Glob(filepath.Join("..", "smart", "testdata", "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range paths {
+		name := filepath.Base(p)
+		w, listed := want[name]
+		if !listed {
+			t.Errorf("%s: not listed here; add it with whether it has a Logs tab", name)
+			continue
+		}
 		if got := hasLogs(fixtureReport(t, name)); got != w {
 			t.Errorf("%s: hasLogs = %v, want %v", name, got, w)
 		}

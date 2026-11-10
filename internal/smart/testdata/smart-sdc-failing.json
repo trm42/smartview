@@ -34,7 +34,7 @@
     "protocol": "ATA"
   },
   "model_name": "ST22000NT001-3LS101",
-  "serial_number": "EXAMPLE3-FAIL",
+  "serial_number": "EXAMPLE1-FAIL",
   "wwn": {
     "naa": 5,
     "oui": 3152,
