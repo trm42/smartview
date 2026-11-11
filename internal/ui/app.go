@@ -71,8 +71,9 @@ type App struct {
 	// startedTests is the self-test type smartview started per device; drives never report it. Aged out in observeSelfTest.
 	startedTests map[string]startedTest
 	// sharedModels marks model names more than one drive reports; rebuilt with the list.
-	sharedModels map[string]bool
-	inModal      bool
+	sharedModels  map[string]bool
+	inModal       bool
+	modalFromList bool // the list held focus when the modal opened
 	// pendingNotices wait for the open modal to close; pushModal would replace it.
 	pendingNotices []string
 	fleetMode      bool

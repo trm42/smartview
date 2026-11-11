@@ -161,6 +161,26 @@ func TestRedactScrubsCopiesAndKeepsNumbers(t *testing.T) {
 	}
 }
 
+// A hand-crafted variant is serialled "<serial>-TAG", so its placeholder contains the serial it replaces.
+func TestRedactPlaceholderMayContainTheOldSerial(t *testing.T) {
+	in := `{
+  "smartctl": {
+    "argv": [
+      "/dev/disk/by-id/ata-ST4000DM004_EXAMPLE-ST4000"
+    ]
+  },
+  "serial_number": "EXAMPLE-ST4000"
+}
+`
+	got, err := Redact([]byte(in), "EXAMPLE-ST4000-ERRORS")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.ReplaceAll(in, "EXAMPLE-ST4000", "EXAMPLE-ST4000-ERRORS"); string(got) != want {
+		t.Errorf("Redact =\n%s\nwant\n%s", got, want)
+	}
+}
+
 func TestRedactRejectsARealLookingSerial(t *testing.T) {
 	if _, err := Redact([]byte(`{}`), "ZFN0ABCD"); err == nil {
 		t.Error("a placeholder without the EXAMPLE prefix was accepted")

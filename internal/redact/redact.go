@@ -55,7 +55,13 @@ func Redact(data []byte, serial string) ([]byte, error) {
 	r := replacer{serial: serial, subs: map[string]string{}}
 	r.fields(v)
 	olds := slices.SortedFunc(maps.Keys(r.subs), func(a, b string) int { return cmp.Or(len(b)-len(a), strings.Compare(a, b)) })
-	mapStrings(v, func(s string) string { return r.replace(olds, s) })
+	mapStrings(v, func(s string) string {
+		// Already the placeholder, which may contain the serial it replaced ("<serial>-TAG").
+		if s == serial {
+			return s
+		}
+		return r.replace(olds, s)
+	})
 	return render(v), nil
 }
 
@@ -235,7 +241,10 @@ func (r *replacer) replace(olds []string, s string) string {
 	for _, old := range olds {
 		repl := r.subs[old]
 		s = strings.ReplaceAll(s, old, repl)
-		s = strings.ReplaceAll(s, strings.ToUpper(old), strings.ToUpper(repl))
+		// An all-caps old equals its upper form; a second pass would re-match it inside repl.
+		if up := strings.ToUpper(old); up != old {
+			s = strings.ReplaceAll(s, up, strings.ToUpper(repl))
+		}
 	}
 	return s
 }

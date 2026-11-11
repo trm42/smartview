@@ -20,11 +20,12 @@ type overviewView struct {
 	*tview.Flex
 	identity *scrollTextView
 
-	// lastWidth -1 forces a relayout at the next Draw.
-	rep       *smart.Report
-	gauges    tview.Primitive
-	chart     tview.Primitive
-	lastWidth int
+	// lastWidth -1 forces a relayout at the next Draw; lastHeight because the panel is clamped against it.
+	rep        *smart.Report
+	gauges     tview.Primitive
+	chart      tview.Primitive
+	lastWidth  int
+	lastHeight int
 }
 
 // newOverviewView builds the Overview tab; tempHistory is the runtime series
@@ -94,13 +95,13 @@ const chartMinRows = 7
 
 // Draw reformats the identity panel when the width changed or a refresh invalidated it.
 func (v *overviewView) Draw(screen tcell.Screen) {
-	if _, _, w, h := v.GetInnerRect(); w != v.lastWidth && v.rep != nil {
+	if _, _, w, h := v.GetInnerRect(); (w != v.lastWidth || h != v.lastHeight) && v.rep != nil {
 		panelW := boxInner(w)
 		if v.gauges != nil {
 			panelW -= gaugeColumnWidth
 		}
 		v.relayout(panelW, h)
-		v.lastWidth = w
+		v.lastWidth, v.lastHeight = w, h
 	}
 	v.Flex.Draw(screen)
 }

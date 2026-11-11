@@ -3,11 +3,13 @@
 package ui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/rivo/tview"
 
+	"github.com/trm42/smartview/internal/config"
 	"github.com/trm42/smartview/internal/smart"
 )
 
@@ -69,5 +71,15 @@ func TestEscFoldsControlCharacters(t *testing.T) {
 		if got := esc(in); got != in {
 			t.Errorf("esc(%q) = %q, want it unchanged", in, got)
 		}
+	}
+}
+
+// TestErrorNoticeEscapesSmartctlText: tview.Modal parses style tags, which would swallow "[SAT]".
+func TestErrorNoticeEscapesSmartctlText(t *testing.T) {
+	a, _ := recordingApp(t, config.Default())
+	a.showSettings() // an open modal queues the notice, where its text can be read
+	a.showError("start the self-test", errors.New("open /dev/sda [SAT] failed"))
+	if len(a.pendingNotices) != 1 || !strings.Contains(a.pendingNotices[0], tview.Escape("[SAT]")) {
+		t.Errorf("queued notice = %q, want the bracketed text escaped", a.pendingNotices)
 	}
 }
