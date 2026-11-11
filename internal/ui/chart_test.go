@@ -211,7 +211,7 @@ func headSeries(n int) []int {
 func TestChartNarrowsPitchRatherThanDropBars(t *testing.T) {
 	const w, h = 60, 12
 	heads := headSeries(30)
-	rows := drawChart(t, farmHeadChart(" heads ", heads, false), w, h)
+	rows := drawChart(t, farmHeadChart(" heads ", heads, false).prim, w, h)
 
 	baseline := rows[h-4] // last plot row, above the axis line
 	if got := countBars(baseline); got != len(heads) {
@@ -228,7 +228,7 @@ func TestChartNarrowsPitchRatherThanDropBars(t *testing.T) {
 // the pitch is a concession to width, not the new default.
 func TestChartKeepsItsPitchWhenThereIsRoom(t *testing.T) {
 	const w, h = 60, 12
-	rows := drawChart(t, farmHeadChart(" heads ", headSeries(10), false), w, h)
+	rows := drawChart(t, farmHeadChart(" heads ", headSeries(10), false).prim, w, h)
 	baseline := rows[h-4]
 	i := strings.IndexAny(baseline, "▁▂▃▄▅▆▇█")
 	if i < 0 {
@@ -246,7 +246,7 @@ func TestChartKeepsItsPitchWhenThereIsRoom(t *testing.T) {
 func TestChartGroupsBarsRatherThanDropTheTail(t *testing.T) {
 	const w, h = 40, 10
 	heads := headSeries(60)
-	rows := drawChart(t, farmHeadChart(" heads ", heads, false), w, h)
+	rows := drawChart(t, farmHeadChart(" heads ", heads, false).prim, w, h)
 
 	painted := countBars(rows[h-4])
 	if painted >= len(heads) {
@@ -267,7 +267,7 @@ func TestChartGroupingNoteIsNeverItselfClipped(t *testing.T) {
 	heads := headSeries(60)
 	sawGrouping := false
 	for _, w := range []int{30, 36, 40, 48, 60} {
-		rows := drawChart(t, farmHeadChart(" heads ", heads, false), w, h)
+		rows := drawChart(t, farmHeadChart(" heads ", heads, false).prim, w, h)
 		painted, caption := countBars(rows[h-4]), rows[h-2]
 		if painted >= len(heads) {
 			continue // wide enough for one bar each; nothing to report
@@ -291,7 +291,7 @@ func TestChartKeepsAFaultInTheTail(t *testing.T) {
 	const faulty = 47
 	heads := make([]int, 60)
 	heads[faulty] = 12
-	rows := drawChart(t, farmHeadChart(" faults ", heads, true), w, h)
+	rows := drawChart(t, farmHeadChart(" faults ", heads, true).prim, w, h)
 
 	painted := countBars(rows[h-4])
 	if painted >= len(heads) {

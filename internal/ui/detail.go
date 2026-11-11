@@ -37,6 +37,11 @@ type focusChromer interface {
 	setFocused(focused bool)
 }
 
+// keyHinter is implemented by tab views that bind keys of their own.
+type keyHinter interface {
+	keyHints() string
+}
+
 // tabSpan is a pill's column range within the tab bar's inner rect, half-open.
 type tabSpan struct{ start, end int }
 
@@ -280,13 +285,7 @@ func (d *detail) update(r *smart.Report, tempHistory []float64) {
 	}
 
 	// Keep the previous tab when still available; index 0 always is.
-	d.active = 0
-	for i, t := range d.tabs {
-		if t.id == prev && t.available {
-			d.active = i
-			break
-		}
-	}
+	d.active = max(slices.IndexFunc(d.tabs, func(t tab) bool { return t.id == prev && t.available }), 0)
 	d.selectActive()
 }
 
@@ -308,15 +307,7 @@ var allTabs = []struct {
 
 // hasAttributes reports whether either protocol's attribute view has data.
 func hasAttributes(r *smart.Report) bool {
-	return r.HasNVMeHealth() || len(ataAttributes(r)) > 0
-}
-
-// ataAttributes returns the ATA attribute rows, nil when the section is absent or empty.
-func ataAttributes(r *smart.Report) []smart.ATAAttribute {
-	if r.ATAAttributes == nil {
-		return nil
-	}
-	return r.ATAAttributes.Table
+	return r.HasNVMeHealth() || len(r.Attributes()) > 0
 }
 
 // visibleTabs returns the tabs to draw; showAll keeps unavailable ones, marked.
@@ -344,7 +335,7 @@ func (d *detail) buildTabView(t tab, r *smart.Report, tempHistory []float64) tab
 		if r.HasNVMeHealth() {
 			return newNVMeAttributesView(r)
 		}
-		return newAttributesView(ataAttributes(r))
+		return newAttributesView(r.Attributes())
 	case "statistics":
 		return newStatisticsView(r)
 	case "farm":
@@ -411,11 +402,6 @@ func (d *detail) selectTab(i int) bool {
 	return true
 }
 
-// activeView returns the active tab's live view, or nil under a placeholder.
-func (d *detail) activeView() tabView {
-	return d.views[d.activeID()]
-}
-
 // content returns the currently visible tab primitive, for focus handling.
 func (d *detail) content() tview.Primitive {
 	if name, prim := d.pages.GetFrontPage(); name != "" {
@@ -433,11 +419,3 @@ func (d *detail) setContentFocus(focused bool) {
 
 // tabCount is the number of visible tabs, used to size the "1-N tab" hint.
 func (d *detail) tabCount() int { return len(d.tabs) }
-
-// testsRunning reports whether the Tests tab shows a running self-test.
-func (d *detail) testsRunning() bool {
-	if v, ok := d.views["tests"].(*testsView); ok {
-		return v.mode == modeRunning
-	}
-	return false
-}

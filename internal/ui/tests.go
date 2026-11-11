@@ -183,3 +183,11 @@ func formatTestDuration(d time.Duration) string {
 	}
 	return fmt.Sprintf("%d h %d min", h, rem)
 }
+
+// keyHints advertises the one action the current mode binds.
+func (v *testsView) keyHints() string {
+	if v.mode == modeRunning {
+		return "   " + accentTag() + "x[-] cancel test"
+	}
+	return "   " + accentTag() + "Enter[-] start test"
+}

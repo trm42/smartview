@@ -165,7 +165,21 @@ func (s *scrollView) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 	return s.WrapInputHandler(func(event *tcell.EventKey, _ func(tview.Primitive)) {
 		_, _, _, h := s.GetInnerRect()
 		page := max(h-1, 1)
-		switch event.Key() {
+		key := event.Key()
+		if key == tcell.KeyRune {
+			// A switch, not a lookup table: keys_test.go finds bound runes in case clauses.
+			switch event.Rune() {
+			case 'k':
+				key = tcell.KeyUp
+			case 'j':
+				key = tcell.KeyDown
+			case 'g':
+				key = tcell.KeyHome
+			case 'G':
+				key = tcell.KeyEnd
+			}
+		}
+		switch key {
 		case tcell.KeyUp:
 			s.offset--
 		case tcell.KeyDown:
@@ -178,17 +192,6 @@ func (s *scrollView) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 			s.offset = 0
 		case tcell.KeyEnd:
 			s.offset = s.contentHeight
-		case tcell.KeyRune:
-			switch event.Rune() {
-			case 'k':
-				s.offset--
-			case 'j':
-				s.offset++
-			case 'g':
-				s.offset = 0
-			case 'G':
-				s.offset = s.contentHeight
-			}
 		}
 		s.clamp(h)
 	})

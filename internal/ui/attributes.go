@@ -143,7 +143,7 @@ func (v *attributesView) reorder(step func()) {
 
 // refresh re-applies the latest data, keeping selection (by ID) and sort/filter.
 func (v *attributesView) refresh(r *smart.Report, _ []float64) {
-	attrs := ataAttributes(r)
+	attrs := r.Attributes()
 	if len(attrs) == 0 {
 		return // hasAttributes now fails, so the tab is swapped for its placeholder
 	}
@@ -158,6 +158,12 @@ func (v *attributesView) selectedID() int {
 	return -1
 }
 
+// keyHints advertises the sort and filter keys the table binds.
+func (v *attributesView) keyHints() string {
+	aq := accentTag()
+	return "   " + aq + "s[-] sort   " + aq + "f[-] filter"
+}
+
 // selectByID selects the row for attribute id (first row when absent/-1) and
 // refreshes the footer.
 func (v *attributesView) selectByID(id int) {
@@ -165,15 +171,7 @@ func (v *attributesView) selectByID(id int) {
 		v.footer.SetText("")
 		return
 	}
-	target := 1
-	if id >= 0 {
-		for i, a := range v.shown {
-			if a.ID == id {
-				target = i + 1
-				break
-			}
-		}
-	}
+	target := max(slices.IndexFunc(v.shown, func(a smart.ATAAttribute) bool { return id >= 0 && a.ID == id }), 0) + 1
 	v.table.Select(target, 0)
 	v.updateFooter(target)
 }
@@ -357,19 +355,17 @@ func humanAttrName(s string) string {
 // decodeReading converts well-known raw values into real-world figures,
 // falling back to the raw string, which may be "".
 func decodeReading(a smart.ATAAttribute) string {
+	n, ok := smart.LeadingInt(a.Raw.String)
+	if !ok {
+		return a.Raw.String
+	}
 	switch a.ID {
 	case 9, 240: // power-on hours, head flying hours
-		if n, ok := smart.LeadingInt(a.Raw.String); ok {
-			return humanDuration(int(n))
-		}
-	case 241, 242: // total LBAs written / read (512-byte LBAs)
-		if n, ok := smart.LeadingInt(a.Raw.String); ok {
-			return humanBytes(n * 512)
-		}
+		return humanDuration(int(n))
+	case 241, 242: // total LBAs written / read
+		return humanBytes(smart.AttrLBABytes(n))
 	case 190, 194: // airflow / drive temperature
-		if n, ok := smart.LeadingInt(a.Raw.String); ok {
-			return fmt.Sprintf("%d°C", n)
-		}
+		return fmt.Sprintf("%d°C", n)
 	}
 	return a.Raw.String
 }
