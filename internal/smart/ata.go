@@ -273,3 +273,11 @@ func unwrapLogHours(hours, now int) int {
 	}
 	return hours + (now-hours)/logHoursWrap*logHoursWrap
 }
+
+// Attributes returns the ATA attribute rows, nil when the section is absent.
+func (r *Report) Attributes() []ATAAttribute {
+	if r.ATAAttributes == nil {
+		return nil
+	}
+	return r.ATAAttributes.Table
+}

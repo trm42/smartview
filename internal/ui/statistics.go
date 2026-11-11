@@ -99,7 +99,7 @@ func statValue(p smart.ATAStatPage, e smart.ATAStatEntry, sectorBytes int64) str
 	default:
 		val = fmt.Sprintf("%d", e.Value)
 	}
-	if sev := statSeverity(e); sev != smart.SeverityOK && e.Value > 0 {
+	if sev := e.Severity(); sev != smart.SeverityOK && e.Value > 0 {
 		return sevText(sev, val)
 	}
 	return val
@@ -110,20 +110,4 @@ func statValue(p smart.ATAStatPage, e smart.ATAStatEntry, sectorBytes int64) str
 func isTemperatureStat(p smart.ATAStatPage, e smart.ATAStatEntry) bool {
 	return p.Number == 5 && strings.Contains(e.Name, "Temperature") &&
 		!strings.Contains(e.Name, "Time in")
-}
-
-// statSeverity grades the health-relevant counters.
-func statSeverity(e smart.ATAStatEntry) smart.Severity {
-	switch e.Name {
-	case smart.StatPercentageUsed:
-		return smart.PctUsedSeverity(int(e.Value))
-	case smart.StatReallocatedLegacy,
-		smart.StatReallocated,
-		smart.StatReallocCandidates,
-		smart.StatUncorrectable,
-		smart.StatInterfaceCRC,
-		smart.StatMechStartFailures:
-		return smart.SeverityCaution
-	}
-	return smart.SeverityOK
 }

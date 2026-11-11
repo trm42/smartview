@@ -159,13 +159,20 @@ func (s *scrollList) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 	}
 }
 
+// viKeys maps the vi scroll runes onto the named keys they alias.
+var viKeys = map[rune]tcell.Key{'k': tcell.KeyUp, 'j': tcell.KeyDown, 'g': tcell.KeyHome, 'G': tcell.KeyEnd}
+
 // InputHandler scrolls the viewport with the keys App.onKey lets through to
 // the focused primitive.
 func (s *scrollView) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 	return s.WrapInputHandler(func(event *tcell.EventKey, _ func(tview.Primitive)) {
 		_, _, _, h := s.GetInnerRect()
 		page := max(h-1, 1)
-		switch event.Key() {
+		key := event.Key()
+		if key == tcell.KeyRune {
+			key = viKeys[event.Rune()]
+		}
+		switch key {
 		case tcell.KeyUp:
 			s.offset--
 		case tcell.KeyDown:
@@ -178,17 +185,6 @@ func (s *scrollView) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 			s.offset = 0
 		case tcell.KeyEnd:
 			s.offset = s.contentHeight
-		case tcell.KeyRune:
-			switch event.Rune() {
-			case 'k':
-				s.offset--
-			case 'j':
-				s.offset++
-			case 'g':
-				s.offset = 0
-			case 'G':
-				s.offset = s.contentHeight
-			}
 		}
 		s.clamp(h)
 	})

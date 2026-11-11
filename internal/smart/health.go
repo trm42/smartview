@@ -2,7 +2,10 @@
 
 package smart
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // Severity is a tri-state health classification used for colouring and sorting.
 type Severity int
@@ -44,10 +47,8 @@ func (r *Report) Overall() Severity {
 		}
 	}
 	worst = max(worst, r.wearSeverity())
-	if r.ATAAttributes != nil {
-		for i := range r.ATAAttributes.Table {
-			worst = max(worst, r.ATAAttributes.Table[i].Severity())
-		}
+	for _, a := range r.Attributes() {
+		worst = max(worst, a.Severity())
 	}
 	return max(worst, r.logSeverity())
 }
@@ -155,18 +156,41 @@ func SelfTestOutcome(s string) SelfTestVerdict {
 	if strings.Contains(low, "without error") {
 		return SelfTestPassed
 	}
-	for _, kw := range []string{"fail", "error", "fatal", "damage"} {
-		if strings.Contains(low, kw) {
-			return SelfTestFailed
-		}
+	if containsAny(low, "fail", "error", "fatal", "damage") {
+		return SelfTestFailed
 	}
-	for _, kw := range []string{"in progress", "aborted", "interrupted"} {
-		if strings.Contains(low, kw) {
-			return SelfTestNeutral
-		}
+	if containsAny(low, "in progress", "aborted", "interrupted") {
+		return SelfTestNeutral
 	}
 	if strings.Contains(low, "completed") {
 		return SelfTestPassed
 	}
 	return SelfTestNeutral
+}
+
+// containsAny reports whether s contains any of the keywords.
+func containsAny(s string, kws ...string) bool {
+	return slices.ContainsFunc(kws, func(kw string) bool { return strings.Contains(s, kw) })
+}
+
+// Severity grades the health-relevant Device Statistics counters.
+func (e ATAStatEntry) Severity() Severity {
+	switch e.Name {
+	case StatPercentageUsed:
+		return PctUsedSeverity(int(e.Value))
+	case StatReallocatedLegacy,
+		StatReallocated,
+		StatReallocCandidates,
+		StatUncorrectable,
+		StatInterfaceCRC,
+		StatMechStartFailures:
+		return SeverityCaution
+	}
+	return SeverityOK
+}
+
+// Concerning reports whether a PHY counter indicates a link fault:
+// CRC/decode errors point at a cable, resets accumulate on any healthy link.
+func (c SATAPhyCounter) Concerning() bool {
+	return containsAny(strings.ToLower(c.Name), "crc", "non-crc", "decode", "disparity", "handshake")
 }

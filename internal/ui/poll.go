@@ -4,6 +4,7 @@ package ui
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/trm42/smartview/internal/smart"
@@ -80,9 +81,16 @@ func (a *App) fetchAll(ctx context.Context, wake bool, f fetchers) map[string]po
 	if !wake && a.standbyAware.Load() {
 		policy = smart.SkipStandby
 	}
+	// Drives are independent, so a slow or wedged one costs the batch its own time, not the sum.
+	fetched := make([]pollResult, len(a.devices))
+	var wg sync.WaitGroup
+	for i, d := range a.devices {
+		wg.Go(func() { fetched[i] = fetchDevice(ctx, d, policy, f) })
+	}
+	wg.Wait()
 	results := make(map[string]pollResult, len(a.devices))
-	for _, d := range a.devices {
-		results[d.Name] = fetchDevice(ctx, d, policy, f)
+	for i, d := range a.devices {
+		results[d.Name] = fetched[i]
 	}
 	return results
 }

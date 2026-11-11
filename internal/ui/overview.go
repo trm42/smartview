@@ -214,7 +214,7 @@ func writeVerdict(b *strings.Builder, r *smart.Report) {
 // verdictEvidence summarises what the verdict was derived from.
 func verdictEvidence(r *smart.Report) string {
 	var parts []string
-	if attrs := ataAttributes(r); len(attrs) > 0 {
+	if attrs := r.Attributes(); len(attrs) > 0 {
 		bad := 0
 		for i := range attrs {
 			if attrs[i].Severity() != smart.SeverityOK {
