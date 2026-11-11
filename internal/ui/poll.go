@@ -13,6 +13,9 @@ import (
 // fetchTimeout bounds a single smartctl invocation.
 const fetchTimeout = 15 * time.Second
 
+// fetchConcurrency caps the drives read at once, bounding smartctl processes and simultaneous spin-ups.
+const fetchConcurrency = 4
+
 // pollLoop refreshes every drive on a ticker and on demand; interval changes arrive on intervalCh.
 func (a *App) pollLoop(ctx context.Context, interval time.Duration) {
 	a.fetchAndApply(ctx, false)
@@ -81,11 +84,17 @@ func (a *App) fetchAll(ctx context.Context, wake bool, f fetchers) map[string]po
 	if !wake && a.standbyAware.Load() {
 		policy = smart.SkipStandby
 	}
-	// Drives are independent, so a slow or wedged one costs the batch its own time, not the sum.
+	// Drives are independent, so a slow one costs the batch its own time, not the sum.
+	// The slot is taken before fetchDevice starts its deadline, so queueing is not charged to the drive.
 	fetched := make([]pollResult, len(a.devices))
+	slots := make(chan struct{}, fetchConcurrency)
 	var wg sync.WaitGroup
 	for i, d := range a.devices {
-		wg.Go(func() { fetched[i] = fetchDevice(ctx, d, policy, f) })
+		wg.Go(func() {
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			fetched[i] = fetchDevice(ctx, d, policy, f)
+		})
 	}
 	wg.Wait()
 	results := make(map[string]pollResult, len(a.devices))

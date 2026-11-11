@@ -173,7 +173,7 @@ func containsAny(s string, kws ...string) bool {
 	return slices.ContainsFunc(kws, func(kw string) bool { return strings.Contains(s, kw) })
 }
 
-// Severity grades the health-relevant Device Statistics counters.
+// Severity grades the health-relevant Device Statistics counters; a zero counter is healthy.
 func (e ATAStatEntry) Severity() Severity {
 	switch e.Name {
 	case StatPercentageUsed:
@@ -184,7 +184,9 @@ func (e ATAStatEntry) Severity() Severity {
 		StatUncorrectable,
 		StatInterfaceCRC,
 		StatMechStartFailures:
-		return SeverityCaution
+		if e.Value > 0 {
+			return SeverityCaution
+		}
 	}
 	return SeverityOK
 }

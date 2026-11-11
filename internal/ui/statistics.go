@@ -99,7 +99,7 @@ func statValue(p smart.ATAStatPage, e smart.ATAStatEntry, sectorBytes int64) str
 	default:
 		val = fmt.Sprintf("%d", e.Value)
 	}
-	if sev := e.Severity(); sev != smart.SeverityOK && e.Value > 0 {
+	if sev := e.Severity(); sev != smart.SeverityOK {
 		return sevText(sev, val)
 	}
 	return val
