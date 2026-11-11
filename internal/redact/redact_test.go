@@ -3,6 +3,7 @@
 package redact
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -158,6 +159,43 @@ func TestRedactScrubsCopiesAndKeepsNumbers(t *testing.T) {
 	}
 	if findings, _ := Check([]byte(in)); len(findings) < 6 {
 		t.Errorf("Check found %d leaks in the raw input, want at least 6: %v", len(findings), findings)
+	}
+}
+
+// A hand-crafted variant is serialled "<serial>-TAG", so its placeholder contains the serial it replaces.
+func TestRedactPlaceholderMayContainTheOldSerial(t *testing.T) {
+	in := `{
+  "smartctl": {
+    "argv": [
+      "/dev/disk/by-id/ata-ST4000DM004_EXAMPLE-ST4000"
+    ]
+  },
+  "serial_number": "EXAMPLE-ST4000"
+}
+`
+	got, err := Redact([]byte(in), "EXAMPLE-ST4000-ERRORS")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.ReplaceAll(in, "EXAMPLE-ST4000", "EXAMPLE-ST4000-ERRORS"); string(got) != want {
+		t.Errorf("Redact =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// A string that already carries the placeholder, and a mixed-case serial whose upper form the placeholder contains, are each replaced once.
+func TestRedactNeverRescansItsOwnOutput(t *testing.T) {
+	for _, tc := range []struct{ name, serial, argv string }{
+		{"half-renamed", "EXAMPLE-ST4000", "ata-X_EXAMPLE-ST4000-ERRORS"},
+		{"mixed case", "Example-St4000", "ata-X_EXAMPLE-ST4000"},
+	} {
+		in := fmt.Sprintf(`{"smartctl": {"argv": [%q]}, "serial_number": %q}`, tc.argv, tc.serial)
+		got, err := Redact([]byte(in), "EXAMPLE-ST4000-ERRORS")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n := strings.Count(string(got), "ERRORS"); n != 2 {
+			t.Errorf("%s: placeholder suffix appears %d times, want once per string:\n%s", tc.name, n, got)
+		}
 	}
 }
 
