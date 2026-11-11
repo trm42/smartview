@@ -55,13 +55,14 @@ func Redact(data []byte, serial string) ([]byte, error) {
 	r := replacer{serial: serial, subs: map[string]string{}}
 	r.fields(v)
 	olds := slices.SortedFunc(maps.Keys(r.subs), func(a, b string) int { return cmp.Or(len(b)-len(a), strings.Compare(a, b)) })
-	mapStrings(v, func(s string) string {
-		// Already the placeholder, which may contain the serial it replaced ("<serial>-TAG").
-		if s == serial {
-			return s
-		}
-		return r.replace(olds, s)
-	})
+	// One pass, so a replacement is never rescanned; the placeholder leads so text already redacted is kept
+	// even when it contains the serial it replaced ("<serial>-TAG").
+	pairs := []string{serial, serial}
+	for _, old := range olds {
+		repl := r.subs[old]
+		pairs = append(pairs, old, repl, strings.ToUpper(old), strings.ToUpper(repl))
+	}
+	mapStrings(v, strings.NewReplacer(pairs...).Replace)
 	return render(v), nil
 }
 
@@ -234,19 +235,6 @@ func (r *replacer) wide(v any, idKey string, naaShift, ouiShift int) {
 	}
 	r.sub(fmt.Sprintf("%016x", head|num(idKey)), fmt.Sprintf("%016x", head|ID))
 	o.set(idKey, json.Number(strconv.Itoa(ID)))
-}
-
-// replace applies the substitutions in olds order, longest first.
-func (r *replacer) replace(olds []string, s string) string {
-	for _, old := range olds {
-		repl := r.subs[old]
-		s = strings.ReplaceAll(s, old, repl)
-		// An all-caps old equals its upper form; a second pass would re-match it inside repl.
-		if up := strings.ToUpper(old); up != old {
-			s = strings.ReplaceAll(s, up, strings.ToUpper(repl))
-		}
-	}
-	return s
 }
 
 func check(v any, path string, out *[]Finding) {

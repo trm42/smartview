@@ -93,7 +93,7 @@ const (
 // rows, axis, caption.
 const chartMinRows = 7
 
-// Draw reformats the identity panel when the width changed or a refresh invalidated it.
+// Draw reformats the identity panel when the size changed or a refresh invalidated it.
 func (v *overviewView) Draw(screen tcell.Screen) {
 	if _, _, w, h := v.GetInnerRect(); (w != v.lastWidth || h != v.lastHeight) && v.rep != nil {
 		panelW := boxInner(w)

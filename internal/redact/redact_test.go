@@ -3,6 +3,7 @@
 package redact
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -178,6 +179,23 @@ func TestRedactPlaceholderMayContainTheOldSerial(t *testing.T) {
 	}
 	if want := strings.ReplaceAll(in, "EXAMPLE-ST4000", "EXAMPLE-ST4000-ERRORS"); string(got) != want {
 		t.Errorf("Redact =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// A string that already carries the placeholder, and a mixed-case serial whose upper form the placeholder contains, are each replaced once.
+func TestRedactNeverRescansItsOwnOutput(t *testing.T) {
+	for _, tc := range []struct{ name, serial, argv string }{
+		{"half-renamed", "EXAMPLE-ST4000", "ata-X_EXAMPLE-ST4000-ERRORS"},
+		{"mixed case", "Example-St4000", "ata-X_EXAMPLE-ST4000"},
+	} {
+		in := fmt.Sprintf(`{"smartctl": {"argv": [%q]}, "serial_number": %q}`, tc.argv, tc.serial)
+		got, err := Redact([]byte(in), "EXAMPLE-ST4000-ERRORS")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n := strings.Count(string(got), "ERRORS"); n != 2 {
+			t.Errorf("%s: placeholder suffix appears %d times, want once per string:\n%s", tc.name, n, got)
+		}
 	}
 }
 
