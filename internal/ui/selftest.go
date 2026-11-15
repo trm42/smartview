@@ -56,7 +56,7 @@ func (a *App) onSelfTestRun(testType smart.SelfTestType) {
 	if !ok {
 		return
 	}
-	name, label := shortName(dev), testLabel(testType)
+	name, label := esc(shortName(dev)), testLabel(testType)
 	a.confirm(
 		fmt.Sprintf("Run %s self-test on %s?\n(Requires root; the drive stays usable.)", label, name),
 		"Run",
@@ -79,7 +79,7 @@ func (a *App) onSelfTestCancel() {
 	if !ok {
 		return
 	}
-	name := shortName(dev)
+	name := esc(shortName(dev))
 	a.confirm(
 		fmt.Sprintf("Cancel the running self-test on %s?", name),
 		"Cancel test",

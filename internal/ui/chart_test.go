@@ -404,3 +404,16 @@ func TestChartLayoutFollowsDataAndSize(t *testing.T) {
 		t.Errorf("resize drew the cached layout:\n%s\n--- want\n%s", got, want)
 	}
 }
+
+// TestOverviewRelayoutsOnHeightChange: the identity panel is clamped against the tab's height, so a height-only resize must recompute it.
+func TestOverviewRelayoutsOnHeightChange(t *testing.T) {
+	v := newOverviewView(fixtureReport(t, "smart-sda.json"), nil)
+	if v.chart == nil {
+		t.Fatal("fixture has no temperature history; pick one that does")
+	}
+	drawChart(t, v, 120, 60)
+	drawChart(t, v, 120, 20)
+	if _, _, _, h := v.chart.GetRect(); h < chartMinRows {
+		t.Errorf("chart height after the terminal shrank = %d, want at least %d", h, chartMinRows)
+	}
+}

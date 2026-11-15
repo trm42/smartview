@@ -12,6 +12,9 @@ import (
 
 // pushModal shows m as a page above the main layout and suspends onKey.
 func (a *App) pushModal(m tview.Primitive) {
+	if !a.inModal {
+		a.modalFromList = a.list.HasFocus()
+	}
 	a.inModal = true
 	a.rootPages.AddPage(pageModal, newModalLayer(m), true, true)
 }
@@ -59,13 +62,16 @@ func (l *modalLayer) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, f
 	}
 }
 
-// popModal removes the modal overlay and returns focus to the content.
+// popModal removes the modal overlay and returns focus to the pane that had it.
 func (a *App) popModal() {
 	a.inModal = false
 	a.rootPages.RemovePage(pageModal)
-	if a.fleetMode {
+	switch {
+	case a.fleetMode:
 		a.app.SetFocus(a.fleet.table)
-	} else {
+	case a.modalFromList && !a.narrow: // narrow has no list on-tree
+		a.app.SetFocus(a.list)
+	default:
 		a.app.SetFocus(a.detail.content())
 	}
 	a.refreshChrome()
@@ -308,5 +314,6 @@ func (a *App) showKeys() {
 
 // showError displays a failure in a dismissable modal; action names the operation.
 func (a *App) showError(action string, err error) {
-	a.notice(fmt.Sprintf("Could not %s:\n%s", action, err))
+	// tview.Modal parses style tags, and smartctl text carries brackets ("/dev/sda [SAT]").
+	a.notice(fmt.Sprintf("Could not %s:\n%s", action, esc(err.Error())))
 }

@@ -118,6 +118,7 @@ func TestApplySettingsKeepsFocusOnTheDetail(t *testing.T) {
 	a.populateList()
 	a.showSelected()
 
+	a.app.SetFocus(a.detail.content())
 	a.showSettings()
 	a.popModal() // as the Save button does, before applying
 	if !a.detail.HasFocus() {
@@ -225,5 +226,24 @@ func TestAsyncErrorWaitsForTheOpenModal(t *testing.T) {
 	a.popModal()
 	if a.inModal {
 		t.Error("the error notice did not dismiss")
+	}
+}
+
+// TestClosingAModalRestoresListFocus: a modal opened from the drive list must not hand focus to the detail.
+func TestClosingAModalRestoresListFocus(t *testing.T) {
+	a, _ := recordingApp(t, config.Default())
+
+	a.app.SetFocus(a.list)
+	a.showKeys()
+	a.popModal()
+	if !a.list.HasFocus() {
+		t.Error("closing a modal opened from the drive list moved focus off the list")
+	}
+
+	a.app.SetFocus(a.detail.content())
+	a.showKeys()
+	a.popModal()
+	if a.list.HasFocus() {
+		t.Error("closing a modal opened from the detail moved focus to the list")
 	}
 }
