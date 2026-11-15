@@ -714,7 +714,9 @@ doc-drift guard enforced by a test rather than by review. `fleet_test.go`
 asserts from inside the after-draw hook, on the first visible frame, because
 queuing an update draws a second time and the second frame was always correct.
 Running the fixture build stays the check for how it *looks*, not for whether
-it works.
+it works. `smartdesc_test.go` requires a footer explanation (`ataDesc`,
+`nvmeDesc` in `smartdesc.go`) for every Attributes row any fixture draws, so a
+contributed fixture with a new attribute fails naming the ID to describe.
 
 ## Roadmap
 
