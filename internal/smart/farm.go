@@ -46,18 +46,15 @@ type FARM struct {
 
 // FARMDriveInfo is FARM page 1: identity, wear and recording-technology summary.
 type FARMDriveInfo struct {
-	Serial           string `json:"serial_number"`
-	Heads            int    `json:"number_of_heads"`
-	POH              int    `json:"poh"` // power-on hours
-	HeadFlightHours  int    `json:"head_flight_hours"`
-	HeadLoadEvents   int    `json:"head_load_events"`
-	PowerCycles      int    `json:"power_cycle_count"`
-	ResetCount       int    `json:"reset_count"`
-	RotationRate     int    `json:"rotation_rate"`
-	RecordingType    string `json:"drive_recording_type"` // CMR / SMR
-	LogicalSectorB   int64  `json:"logical_sector_size"`
-	PhysicalSectorB  int64  `json:"physical_sector_size"`
-	CapacityInSector int64  `json:"device_capacity_in_sectors"`
+	Serial          string `json:"serial_number"`
+	Heads           int    `json:"number_of_heads"`
+	POH             int    `json:"poh"` // power-on hours
+	HeadFlightHours int    `json:"head_flight_hours"`
+	HeadLoadEvents  int    `json:"head_load_events"`
+	PowerCycles     int    `json:"power_cycle_count"`
+	RotationRate    int    `json:"rotation_rate"`
+	RecordingType   string `json:"drive_recording_type"` // CMR / SMR
+	LogicalSectorB  int64  `json:"logical_sector_size"`
 }
 
 // FARMWorkload is FARM page 2: lifetime command and sector counters.
@@ -66,7 +63,6 @@ type FARMWorkload struct {
 	TotalWriteCommands  int64 `json:"total_write_commands"`
 	RandomReads         int64 `json:"total_random_reads"`
 	RandomWrites        int64 `json:"total_random_writes"`
-	OtherCommands       int64 `json:"total_other_commands"`
 	LogicalSectorsRead  int64 `json:"logical_sectors_read"`
 	LogicalSectorsWrite int64 `json:"logical_sectors_written"`
 }
@@ -79,11 +75,8 @@ type FARMErrors struct {
 	CandidateSectors   int64 `json:"number_of_reallocated_candidate_sectors"`
 	MechStartFailures  int64 `json:"number_of_mechanical_start_failures"`
 	CRCErrors          int64 `json:"total_crc_errors"`
-	IOEDCErrors        int64 `json:"number_of_ioedc_errors"`
 	CommandTimeouts    int64 `json:"command_time_out_count_total"`
-	TotalASREvents     int64 `json:"total_asr_events"`
 	TotalFlashLED      int64 `json:"total_flash_led"`
-	Uncorrectables     int64 `json:"uncorrectables"`
 }
 
 // FARMEnvironment is FARM page 4: temperatures and power-rail telemetry.

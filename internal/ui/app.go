@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -36,10 +37,9 @@ type App struct {
 	fleet     *fleetView
 
 	// rail is the narrow-layout drive selector.
-	rail      *inertTextView
-	body      *tview.Flex
-	narrow    bool
-	lastWidth int
+	rail   *inertTextView
+	body   *tview.Flex
+	narrow bool
 
 	interval   time.Duration
 	themeName  string
@@ -96,7 +96,6 @@ func New(cfg config.Config, save func(config.Config) error) *App {
 		status:       newInertTextView(),
 		banner:       newInertTextView(),
 		rail:         newInertTextView(),
-		lastWidth:    -1,
 		interval:     cfg.RefreshInterval.Duration(),
 		themeName:    cfg.Theme,
 		startView:    cfg.StartView,
@@ -176,10 +175,7 @@ func (a *App) build() {
 		screen.SetStyle(ground)
 		screen.Fill(' ', ground)
 		w, _ := screen.Size()
-		if w != a.lastWidth {
-			a.lastWidth = w
-			a.setNarrow(w < narrowBreakpoint)
-		}
+		a.setNarrow(w < narrowBreakpoint)
 		return false
 	})
 	a.refreshFocusChrome()
@@ -361,19 +357,8 @@ func (a *App) contextHints() string {
 	if a.list.HasFocus() {
 		return ""
 	}
-	aq := accentTag()
-	switch a.detail.activeID() {
-	case "attributes":
-		// Both protocols use this id, but only the ATA table binds s/f.
-		if _, ok := a.detail.activeView().(*attributesView); !ok {
-			return ""
-		}
-		return "   " + aq + "s[-] sort   " + aq + "f[-] filter"
-	case "tests":
-		if a.detail.testsRunning() {
-			return "   " + aq + "x[-] cancel test"
-		}
-		return "   " + aq + "Enter[-] start test"
+	if h, ok := a.detail.content().(keyHinter); ok {
+		return h.keyHints()
 	}
 	return ""
 }
@@ -670,7 +655,7 @@ const listDeviceWidth = 30
 // shortDevice trims a device name to n runes for display, keeping whole
 // trailing path components since a character cut makes IOService paths look alike.
 func shortDevice(name string, n int) string {
-	if len([]rune(name)) <= n {
+	if utf8.RuneCountInString(name) <= n {
 		return name
 	}
 	if parts := strings.Split(name, "/"); len(parts) > 1 {
@@ -680,7 +665,7 @@ func shortDevice(name string, n int) string {
 			if out != "" {
 				cand += "/" + out
 			}
-			if len([]rune(cand))+2 > n { // +2 for the leading "…/"
+			if utf8.RuneCountInString(cand)+2 > n { // +2 for the leading "…/"
 				break
 			}
 			out = cand

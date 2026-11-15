@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+
+	"github.com/trm42/smartview/internal/smart"
 )
 
 // intervalPresets is the ladder the +/- keys walk to change poll cadence.
@@ -169,17 +171,13 @@ func (a *App) exitFleet(toDetail bool) {
 
 // openDrive selects a drive by device name and leaves the fleet view for its detail.
 func (a *App) openDrive(name string) {
-	cur := a.list.GetCurrentItem()
-	for i, d := range a.devices {
-		if d.Name == name {
-			if i == cur {
-				// SetCurrentItem fires no changed-func for the same index.
-				a.showSelected()
-			} else {
-				a.list.SetCurrentItem(i)
-			}
-			break
-		}
+	switch i := slices.IndexFunc(a.devices, func(d smart.Device) bool { return d.Name == name }); {
+	case i < 0:
+	case i == a.list.GetCurrentItem():
+		// SetCurrentItem fires no changed-func for the same index.
+		a.showSelected()
+	default:
+		a.list.SetCurrentItem(i)
 	}
 	a.exitFleet(true)
 }

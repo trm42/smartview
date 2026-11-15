@@ -101,7 +101,7 @@ func writePhyCounters(b *strings.Builder, e *smart.SATAPhyEvents) {
 		nonzero++
 		// Only bad-link counters are graded; a couple of COMRESETs is a normal power-up.
 		tag := mutedTag()
-		if phyCounterConcerning(c.Name) {
+		if c.Concerning() {
 			tag = cautionTag()
 		}
 		fmt.Fprintf(b, nestIndent+"%s%6d[-] %s%s[-]\n", tag, c.Value, mutedTag(), esc(c.Name))
@@ -109,18 +109,6 @@ func writePhyCounters(b *strings.Builder, e *smart.SATAPhyEvents) {
 	if nonzero == 0 {
 		fmt.Fprintf(b, nestIndent+"No link events logged (%d counters)\n", len(e.Table))
 	}
-}
-
-// phyCounterConcerning reports whether a PHY counter indicates a link fault:
-// CRC/decode errors point at a cable, resets accumulate on any healthy link.
-func phyCounterConcerning(name string) bool {
-	low := strings.ToLower(name)
-	for _, kw := range []string{"crc", "non-crc", "decode", "disparity", "handshake"} {
-		if strings.Contains(low, kw) {
-			return true
-		}
-	}
-	return false
 }
 
 // writeErrorLog summarises the drive's logged command errors with the most

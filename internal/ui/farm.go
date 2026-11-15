@@ -20,7 +20,7 @@ type farmView struct {
 	*scrollView
 	// boxes are in reading order: the grid's top row, then its bottom row.
 	boxes  [4]farmBox
-	charts []tview.Primitive
+	charts []farmChart
 
 	// Width the grid was last laid out for; -1 forces a rebuild.
 	lastWidth int
@@ -74,10 +74,10 @@ func (v *farmView) refresh(r *smart.Report, _ []float64) {
 	}
 
 	v.charts = v.charts[:0]
-	if c := farmHeadChart(" Reallocated sectors / head ", f.Reliability.ReallocatedByHead, true); c != nil {
+	if c := farmHeadChart(" Reallocated sectors / head ", f.Reliability.ReallocatedByHead, true); c.prim != nil {
 		v.charts = append(v.charts, c)
 	}
-	if c := farmHeadChart(" MR head resistance / head ", f.Reliability.MRHeadResistance, false); c != nil {
+	if c := farmHeadChart(" MR head resistance / head ", f.Reliability.MRHeadResistance, false); c.prim != nil {
 		v.charts = append(v.charts, c)
 	}
 
@@ -113,12 +113,8 @@ func (v *farmView) relayout(width int) {
 	outer.AddItem(grid, gridHeight, 0, false)
 	total := gridHeight
 	for _, c := range v.charts {
-		h := farmChartHeight
-		if _, isSummary := c.(*tview.TextView); isSummary {
-			h = farmSummaryHeight
-		}
-		outer.AddItem(c, h, 0, false)
-		total += h
+		outer.AddItem(c.prim, c.height, 0, false)
+		total += c.height
 	}
 
 	v.setContent(outer, total)
@@ -266,17 +262,23 @@ func millivolts(mv int) string {
 	return fmt.Sprintf("%.2fV", float64(mv)/1000)
 }
 
-// farmHeadChart builds a per-head chart, nil when empty; an all-zero fault counter collapses to one line.
-func farmHeadChart(title string, data []int, health bool) tview.Primitive {
+// farmChart is a per-head chart and the rows it takes in the layout.
+type farmChart struct {
+	prim   tview.Primitive
+	height int
+}
+
+// farmHeadChart builds a per-head chart, a nil prim when empty; an all-zero fault counter collapses to one line.
+func farmHeadChart(title string, data []int, health bool) farmChart {
 	if len(data) == 0 {
-		return nil
+		return farmChart{}
 	}
 	worst := slices.Max(data)
 
 	color := activeTheme.BarHealthy
 	if health {
 		if worst == 0 {
-			return farmHeadSummary(title, len(data))
+			return farmChart{farmHeadSummary(title, len(data)), farmSummaryHeight}
 		}
 		color = activeTheme.Failing
 	}
@@ -290,7 +292,7 @@ func farmHeadChart(title string, data []int, health bool) tview.Primitive {
 		setColor(color)
 	c.SetBorder(true)
 	c.SetTitle(fmt.Sprintf("%s— %d–%d ", title, slices.Min(data), worst))
-	return c
+	return farmChart{c, farmChartHeight}
 }
 
 // farmHeadPitch is the widest per-head bar pitch: one cell of bar, one of gap.

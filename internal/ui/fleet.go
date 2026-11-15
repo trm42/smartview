@@ -232,12 +232,7 @@ func (v *fleetView) availableSections() []fleetSection {
 
 // activeIndex is the active section's position among the shown ones, else 0.
 func (v *fleetView) activeIndex() int {
-	for i, s := range v.shown {
-		if s.id == v.activeID {
-			return i
-		}
-	}
-	return 0
+	return max(slices.IndexFunc(v.shown, func(s fleetSection) bool { return s.id == v.activeID }), 0)
 }
 
 // sortRows orders rows by the focus metric descending, or by device name when
@@ -372,13 +367,7 @@ func (v *fleetView) restoreSelection() {
 	if len(v.ordered) == 0 {
 		return
 	}
-	target := 1
-	for i, row := range v.ordered {
-		if row.dev.Name == v.selected {
-			target = i + 1
-			break
-		}
-	}
+	target := max(slices.IndexFunc(v.ordered, func(row fleetRow) bool { return row.dev.Name == v.selected }), 0) + 1
 	v.table.Select(target, 0)
 	v.selected = v.ordered[target-1].dev.Name
 }

@@ -2,7 +2,10 @@
 
 package smart
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // Cross-protocol accessors over the sparse schema; each reports presence rather than a zero.
 
@@ -27,10 +30,7 @@ func LeadingInt(s string) (int64, bool) {
 // attrRaw returns the raw value of ATA attribute id, preferring the
 // pre-formatted string over the numeric field.
 func (r *Report) attrRaw(id int) (int64, bool) {
-	if r.ATAAttributes == nil {
-		return 0, false
-	}
-	for _, a := range r.ATAAttributes.Table {
+	for _, a := range r.Attributes() {
 		if a.ID != id {
 			continue
 		}
@@ -99,14 +99,7 @@ func (r *Report) reportsSSDWear() bool {
 			}
 		}
 	}
-	if r.ATAAttributes != nil {
-		for _, a := range r.ATAAttributes.Table {
-			if ssdWearAttrs[a.Name] {
-				return true
-			}
-		}
-	}
-	return false
+	return slices.ContainsFunc(r.Attributes(), func(a ATAAttribute) bool { return ssdWearAttrs[a.Name] })
 }
 
 // SectorBytes is the logical block size (default 512 B), the unit of the
@@ -256,7 +249,7 @@ func (r *Report) DataWritten() (WriteTotal, bool) {
 		return WriteTotal{Bytes: v * r.SectorBytes(), Source: WriteSourceDeviceStats}, true
 	}
 	if v, ok := r.attrRaw(241); ok {
-		return WriteTotal{Bytes: v * 512, Source: WriteSourceAttribute}, true
+		return WriteTotal{Bytes: AttrLBABytes(v), Source: WriteSourceAttribute}, true
 	}
 	return WriteTotal{}, false
 }
@@ -339,3 +332,6 @@ func sctSeries(r *Report) ([]float64, bool) {
 	}
 	return out, len(out) > 1
 }
+
+// AttrLBABytes converts an ATA attribute 241/242 LBA count to bytes, assuming 512-byte LBAs.
+func AttrLBABytes(lbas int64) int64 { return lbas * 512 }

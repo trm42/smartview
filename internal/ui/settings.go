@@ -106,8 +106,7 @@ var settingsRows = []settingRow{
 		help:    "Which screen to open on. Next run.",
 		changed: func(a, b config.Config) bool { return a.StartView != b.StartView },
 		add: func(f *tview.Form, label string, cfg *config.Config, mark func()) {
-			views := []string{config.StartDrives, config.StartFleet}
-			f.AddDropDown(label, views, indexOr(views, cfg.StartView, 0),
+			f.AddDropDown(label, config.StartViews, indexOr(config.StartViews, cfg.StartView, 0),
 				func(opt string, _ int) { cfg.StartView = opt; mark() })
 		},
 	},
@@ -316,11 +315,9 @@ func (a *App) applySettings(cfg config.Config) {
 	}
 
 	// A write failure keeps the applied settings and reports separately.
-	if a.save != nil {
-		if err := a.save(cfg); err != nil {
-			a.showError("save settings", err)
-			return
-		}
+	if err := a.save(cfg); err != nil {
+		a.showError("save settings", err)
+		return
 	}
 	a.refreshChrome()
 }

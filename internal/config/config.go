@@ -6,6 +6,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,6 +18,9 @@ const (
 	StartDrives = "drives"
 	StartFleet  = "fleet"
 )
+
+// StartViews is the closed set start_view accepts.
+var StartViews = []string{StartDrives, StartFleet}
 
 // Config is the persisted settings. Field order matches the file.
 type Config struct {
@@ -98,7 +102,7 @@ func (c Config) Validate(knownTheme func(string) bool) error {
 		return fmt.Errorf("refresh_interval %s out of range (%s to %s)",
 			d, minInterval, maxInterval)
 	}
-	if c.StartView != StartDrives && c.StartView != StartFleet {
+	if !slices.Contains(StartViews, c.StartView) {
 		return fmt.Errorf("unknown start_view %q (want %q or %q)",
 			c.StartView, StartDrives, StartFleet)
 	}

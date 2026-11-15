@@ -54,11 +54,9 @@ func Redact(data []byte, serial string) ([]byte, error) {
 	}
 	r := replacer{serial: serial, subs: map[string]string{}}
 	r.fields(v)
-	r.strings(v)
-	var b bytes.Buffer
-	encode(&b, v, "")
-	b.WriteByte('\n')
-	return b.Bytes(), nil
+	olds := slices.SortedFunc(maps.Keys(r.subs), func(a, b string) int { return cmp.Or(len(b)-len(a), strings.Compare(a, b)) })
+	mapStrings(v, func(s string) string { return r.replace(olds, s) })
+	return render(v), nil
 }
 
 // Check lists every identifier in data that is not a placeholder, in document order.
@@ -79,44 +77,55 @@ func Rename(data []byte, name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	root, _ := v.(object)
-	dev, _ := root.get("device").(object)
-	old, _ := dev.get("name").(string)
+	old := deviceName(v)
 	if old == "" {
 		return nil, errors.New("no device.name to rename")
 	}
-	r := func(s string) string {
+	mapStrings(v, func(s string) string {
 		if s == old || strings.HasPrefix(s, old+" ") {
 			return name + s[len(old):]
 		}
 		return s
-	}
-	var visit func(v any)
-	visit = func(v any) {
-		switch v := v.(type) {
-		case []any:
-			for i, e := range v {
-				if s, ok := e.(string); ok {
-					v[i] = r(s)
-				} else {
-					visit(e)
-				}
-			}
-		case object:
-			for i := range v {
-				if s, ok := v[i].Val.(string); ok {
-					v[i].Val = r(s)
-				} else {
-					visit(v[i].Val)
-				}
-			}
-		}
-	}
-	visit(v)
+	})
+	return render(v), nil
+}
+
+// render encodes v in smartctl's layout with a trailing newline.
+func render(v any) []byte {
 	var b bytes.Buffer
 	encode(&b, v, "")
 	b.WriteByte('\n')
-	return b.Bytes(), nil
+	return b.Bytes()
+}
+
+// deviceName digs out the top-level device.name, "" when absent.
+func deviceName(v any) string {
+	root, _ := v.(object)
+	dev, _ := root.get("device").(object)
+	s, _ := dev.get("name").(string)
+	return s
+}
+
+// mapStrings rewrites every string value under v in place.
+func mapStrings(v any, fn func(string) string) {
+	switch v := v.(type) {
+	case []any:
+		for i, e := range v {
+			if s, ok := e.(string); ok {
+				v[i] = fn(s)
+			} else {
+				mapStrings(e, fn)
+			}
+		}
+	case object:
+		for i := range v {
+			if s, ok := v[i].Val.(string); ok {
+				v[i].Val = fn(s)
+			} else {
+				mapStrings(v[i].Val, fn)
+			}
+		}
+	}
 }
 
 // DeviceName returns the top-level device.name, or "" when absent.
@@ -125,10 +134,7 @@ func DeviceName(data []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	root, _ := v.(object)
-	dev, _ := root.get("device").(object)
-	s, _ := dev.get("name").(string)
-	return s, nil
+	return deviceName(v), nil
 }
 
 // Serials returns every serial_number in data, in document order.
@@ -224,30 +230,8 @@ func (r *replacer) wide(v any, idKey string, naaShift, ouiShift int) {
 	o.set(idKey, json.Number(strconv.Itoa(ID)))
 }
 
-func (r *replacer) strings(v any) {
-	switch v := v.(type) {
-	case []any:
-		for i, e := range v {
-			if s, ok := e.(string); ok {
-				v[i] = r.replace(s)
-			} else {
-				r.strings(e)
-			}
-		}
-	case object:
-		for i := range v {
-			if s, ok := v[i].Val.(string); ok {
-				v[i].Val = r.replace(s)
-			} else {
-				r.strings(v[i].Val)
-			}
-		}
-	}
-}
-
-func (r *replacer) replace(s string) string {
-	olds := slices.Collect(maps.Keys(r.subs))
-	slices.SortFunc(olds, func(a, b string) int { return cmp.Or(len(b)-len(a), strings.Compare(a, b)) })
+// replace applies the substitutions in olds order, longest first.
+func (r *replacer) replace(olds []string, s string) string {
 	for _, old := range olds {
 		repl := r.subs[old]
 		s = strings.ReplaceAll(s, old, repl)

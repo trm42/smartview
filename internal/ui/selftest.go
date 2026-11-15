@@ -111,9 +111,7 @@ func (a *App) runSmartctl(action string, fn func(context.Context) error, onSucce
 				a.showError(action, err)
 				return
 			}
-			if onSuccess != nil {
-				onSuccess()
-			}
+			onSuccess()
 			a.triggerRefresh()
 		})
 	}()
